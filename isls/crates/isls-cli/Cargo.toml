@@ -1,0 +1,25 @@
+[package]
+name = "isls-cli"
+version = "1.0.0"
+edition = "2021"
+description = "ISLS single-binary operator interface — commands, dashboard, config (C11)"
+
+[[bin]]
+name = "isls"
+path = "src/main.rs"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-engine = { path = "../isls-engine" }
+isls-archive = { path = "../isls-archive" }
+isls-persist = { path = "../isls-persist" }
+isls-observe = { path = "../isls-observe" }
+isls-harness = { path = "../isls-harness" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
