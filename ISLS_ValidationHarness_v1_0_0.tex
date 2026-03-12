@@ -1,0 +1,630 @@
+% ═══════════════════════════════════════════════════════════════════════════════
+%  ISLS Validation Harness v1.0.0
+%  Deterministic Benchmark, Test & Operational Metering Framework
+%  Sebastian Klemm — 12 March 2026
+% ═══════════════════════════════════════════════════════════════════════════════
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}\usepackage[T1]{fontenc}\usepackage{lmodern}
+\usepackage[english]{babel}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage[left=20mm,right=20mm,top=25mm,bottom=25mm]{geometry}
+\usepackage{hyperref}\usepackage{enumitem}\usepackage{booktabs}
+\usepackage{array,tabularx,longtable}\usepackage{xcolor}
+\usepackage{listings}\usepackage{fancyhdr}\usepackage{titlesec}
+\usepackage{tcolorbox}\usepackage{microtype}\usepackage{float}
+
+\definecolor{accent}{HTML}{0369A1}\definecolor{accentdark}{HTML}{0C4A6E}
+\definecolor{success}{HTML}{059669}\definecolor{warn}{HTML}{D97706}
+\definecolor{danger}{HTML}{DC2626}\definecolor{codebg}{HTML}{F8FAFC}
+\definecolor{codeborder}{HTML}{E2E8F0}\definecolor{defbg}{HTML}{F0FDF4}
+\definecolor{defborder}{HTML}{86EFAC}\definecolor{thmbg}{HTML}{E0F2FE}
+\definecolor{thmborder}{HTML}{38BDF8}\definecolor{sectioncolor}{HTML}{0C4A6E}
+\definecolor{rustbg}{HTML}{FFF7ED}\definecolor{rustborder}{HTML}{EA580C}
+\definecolor{harnessbg}{HTML}{FDF4FF}\definecolor{harnessborder}{HTML}{A855F7}
+
+\hypersetup{colorlinks=true,linkcolor=accent,citecolor=accent,urlcolor=accentdark,
+  pdftitle={ISLS Validation Harness v1.0.0},pdfauthor={Sebastian Klemm}}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\scriptsize\textcolor{gray}{ISLS Validation Harness v1.0.0}}
+\fancyhead[R]{\scriptsize\textcolor{gray}{Sebastian Klemm — 12 March 2026}}
+\fancyfoot[C]{\scriptsize\textcolor{gray}{\thepage}}
+\renewcommand{\headrulewidth}{0.3pt}\renewcommand{\footrulewidth}{0.1pt}
+
+\titleformat{\section}{\large\bfseries\color{sectioncolor}}{\thesection}{0.8em}{}[\vspace{-0.4em}\textcolor{accent}{\rule{\textwidth}{0.6pt}}]
+\titleformat{\subsection}{\normalsize\bfseries\color{accentdark}}{\thesubsection}{0.8em}{}
+\titleformat{\subsubsection}{\small\bfseries\color{accent}}{\thesubsubsection}{0.8em}{}
+\titlespacing*{\section}{0pt}{1.5ex plus .5ex minus .2ex}{1ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{1ex plus .3ex minus .1ex}{0.5ex plus .1ex}
+
+\tcbuselibrary{skins,breakable}
+\newtcolorbox{specbox}[1][]{colback=thmbg,colframe=thmborder,arc=1.5pt,left=4pt,right=4pt,top=2pt,bottom=2pt,title={\scriptsize\bfseries #1},fonttitle=\color{accent},breakable}
+\newtcolorbox{rustbox}[1][]{colback=rustbg,colframe=rustborder,arc=1.5pt,left=4pt,right=4pt,top=2pt,bottom=2pt,title={\scriptsize\bfseries #1},fonttitle=\color{rustborder!80!black},breakable}
+\newtcolorbox{cmdbox}[1][]{colback=codebg,colframe=codeborder,arc=1.5pt,left=4pt,right=4pt,top=2pt,bottom=2pt,title={\scriptsize\bfseries #1},fonttitle=\color{gray},breakable}
+\newtcolorbox{harnessbox}[1][]{colback=harnessbg,colframe=harnessborder,arc=1.5pt,left=4pt,right=4pt,top=2pt,bottom=2pt,title={\scriptsize\bfseries #1},fonttitle=\color{harnessborder!80!black},breakable}
+
+\lstdefinestyle{rust}{language=C,backgroundcolor=\color{rustbg},frame=single,rulecolor=\color{rustborder},
+  basicstyle=\ttfamily\fontsize{7.5}{9.5}\selectfont,keywordstyle=\color{accent}\bfseries,
+  commentstyle=\color{gray}\itshape,stringstyle=\color{success},
+  morekeywords={fn,pub,struct,enum,impl,trait,use,mod,crate,self,Self,let,mut,const,type,where,async,await,match,if,else,for,while,loop,return,break,Box,Vec,HashMap,BTreeMap,Option,Result,Ok,Err,Some,None,i64,u64,f64,u8,u16,u32,bool,String,usize,derive,Clone,Debug,Serialize,Deserialize},
+  breaklines=true,showstringspaces=false,xleftmargin=2pt,xrightmargin=2pt,aboveskip=4pt,belowskip=4pt,tabsize=4}
+\lstdefinestyle{yaml}{backgroundcolor=\color{codebg},frame=single,rulecolor=\color{codeborder},
+  basicstyle=\ttfamily\fontsize{7.5}{9.5}\selectfont,breaklines=true,showstringspaces=false,
+  xleftmargin=2pt,xrightmargin=2pt,aboveskip=4pt,belowskip=4pt}
+\lstdefinestyle{sh}{backgroundcolor=\color{codebg},frame=single,rulecolor=\color{codeborder},
+  basicstyle=\ttfamily\fontsize{7.5}{9.5}\selectfont,breaklines=true,showstringspaces=false,
+  xleftmargin=2pt,xrightmargin=2pt,aboveskip=4pt,belowskip=4pt,
+  morekeywords={cargo,isls,run,test,bench,validate,report,replay,ingest}}
+
+\setlength{\parskip}{0.3em}\setlength{\parindent}{0pt}
+
+\begin{document}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\begin{titlepage}\centering\vspace*{1cm}
+{\Huge\bfseries\color{sectioncolor}ISLS Validation Harness}\\[0.4cm]
+{\LARGE\color{accent}v1.0.0}\\[0.3cm]
+{\large\color{accentdark}Deterministic Benchmark, Empirical Validation\\
+\& Operational Metering Framework}
+
+\vspace{0.8cm}
+\begin{tcolorbox}[colback=thmbg,colframe=thmborder,width=0.92\textwidth,arc=3pt]
+\small\centering
+This document specifies the complete testing, benchmarking, and operational validation
+layer that wraps the ISLS core. It is designed so that a single operator can:\\[2pt]
+\textbf{(1)} launch the system against live or historical data with one command,\\
+\textbf{(2)} collect all metrics automatically,\\
+\textbf{(3)} read a single dashboard to determine system health,\\
+\textbf{(4)} identify exactly which subsystem needs iteration.\\[2pt]
+The harness itself is pure Rust, ships as two additional crates in the ISLS workspace,
+and requires zero ongoing human attention during normal operation.
+\end{tcolorbox}
+
+\vspace{0.6cm}
+\begin{tabular}{rl}
+\textbf{Author:} & Sebastian Klemm \\
+\textbf{Date:} & 12 March 2026 \\
+\textbf{Depends on:} & ISLS Rust Implementation Specification v1.0.0 \\
+\textbf{New crates:} & \texttt{isls-harness} (C10), \texttt{isls-cli} (C11) \\
+\end{tabular}
+\vfill
+{\scriptsize\textcolor{gray}{Operator workload target: $<$5 minutes/week for a healthy system. All anomalies surface automatically.}}
+\end{titlepage}
+
+\tableofcontents\newpage
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Architecture}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+Two new crates extend the ISLS workspace:
+
+\begin{lstlisting}[style=yaml]
+isls/
+  crates/
+    isls-harness/    # C10: benchmark runners, validators, metric collectors, reporters
+    isls-cli/        # C11: single-binary operator interface (commands, dashboard, config)
+\end{lstlisting}
+
+\begin{specbox}[Design Rule]
+The harness never touches ISLS internals via back-doors. It uses exclusively the public API of \texttt{isls-engine} and \texttt{isls-archive}. If a metric cannot be computed from the public API, the public API must be extended --- the harness must not circumvent encapsulation.
+\end{specbox}
+
+\subsection{Operator Interaction Model}
+
+The entire system is operated through one binary: \texttt{isls}.
+
+\begin{lstlisting}[style=sh]
+isls init                          # generate default config + data dirs
+isls ingest <source>               # attach a live or file-based data source
+isls run                           # start the macro-step loop (foreground or daemon)
+isls run --replay <run_descriptor> # deterministic replay from saved descriptor
+isls bench                         # run full benchmark suite, emit report
+isls validate                      # run validation suite against collected data
+isls report                        # print current health dashboard to stdout
+isls report --json                 # machine-readable metrics export
+isls report --html > report.html   # self-contained HTML dashboard
+isls status                        # one-line system health summary
+\end{lstlisting}
+
+\textbf{Target:} A healthy system requires the operator to run \texttt{isls status} and glance at the output. Everything else is automated.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Metric Taxonomy}
+\label{sec:metrics}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+Every metric has: a unique ID, a human name, a computation method, a unit, a healthy range, and an alert threshold.
+
+\subsection{Layer Health Metrics (M1--M5)}
+
+One metric per ISLS layer, answering: ``Is this layer functioning correctly?''
+
+\begin{longtable}{l l p{4.8cm} l l}
+\toprule \textbf{ID} & \textbf{Layer} & \textbf{Computation} & \textbf{Healthy} & \textbf{Alert} \\
+\midrule\endhead
+M1 & L0 Observe & Ingestion rate: observations/sec over last 60s & $>0$ & $=0$ for $>30$s \\
+M2 & L1 Persist & Graph growth: $\Delta|V| + \Delta|E|$ per macro-window & $\geq 0$ & Negative (data loss) \\
+M3 & L2 Extract & Active constraints: $|S_{\text{active}}|$ after scan & $\geq 1$ & $0$ for $>1$h \\
+M4 & L3 Consensus & Crystal rate: crystals committed per 24h & Profile-dep. & $0$ for $>$ configured silent period \\
+M5 & L4 Morph & Mutation rate: mutations per 24h & $\geq 0$ & Negative invariant violation \\
+\bottomrule
+\end{longtable}
+
+\subsection{Core Quality Metrics (M6--M14)}
+
+\begin{longtable}{l l p{4.8cm} l l}
+\toprule \textbf{ID} & \textbf{Name} & \textbf{Computation} & \textbf{Healthy} & \textbf{Alert} \\
+\midrule\endhead
+M6 & Replay fidelity & Run macro-step twice with saved $RD$; compare crystal digest sets & 100\% match & Any mismatch \\
+M7 & Convergence rate & Wasserstein distance $\delta(w)$ between consecutive persistence diagrams & Decreasing & Increasing for $>5$ windows \\
+M8 & Lattice stability & Mean free energy $\bar{F}$ of emitted crystals & $<0$ & $\geq 0$ \\
+M9 & Gate selectivity & Fraction of macro-steps that pass Kairos gate & $0.01$--$0.30$ & $>0.5$ (too permissive) or $0$ (too strict) \\
+M10 & Dual consensus MCI & Mean MCI of committed crystals & $\geq 0.90$ & $<0.80$ \\
+M11 & PoR latency & Mean time from search$\to$commit in PoR FSM & Profile-dep. & $>2\times$ configured budget \\
+M12 & Evidence integrity & Fraction of crystals passing \texttt{verify\_crystal} & 100\% & $<100\%$ \\
+M13 & Operator version drift & Count of unmatched operator versions in archive & 0 & $>0$ \\
+M14 & Storage efficiency & Cold-tier bytes per asset per month & $<3$ MB & $>10$ MB \\
+\bottomrule
+\end{longtable}
+
+\subsection{Performance Metrics (M15--M19)}
+
+\begin{longtable}{l l p{4.8cm} l l}
+\toprule \textbf{ID} & \textbf{Name} & \textbf{Computation} & \textbf{Healthy} & \textbf{Alert} \\
+\midrule\endhead
+M15 & Macro-step latency & Wall-clock time per \texttt{macro\_step()} call & $<60$s & $>120$s \\
+M16 & Memory footprint & RSS of process & $<4$ GB (2k assets) & $>8$ GB \\
+M17 & Extraction throughput & Constraint candidates evaluated per second & $>100$ & $<10$ \\
+M18 & Archive growth rate & Bytes appended to cold tier per 24h & Bounded & Unbounded growth \\
+M19 & Carrier migration latency & Time from migration trigger to stable new phase & $<5$s & $>30$s \\
+\bottomrule
+\end{longtable}
+
+\subsection{Empirical Domain Metrics (M20--M24)}
+
+These measure how the system performs \emph{in the real world} when connected to a domain profile (e.g., crypto markets via DSHAE).
+
+\begin{longtable}{l l p{4.8cm} l l}
+\toprule \textbf{ID} & \textbf{Name} & \textbf{Computation} & \textbf{Healthy} & \textbf{Alert} \\
+\midrule\endhead
+M20 & Constraint hit rate & Fraction of emitted constraints that remain active 24h later & $>0.6$ & $<0.3$ \\
+M21 & Crystal predictive value & For crystals signaling structure $X$: did $X$ persist? & $>0.5$ & $<0.3$ \\
+M22 & Signal lead time & Time between crystal emission and observable market event & $>0$ (leading) & $\leq 0$ (lagging) \\
+M23 & Basket quality lift & DSHAE Sharpe ratio with ISLS basket vs.\ random basket & Positive & Negative \\
+M24 & Coverage growth & Number of tracked entities $|V|$ over time & Monotone increasing & Decrease (data loss) \\
+\bottomrule
+\end{longtable}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Benchmark Suite}
+\label{sec:bench}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+Invoked via \texttt{isls bench}. All benchmarks are deterministic (fixed seeds, synthetic data). Results are appended to a local benchmark history for regression tracking.
+
+\subsection{Benchmark Catalog}
+
+\begin{longtable}{l l p{5cm} l}
+\toprule \textbf{ID} & \textbf{Name} & \textbf{Procedure} & \textbf{Metric} \\
+\midrule\endhead
+B01 & Ingestion throughput & Ingest $10^6$ synthetic observations & obs/sec \\
+B02 & Graph update scaling & Update graph with $N=100,500,2000,5000$ vertices & $\mu$s per update vs.\ $N$ \\
+B03 & Extraction scaling & Run \texttt{inverse\_weave} on $N=50,200,1000$ point clouds & ms per scan vs.\ $N$ \\
+B04 & Cascade contraction & Apply DK$\to$WF$\to$TS$\to$PC on synthetic 5D cloud & Contraction ratio, ms \\
+B05 & Dual consensus overhead & Run primal+dual paths; measure wall time vs.\ single & Overhead \% \\
+B06 & Crystal serialization & Serialize+hash $10^4$ crystals & $\mu$s per crystal \\
+B07 & Replay speed & Replay 1000 macro-steps from saved $RD$ & steps/sec \\
+B08 & Evidence verification & Verify $10^4$ crystals with $\bar{n}=50$ evidence entries each & $\mu$s per verify \\
+B09 & Memory scaling & Run engine with $N=100\to5000$ entities; measure RSS & MB vs.\ $N$ \\
+B10 & Full macro-step & End-to-end \texttt{macro\_step()} on reference dataset & ms, peak RSS \\
+\bottomrule
+\end{longtable}
+
+\subsection{Regression Tracking}
+
+\begin{lstlisting}[style=rust]
+/// Benchmark result record
+pub struct BenchResult {
+    pub bench_id: String,
+    pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub git_commit: String,
+    pub metric_name: String,
+    pub metric_value: f64,
+    pub metric_unit: String,
+    pub params: BTreeMap<String, String>,
+}
+
+/// Regression check: current vs. last 5 runs
+pub fn check_regression(current: &BenchResult, history: &[BenchResult]) -> RegressionVerdict {
+    let mean = history.iter().map(|h| h.metric_value).sum::<f64>() / history.len() as f64;
+    let std = /* ... */;
+    if current.metric_value > mean + 2.0 * std { RegressionVerdict::Regression }
+    else if current.metric_value < mean - 2.0 * std { RegressionVerdict::Improvement }
+    else { RegressionVerdict::Stable }
+}
+\end{lstlisting}
+
+Output: \texttt{bench\_history.jsonl} — one JSON line per benchmark run, enabling time-series analysis.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Validation Suite}
+\label{sec:validate}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+Invoked via \texttt{isls validate}. Runs against \emph{collected real data} (not synthetic). Answers: ``Is the system producing correct and useful results in practice?''
+
+\subsection{Validation Levels}
+
+\begin{specbox}[Three Validation Levels]
+\begin{description}[nosep,leftmargin=1.5cm,style=sameline]
+\item[V-Formal] Invariant checks: all 20 ISLS invariants verified on every committed crystal in the archive. Deterministic, runs offline. \texttt{isls validate --formal}
+\item[V-Retro] Retrospective accuracy: compare past crystal predictions against what actually happened. Requires $\geq 7$ days of operational data. \texttt{isls validate --retro}
+\item[V-Live] Live monitoring: continuous metric collection during \texttt{isls run}. Alerts on anomaly. Always-on, no separate command.
+\end{description}
+\end{specbox}
+
+\subsection{Formal Validation (V-Formal)}
+
+Iterate over every crystal in the archive and verify:
+
+\begin{lstlisting}[style=rust]
+pub fn validate_formal(archive: &Archive, pinned: &BTreeMap<String,String>)
+    -> FormalReport
+{
+    let mut report = FormalReport::new();
+    for crystal in archive.all_crystals() {
+        // V-F1: Content address integrity
+        report.check("content_address", crystal.crystal_id == content_address(crystal));
+        // V-F2: Evidence chain integrity
+        report.check("evidence_chain", verify_evidence_chain(&crystal.evidence_chain).is_ok());
+        // V-F3: Operator version match
+        report.check("operator_versions", verify_operator_versions(crystal, pinned).is_ok());
+        // V-F4: Gate values above thresholds
+        report.check("gate_kairos", crystal.commit_proof.gate_values.kairos);
+        // V-F5: Dual consensus
+        let cr = &crystal.commit_proof.consensus_result;
+        report.check("dual_consensus",
+            cr.primal_score >= cr.threshold && cr.dual_score >= cr.threshold
+            && cr.mci >= 0.80);
+        // V-F6: PoR trace monotonicity
+        report.check("por_trace", verify_por_trace(&crystal.commit_proof.por_trace));
+        // V-F7: Free energy < 0
+        report.check("free_energy", crystal.free_energy < 0.0);
+        // V-F8: Append-only (no past crystal altered)
+        report.check("immutability", !archive.was_modified(&crystal.crystal_id));
+    }
+    report
+}
+\end{lstlisting}
+
+\subsection{Retrospective Validation (V-Retro)}
+
+For each crystal that made a structural claim (e.g., ``constraint $\mathfrak{g}_k$ binds assets $A$ and $B$''), check whether the claim held true in subsequent data:
+
+\begin{lstlisting}[style=rust]
+pub fn validate_retro(archive: &Archive, graph: &PersistentGraph,
+    horizon: Duration) -> RetroReport
+{
+    let mut report = RetroReport::new();
+    for crystal in archive.crystals_older_than(horizon) {
+        for constraint in &crystal.constraint_program {
+            // Re-evaluate constraint on data AFTER crystal emission
+            let post_window = TimeWindow::after(crystal.created_at, horizon);
+            let coverage = evaluate_constraint_coverage(constraint, graph, &post_window);
+            report.add(RetroEntry {
+                crystal_id: crystal.crystal_id,
+                constraint_id: constraint.id,
+                predicted_coverage: constraint.coverage,
+                actual_coverage: coverage,
+                still_active: coverage >= 0.5, // did the constraint survive?
+            });
+        }
+    }
+    // Aggregate: hit rate, mean coverage drift, false positive rate
+    report.compute_aggregates();
+    report
+}
+\end{lstlisting}
+
+\textbf{Key output:} Constraint hit rate (M20), Crystal predictive value (M21), Signal lead time (M22).
+
+\subsection{Live Validation (V-Live)}
+
+Runs as a background task inside \texttt{isls run}. On every macro-step:
+
+\begin{enumerate}[nosep]
+\item Compute all 24 metrics (M1--M24).
+\item Append to \texttt{metrics.jsonl} (one JSON line per tick).
+\item Check each metric against alert threshold.
+\item If any alert fires: log \texttt{WARN} to structured log + write to \texttt{alerts.jsonl}.
+\item Every $N$ macro-steps (configurable, default 100): compute rolling aggregates and append to \texttt{summary.jsonl}.
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Dashboard and Reporting}
+\label{sec:dashboard}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{One-Line Status}
+
+\begin{cmdbox}[\texttt{isls status}]
+\begin{lstlisting}[style=sh]
+$ isls status
+ISLS v1.0.0 | UP 14d 3h | Entities: 847 | Edges: 12,403 | Crystals: 23
+L0: OK (42 obs/s) | L1: OK (+12 edges/h) | L2: OK (31 active constraints)
+L3: OK (1.3 crystals/day, MCI=0.94) | L4: OK (0 mutations pending)
+Replay: PASS | Free Energy: -0.38 | Gate sel.: 0.07 | Storage: 2.1 GB
+Health: GREEN
+\end{lstlisting}
+\end{cmdbox}
+
+Color codes: \textcolor{success}{\textbf{GREEN}} = all metrics healthy. \textcolor{warn}{\textbf{YELLOW}} = $\geq 1$ metric in warning range. \textcolor{danger}{\textbf{RED}} = $\geq 1$ metric in alert.
+
+\subsection{Full Report}
+
+\texttt{isls report} outputs a structured report with sections:
+
+\begin{enumerate}[nosep]
+\item \textbf{System Overview:} uptime, entity count, crystal count, storage usage.
+\item \textbf{Layer Health:} M1--M5 with traffic-light indicators.
+\item \textbf{Core Quality:} M6--M14 with sparkline trend (last 30 data points).
+\item \textbf{Performance:} M15--M19 with p50/p95/p99 latencies.
+\item \textbf{Empirical:} M20--M24 with rolling 7-day and 30-day aggregates.
+\item \textbf{Alerts:} Active alerts with timestamp, metric ID, and current value.
+\item \textbf{Iteration Guidance:} Ranked list of subsystems needing attention (see \S\ref{sec:iteration}).
+\end{enumerate}
+
+\texttt{isls report --html} emits a self-contained HTML file with embedded CSS and SVG charts (no JavaScript dependencies, no external fetches). Viewable in any browser.
+
+\texttt{isls report --json} emits machine-readable JSON for programmatic consumption.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Iteration Guidance Engine}
+\label{sec:iteration}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+The harness does not just report metrics --- it tells the operator \emph{what to fix next}.
+
+\subsection{Diagnosis Rules}
+
+\begin{longtable}{l p{3.5cm} p{5.5cm} l}
+\toprule \textbf{Trigger} & \textbf{Symptom} & \textbf{Diagnosis + Action} & \textbf{Priority} \\
+\midrule\endhead
+M6 $<100\%$ & Replay mismatch & Non-determinism in operator or serialization. Run \texttt{isls replay --diff} to identify first diverging macro-step. Check for \texttt{HashMap} usage, floating-point platform difference, or operator version drift. & \textcolor{danger}{P0} \\
+M8 $\geq 0$ & Positive free energy & Constraints too weak or temperature too high. Lower \texttt{extraction.alpha\_min} or recalibrate temperature $c_T$. & \textcolor{warn}{P1} \\
+M9 $>0.5$ & Gate too permissive & Thresholds too low. Increase \texttt{thresholds.k} (crystal stability). Review whether noise is being crystallized. & \textcolor{warn}{P1} \\
+M9 $=0$ for $>48$h & Gate too strict & Thresholds too high for current data regime. Lower \texttt{thresholds.d} and \texttt{thresholds.q} by 10\% increments. & \textcolor{warn}{P1} \\
+M10 $<0.80$ & Low MCI & Primal and dual paths diverge. Check operator cascade ordering. May indicate that DK contraction rate is too aggressive --- reduce \texttt{dk\_alpha}. & \textcolor{warn}{P1} \\
+M15 $>120$s & Slow macro-step & Profile to find bottleneck: likely L2 extraction. Reduce \texttt{extraction.max\_iterations} or \texttt{press\_top\_k}. Consider sparser constraint library. & \textcolor{warn}{P2} \\
+M20 $<0.3$ & Low constraint hit rate & Constraints are transient noise, not structural. Increase \texttt{extraction.bond\_strength\_min} so only durable constraints enter programs. & \textcolor{warn}{P1} \\
+M21 $<0.3$ & Low predictive value & Crystals do not predict future structure. Likely cause: macro-window too short. Increase \texttt{extraction.window\_hours}. & \textcolor{warn}{P1} \\
+M22 $\leq 0$ & Lagging signals & ISLS detects structure \emph{after} the market has moved. Reduce \texttt{por\_T\_min} and \texttt{por\_T\_stable} to allow faster PoR traversal. & \textcolor{warn}{P2} \\
+M12 $<100\%$ & Evidence corruption & Storage integrity failure. Run \texttt{isls validate --formal}. Identify corrupted tier segment. Re-derive from cold evidence or isolate. & \textcolor{danger}{P0} \\
+\bottomrule
+\end{longtable}
+
+\subsection{Automated Iteration Report}
+
+\begin{lstlisting}[style=rust]
+pub struct IterationItem {
+    pub priority: Priority,       // P0, P1, P2
+    pub metric_id: String,        // e.g. "M8"
+    pub subsystem: String,        // e.g. "isls-extract"
+    pub symptom: String,          // human-readable
+    pub diagnosis: String,        // what's likely wrong
+    pub action: String,           // what to change
+    pub config_key: Option<String>, // which config field to adjust
+    pub suggested_value: Option<String>, // suggested new value
+}
+
+pub fn generate_iteration_guidance(metrics: &MetricSnapshot, config: &Config)
+    -> Vec<IterationItem>
+{
+    let mut items = Vec::new();
+    if metrics.m6_replay_fidelity < 1.0 {
+        items.push(IterationItem {
+            priority: Priority::P0,
+            metric_id: "M6".into(),
+            subsystem: "isls-engine".into(),
+            symptom: "Replay mismatch detected".into(),
+            diagnosis: "Non-determinism in operator or serialization path".into(),
+            action: "Run `isls replay --diff` to find first diverging step".into(),
+            config_key: None,
+            suggested_value: None,
+        });
+    }
+    // ... (one rule per row in the diagnosis table above)
+    items.sort_by_key(|i| i.priority.clone());
+    items
+}
+\end{lstlisting}
+
+The output of \texttt{isls report} includes an \textbf{``Action Items''} section listing these in priority order. The operator reads top to bottom and addresses P0 first.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Data Sources and Ingestion Adapters}
+\label{sec:sources}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Built-In Adapters}
+
+\begin{tabular}{l l l}
+\toprule \textbf{Adapter} & \textbf{Source} & \textbf{Invocation} \\
+\midrule
+\texttt{file-csv} & CSV files (historical OHLCV) & \texttt{isls ingest --adapter file-csv --path data/} \\
+\texttt{file-jsonl} & JSONL observation logs & \texttt{isls ingest --adapter file-jsonl --path obs.jsonl} \\
+\texttt{replay} & Saved RunDescriptor & \texttt{isls run --replay run\_desc.json} \\
+\texttt{synthetic} & Deterministic synthetic generator & \texttt{isls ingest --adapter synthetic --entities 500} \\
+\bottomrule
+\end{tabular}
+
+\texttt{synthetic} generates deterministic data with configurable correlation structure, regime switches, and known constraint programs --- enabling ground-truth validation (the harness \emph{knows} which constraints exist and can measure detection accuracy exactly).
+
+\subsection{Extension Point for Live Feeds}
+
+\begin{lstlisting}[style=rust]
+/// Trait for live data source adapters (domain-specific, out of ISLS core scope)
+pub trait LiveAdapter: ObservationAdapter {
+    fn connect(&mut self) -> Result<()>;
+    fn poll(&mut self) -> Result<Vec<Vec<u8>>>;  // raw observation bytes
+    fn disconnect(&mut self);
+}
+// A crypto-market adapter implementing this trait would connect to exchange WebSockets.
+// The harness provides the framework; the domain-specific adapter is a plugin.
+\end{lstlisting}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Operational Modes}
+\label{sec:modes}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{specbox}[Four Operational Modes]
+\begin{description}[nosep,leftmargin=2.5cm,style=sameline]
+\item[Bench] Synthetic data, deterministic seeds. Measures performance. No side effects. \\ \texttt{isls bench}
+\item[Validate] Real archived data, offline. Measures correctness and predictive quality. \\ \texttt{isls validate}
+\item[Shadow] Live data ingestion, full pipeline, but \textbf{no downstream action}. Crystals are emitted and archived but not forwarded to DSHAE. Enables safe burn-in. \\ \texttt{isls run --mode shadow}
+\item[Live] Full operation. Crystals forwarded to downstream consumers. Metrics collected. \\ \texttt{isls run --mode live}
+\end{description}
+\end{specbox}
+
+\textbf{Recommended deployment sequence:}
+\begin{enumerate}[nosep]
+\item Run \texttt{isls bench} after every code change. Ensure no regressions.
+\item Deploy in \texttt{shadow} mode for $\geq 14$ days. Collect metrics.
+\item Run \texttt{isls validate --retro} after 14 days. Check M20--M24.
+\item If all GREEN: switch to \texttt{live} mode.
+\item Run \texttt{isls report} weekly. Address iteration items top-down.
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{File Layout and Persistence}
+\label{sec:files}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{lstlisting}[style=yaml]
+~/.isls/
+  config.json              # master config (ISLS + harness)
+  data/
+    hot/                   # hot-tier observation cache (7 days)
+    warm/                  # warm-tier compressed archive (90 days)
+    cold/                  # cold-tier indefinite evidence
+    crystals/              # committed crystal archive (one file per crystal)
+  metrics/
+    metrics.jsonl          # per-tick metric log (M1-M24)
+    alerts.jsonl           # fired alerts
+    summary.jsonl          # rolling aggregates (every 100 ticks)
+    bench_history.jsonl    # benchmark regression history
+  reports/
+    latest.html            # most recent HTML report
+    latest.json            # most recent JSON report
+  replay/
+    *.run_descriptor.json  # saved run descriptors for replay
+\end{lstlisting}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Configuration Extension}
+\label{sec:config}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+The harness adds a \texttt{harness} section to the ISLS config:
+
+\begin{lstlisting}[style=yaml]
+harness:
+  metrics_interval_steps: 1        # collect metrics every N macro-steps
+  summary_interval_steps: 100      # rolling summary every N steps
+  alert_cooldown_seconds: 300      # min time between repeated alerts
+  bench:
+    synthetic_entities: 500
+    synthetic_windows: 1000
+    seed: 42
+  validate:
+    retro_horizon_days: 7
+    formal_on_startup: true        # run formal validation on every startup
+  report:
+    auto_generate_hours: 24        # auto-generate HTML report every N hours
+    retention_days: 90             # keep old reports for N days
+  iteration:
+    enabled: true                  # auto-generate iteration guidance
+    p0_halt: false                 # if true, halt engine on P0 alert (safety mode)
+\end{lstlisting}
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Synthetic Ground-Truth Generator}
+\label{sec:synthetic}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+The most powerful validation tool: a deterministic data generator that embeds \emph{known} constraint programs into synthetic data, then measures ISLS's ability to recover them.
+
+\begin{lstlisting}[style=rust]
+pub struct SyntheticScenario {
+    pub name: String,
+    pub entities: usize,
+    pub windows: usize,
+    pub seed: u64,
+    pub planted_constraints: Vec<PlantedConstraint>,
+    pub regime_switches: Vec<(usize, RegimeType)>,  // (window, new_regime)
+}
+
+pub struct PlantedConstraint {
+    pub template: ConstraintTemplate,
+    pub parameters: BTreeMap<String, f64>,
+    pub active_from: usize,   // window number
+    pub active_until: usize,
+    pub strength: f64,        // how strongly the constraint is enforced in data
+}
+
+/// Generate synthetic observations with planted constraints
+pub fn generate(scenario: &SyntheticScenario) -> Vec<Vec<Observation>> { /* ... */ }
+
+/// Score ISLS's recovery of planted constraints
+pub fn score_recovery(planted: &[PlantedConstraint], discovered: &ConstraintProgram)
+    -> RecoveryScore
+{
+    // Precision: fraction of discovered constraints that match a planted one
+    // Recall: fraction of planted constraints that were discovered
+    // F1: harmonic mean
+    // Parameter accuracy: mean |param_discovered - param_planted| for matched constraints
+    RecoveryScore { precision, recall, f1, param_accuracy }
+}
+\end{lstlisting}
+
+\textbf{Reference scenarios:}
+\begin{enumerate}[nosep]
+\item \textbf{S-Basic:} 50 entities, 3 planted Band constraints, no regime switches.
+\item \textbf{S-Regime:} 200 entities, 5 constraints, 2 regime switches (calm$\to$volatile$\to$calm).
+\item \textbf{S-Causal:} 100 entities, 3 Granger causal chains $A\to B\to C$, planted with 2h lag.
+\item \textbf{S-Break:} 200 entities, 4 constraints active for 500 windows then breaking.
+\item \textbf{S-Scale:} 2000 entities, 20 constraints, full regime complexity.
+\end{enumerate}
+
+\texttt{isls bench} runs all five scenarios and reports precision/recall/F1 for each.
+
+% ═══════════════════════════════════════════════════════════════════════════════
+\section{Implementation Contract for Claude Code}
+\label{sec:contract}
+% ═══════════════════════════════════════════════════════════════════════════════
+
+\begin{harnessbox}[Build Contract]
+\small
+\begin{enumerate}[nosep]
+\item Create crate \texttt{isls-harness} with modules: \texttt{metrics}, \texttt{bench}, \texttt{validate}, \texttt{synthetic}, \texttt{report}, \texttt{iterate}.
+\item Create crate \texttt{isls-cli} with binary \texttt{isls} implementing all commands from \S1.
+\item Implement all 24 metrics (M1--M24) with collection, alert, and persistence.
+\item Implement all 10 benchmarks (B01--B10) with regression tracking.
+\item Implement V-Formal, V-Retro, V-Live validation levels.
+\item Implement the 10 diagnosis rules from \S\ref{sec:iteration} and the iteration guidance generator.
+\item Implement the synthetic ground-truth generator with all 5 reference scenarios.
+\item Implement \texttt{isls report --html} with self-contained HTML (inline CSS, SVG sparklines, no external deps).
+\item All tests: \texttt{cargo test --workspace} must pass.
+\item The binary \texttt{isls status} must produce output matching the format in \S5.1 within 1 second.
+\end{enumerate}
+\end{harnessbox}
+
+\vspace{0.5cm}
+\begin{center}
+\rule{0.6\textwidth}{0.3pt}\\[0.3cm]
+{\small End of specification — ISLS Validation Harness v1.0.0}\\[2pt]
+{\scriptsize 24 metrics. 10 benchmarks. 3 validation levels. 10 diagnosis rules. 5 synthetic scenarios.\\One binary. One glance.}
+\end{center}
+
+\end{document}
