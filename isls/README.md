@@ -4,7 +4,7 @@
 
 ---
 
-## Was ist ISLS? (Für alle verständlich)
+## Was ist ISLS? (Für Laien verständlich)
 
 Stell dir vor, du beobachtest einen Fluss. Das Wasser fließt ständig — mal ruhig, mal turbulent. Irgendwann erkennst du ein Muster: Nach starkem Regen steigt der Pegel immer um genau diese Menge, die Strömung dreht sich immer in diese Richtung. Du nimmst einen Stein und ritzt dieses Muster ein — **ein bleibender, unveränderlicher Beweis**, dass dieses Muster real ist.
 
