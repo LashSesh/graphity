@@ -1,0 +1,9 @@
+[package]
+name = "isls-observe"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+serde = { workspace = true }
+thiserror = { workspace = true }

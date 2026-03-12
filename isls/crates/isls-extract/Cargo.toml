@@ -1,0 +1,10 @@
+[package]
+name = "isls-extract"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-persist = { path = "../isls-persist" }
+serde = { workspace = true }
+thiserror = { workspace = true }
