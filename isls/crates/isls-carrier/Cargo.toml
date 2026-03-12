@@ -1,0 +1,10 @@
+[package]
+name = "isls-carrier"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-consensus = { path = "../isls-consensus" }
+serde = { workspace = true }
+thiserror = { workspace = true }

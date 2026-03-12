@@ -1,0 +1,29 @@
+[package]
+name = "isls-engine"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-observe = { path = "../isls-observe" }
+isls-persist = { path = "../isls-persist" }
+isls-extract = { path = "../isls-extract" }
+isls-consensus = { path = "../isls-consensus" }
+isls-carrier = { path = "../isls-carrier" }
+isls-archive = { path = "../isls-archive" }
+isls-morph = { path = "../isls-morph" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+
+[dev-dependencies]
+isls-types = { path = "../isls-types" }
+isls-observe = { path = "../isls-observe" }
+isls-persist = { path = "../isls-persist" }
+isls-extract = { path = "../isls-extract" }
+isls-consensus = { path = "../isls-consensus" }
+isls-carrier = { path = "../isls-carrier" }
+isls-archive = { path = "../isls-archive" }
+isls-morph = { path = "../isls-morph" }
