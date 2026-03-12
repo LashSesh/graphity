@@ -1,0 +1,23 @@
+[package]
+name = "isls-harness"
+version = "1.0.0"
+edition = "2021"
+description = "ISLS Validation Harness — benchmark runners, validators, metric collectors, reporters (C10)"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-engine = { path = "../isls-engine" }
+isls-archive = { path = "../isls-archive" }
+isls-persist = { path = "../isls-persist" }
+isls-extract = { path = "../isls-extract" }
+isls-observe = { path = "../isls-observe" }
+isls-consensus = { path = "../isls-consensus" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]

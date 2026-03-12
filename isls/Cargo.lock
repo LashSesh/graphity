@@ -207,6 +207,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-cli"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "isls-archive",
+ "isls-engine",
+ "isls-harness",
+ "isls-observe",
+ "isls-persist",
+ "isls-types",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "isls-consensus"
 version = "1.0.0"
 dependencies = [
@@ -243,6 +260,25 @@ dependencies = [
  "isls-types",
  "serde",
  "thiserror",
+]
+
+[[package]]
+name = "isls-harness"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "isls-archive",
+ "isls-consensus",
+ "isls-engine",
+ "isls-extract",
+ "isls-observe",
+ "isls-persist",
+ "isls-types",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
