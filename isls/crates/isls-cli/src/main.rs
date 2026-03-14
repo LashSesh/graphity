@@ -21,7 +21,7 @@ use isls_harness::{
 enum Command {
     Init,
     Ingest { adapter: String, path: Option<String>, entities: Option<usize> },
-    Run { replay: Option<String>, mode: RunMode },
+    Run { replay: Option<String>, mode: RunMode, ticks: usize },
     Bench,
     Validate { formal: bool, retro: bool },
     Report { json: bool, html: bool },
@@ -62,7 +62,11 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .map(|m| if m == "shadow" { RunMode::Shadow } else { RunMode::Live })
                 .unwrap_or(RunMode::Live);
-            Command::Run { replay, mode }
+            let ticks = args.iter().position(|a| a == "--ticks")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(10);
+            Command::Run { replay, mode, ticks }
         }
         "bench" => Command::Bench,
         "validate" => {
@@ -248,7 +252,7 @@ fn cmd_ingest(adapter_name: &str, path: Option<&str>, entities: Option<usize>) {
     }
 }
 
-fn cmd_run(replay: Option<&str>, mode: RunMode) {
+fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
     ensure_dirs().expect("failed to create dirs");
     let config = load_config();
 
@@ -275,7 +279,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode) {
     let mut gen = SyntheticGenerator::reference(ScenarioKind::SBasic);
     let windows = gen.generate();
 
-    for (i, window) in windows.iter().take(10).enumerate() {
+    for (i, window) in windows.iter().take(ticks).enumerate() {
         let obs_payloads: Vec<Vec<u8>> = window.iter().map(|o| o.payload.clone()).collect();
         let step_start = Instant::now();
         let crystal = macro_step(&mut state, &obs_payloads, &config, &adapter)
@@ -315,7 +319,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode) {
     }
 
     save_archive(&state.archive);
-    println!("\nRun complete. {} macro-steps executed.", windows.len().min(10));
+    println!("\nRun complete. {} macro-steps executed.", windows.len().min(ticks));
     println!("Metrics written to {}", metrics_path.display());
 }
 
@@ -631,8 +635,8 @@ fn main() {
         Command::Ingest { adapter, path, entities } => {
             cmd_ingest(&adapter, path.as_deref(), entities);
         }
-        Command::Run { replay, mode } => {
-            cmd_run(replay.as_deref(), mode);
+        Command::Run { replay, mode, ticks } => {
+            cmd_run(replay.as_deref(), mode, ticks);
         }
         Command::Bench => cmd_bench(),
         Command::Validate { formal, retro } => cmd_validate(formal, retro),
