@@ -185,23 +185,23 @@ impl PersistentGraph {
             return Err(PersistError::CapacityExceeded);
         }
 
+        // Collect vertex IDs for the whole batch upfront so we can wire
+        // co-observation edges in a second pass without borrowing conflicts.
+        let mut batch_vids: Vec<VertexId> = Vec::with_capacity(obs_batch.len());
+
         for obs in obs_batch {
             let timestamp = obs.timestamp;
 
-            // 1. Upsert vertices referenced in observation
-            // We derive a vertex ID from source_id hash
+            // 1. Upsert vertex
             let vid = derive_vertex_id(&obs.source_id);
             self.upsert_vertex(vid, timestamp);
+            batch_vids.push(vid);
 
-            // 2. Update edge annotations via payload
-            // Decode pairs from payload if possible (format: pairs of u64 vertex IDs).
-            // Guard: only treat payload as binary edge data when it is NOT valid UTF-8.
-            // JSON/text payloads are always valid UTF-8; interpreting their bytes as
-            // raw u64 pairs creates phantom vertices from ASCII character codes and is
-            // the root cause of unbounded entity-count growth.
+            // 2. Update edge annotations via binary payload (non-UTF-8 only).
+            //    Guard: JSON/text payloads are always valid UTF-8; interpreting
+            //    their bytes as raw u64 pairs creates phantom vertices.
             if obs.payload.len() >= 16 && std::str::from_utf8(&obs.payload).is_err() {
-                let chunks = obs.payload.chunks_exact(16);
-                for chunk in chunks {
+                for chunk in obs.payload.chunks_exact(16) {
                     let from_bytes: [u8; 8] = chunk[0..8].try_into().unwrap_or([0u8; 8]);
                     let to_bytes: [u8; 8] = chunk[8..16].try_into().unwrap_or([0u8; 8]);
                     let from_vid = u64::from_le_bytes(from_bytes);
@@ -212,39 +212,101 @@ impl PersistentGraph {
                 }
             }
 
-            // 3. Append to tensor archive
-            if let Some(archive) = self.tensor.get_mut(&vid) {
-                archive.push(FiveDState::default(), timestamp);
-            }
+            // 3. Derive a non-trivial FiveDState embedding from the observation payload:
+            //    p (potential)  — FNV-1a hash of payload bytes, mapped to [0, 1].
+            //                     Changes every window because the JSON value field changes.
+            //    rho (density)  — how often this entity has been observed so far,
+            //                     clamped to [0, 1] with a 0.1-per-observation step.
+            //    omega (freq)   — timestamp folded into one full cycle per 24 h → [0, 2π].
+            //    chi            — will be set from graph degree after the edge pass.
+            //    eta (causality)— neutral default 0.5; updated by Granger analysis later.
+            let p = fnv_to_unit(&obs.payload);
 
-            // 4. Update embeddings (simple update: use payload length as proxy)
+            let activation = self
+                .graph
+                .node_weight(*self.id_map.get(&vid).expect("just upserted"))
+                .map(|d| d.activation_count)
+                .unwrap_or(1);
+            let rho = (activation as f64 * 0.1_f64).min(1.0);
+
+            let omega = (timestamp * (std::f64::consts::TAU / 86_400.0))
+                .rem_euclid(std::f64::consts::TAU); // one full cycle per 24 h
+
             if let Some(embed) = self.embedding.get_mut(&vid) {
-                embed.p = obs.payload.len() as f64;
+                embed.p     = p;
+                embed.rho   = rho;
+                embed.omega = omega;
+                embed.eta   = 0.5;
+                // chi updated below, after co-observation edges are wired
             }
 
-            // 5. Decay dormant edges
+            // 4. Append to tensor archive with the updated embedding snapshot.
+            let snap = self.embedding.get(&vid).cloned().unwrap_or_default();
+            if let Some(archive) = self.tensor.get_mut(&vid) {
+                archive.push(snap, timestamp);
+            }
+
+            // 5. Decay dormant edges (one decay event per observation).
             let lambda = config.lambda_decay;
-            // We can't easily iterate mutably while holding other refs, so collect edge indices first
             let edge_indices: Vec<_> = self.graph.edge_indices().collect();
             for eidx in edge_indices {
                 if let Some(ann) = self.graph.edge_weight_mut(eidx) {
-                    ann.weight *= (-lambda).exp(); // w *= exp(-lambda * 1_tick)
+                    ann.weight *= (-lambda).exp();
                 }
             }
 
-            // 6. Append to history (append-only, Inv I1)
+            // 6. Append to history (append-only, Inv I1).
             self.history.push(ObservationRecord {
                 commit_index: self.commit_index,
                 digest: obs.digest,
                 timestamp,
             });
 
-            // 7. Hot tier storage
+            // 7. Hot tier storage.
             self.hot
                 .data
                 .entry(vid)
                 .or_default()
                 .push((timestamp, obs.payload.clone()));
+        }
+
+        // ── Co-observation edges (MCCE hypha layer) ──────────────────────────
+        // Entities observed in the same batch are structurally coupled: create
+        // or reinforce an undirected edge between every ordered pair (u < v).
+        // This ensures j = edge_count / vertex_count > 0, which is required for
+        // the Kairos j-gate and for inverse_weave to find stable patterns.
+        let batch_ts = obs_batch.first().map(|o| o.timestamp).unwrap_or(0.0);
+        let n = batch_vids.len();
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let (u, v) = if batch_vids[i] < batch_vids[j] {
+                    (batch_vids[i], batch_vids[j])
+                } else {
+                    (batch_vids[j], batch_vids[i])
+                };
+                self.upsert_edge(u, v, batch_ts);
+            }
+        }
+
+        // ── Update chi (connectivity) from graph degree ───────────────────────
+        // Now that all edges exist, compute chi = degree / max_degree for every
+        // vertex so the 5D embeddings reflect the graph topology.
+        let max_degree = self
+            .graph
+            .node_indices()
+            .map(|ni| self.graph.neighbors_undirected(ni).count())
+            .max()
+            .unwrap_or(1)
+            .max(1) as f64;
+
+        let all_vids: Vec<VertexId> = self.embedding.keys().cloned().collect();
+        for vid in all_vids {
+            if let Some(&nidx) = self.id_map.get(&vid) {
+                let degree = self.graph.neighbors_undirected(nidx).count() as f64;
+                if let Some(embed) = self.embedding.get_mut(&vid) {
+                    embed.chi = degree / max_degree;
+                }
+            }
         }
 
         self.commit_index += 1;
@@ -307,6 +369,18 @@ impl PersistentGraph {
             euler_char,
         }
     }
+}
+
+/// Map a byte slice to a float in [0, 1) using FNV-1a (deterministic, no rand).
+/// Used to derive a non-trivial `p` coordinate from an observation payload.
+fn fnv_to_unit(data: &[u8]) -> f64 {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for &b in data {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    // Use the top 53 bits as the IEEE 754 mantissa for a uniform float in [0, 1).
+    (h >> 11) as f64 / (1u64 << 53) as f64
 }
 
 /// Derive a vertex ID from a string (deterministic, no rand)
