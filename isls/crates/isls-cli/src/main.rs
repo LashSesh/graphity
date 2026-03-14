@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use isls_types::{Config, Observation, RunDescriptor};
+use isls_types::{Config, RunDescriptor};
 use isls_engine::{GlobalState, macro_step};
 use isls_observe::PassthroughAdapter;
 use isls_archive::Archive;
@@ -237,10 +237,16 @@ fn cmd_ingest(adapter_name: &str, path: Option<&str>, entities: Option<usize>, s
             let mut gen = SyntheticGenerator::reference(kind);
             let windows = gen.generate();
             let entity_count = windows.first().map(|w| w.len()).unwrap_or(0);
-            // Persist each window as one JSONL line so cmd_run can load them.
+            // Persist only the raw payloads (Vec<Vec<u8>>) — one window per JSONL
+            // line. Avoiding full Observation serialization sidesteps the Hash256
+            // ([u8;32]) round-trip issue where serde_json silently fails to
+            // deserialise fixed-size arrays on some platforms.
             let windows_path = isls_dir().join("data/hot/windows.jsonl");
             let lines: String = windows.iter()
-                .filter_map(|w| serde_json::to_string(w).ok())
+                .filter_map(|w| {
+                    let payloads: Vec<&Vec<u8>> = w.iter().map(|o| &o.payload).collect();
+                    serde_json::to_string(&payloads).ok()
+                })
                 .map(|s| s + "\n")
                 .collect();
             std::fs::write(&windows_path, lines).expect("failed to write windows");
@@ -291,33 +297,49 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
     let metrics_path = isls_dir().join("metrics/metrics.jsonl");
     let alerts_path = isls_dir().join("metrics/alerts.jsonl");
 
-    // Load observation windows that were previously written by `ingest`.
-    // Fall back to fresh synthetic data only if nothing has been ingested yet.
-    let windows: Vec<Vec<Observation>> = {
+    // Load observation windows written by `ingest` as Vec<Vec<u8>> payloads.
+    // Each JSONL line is one window: a JSON array of byte arrays.
+    // Storing only payloads (not full Observation structs) avoids the Hash256
+    // ([u8;32]) deserialization issue that caused silent fallback to synthetic.
+    let ingested: Option<Vec<Vec<Vec<u8>>>> = {
         let windows_path = isls_dir().join("data/hot/windows.jsonl");
         if windows_path.exists() {
             let s = std::fs::read_to_string(&windows_path).unwrap_or_default();
-            let loaded: Vec<Vec<Observation>> = s.lines()
+            let loaded: Vec<Vec<Vec<u8>>> = s.lines()
+                .filter(|l| !l.is_empty())
                 .filter_map(|line| serde_json::from_str(line).ok())
                 .collect();
-            if !loaded.is_empty() {
-                loaded
-            } else {
-                let mut gen = SyntheticGenerator::reference(ScenarioKind::SBasic);
-                gen.generate()
-            }
+            if loaded.is_empty() { None } else { Some(loaded) }
         } else {
-            println!("Warning: no ingested data found at ~/.isls/data/hot/windows.jsonl");
-            println!("Run `isls ingest` first for best results. Falling back to fresh synthetic data.");
-            let mut gen = SyntheticGenerator::reference(ScenarioKind::SBasic);
-            gen.generate()
+            None
         }
     };
-    let n_windows = windows.len();
 
-    for i in 0..ticks {
-        let window = &windows[i % n_windows];
-        let obs_payloads: Vec<Vec<u8>> = window.iter().map(|o| o.payload.clone()).collect();
+    // Determine how many steps to actually run and where each step's payloads
+    // come from.  If ingested data exists, stop at min(ticks, n_windows) —
+    // never cycle so the engine sees the real sequence.  Without ingested data
+    // fall back to the synthetic generator.
+    let (steps, get_payloads): (usize, Box<dyn Fn(usize) -> Vec<Vec<u8>>>) =
+        if let Some(ref wins) = ingested {
+            let n = wins.len();
+            let actual = ticks.min(n);
+            println!("Loaded {} ingested windows; running {} macro-step(s).", n, actual);
+            (actual, Box::new(move |i| wins[i].clone()))
+        } else {
+            println!("Warning: no ingested data found. Run `isls ingest` first.");
+            println!("Falling back to fresh synthetic data.");
+            let mut gen = SyntheticGenerator::reference(ScenarioKind::SBasic);
+            let synthetic: Vec<Vec<Vec<u8>>> = gen.generate()
+                .into_iter()
+                .map(|w| w.into_iter().map(|o| o.payload).collect())
+                .collect();
+            let n = synthetic.len();
+            let actual = ticks.min(n);
+            (actual, Box::new(move |i| synthetic[i % n].clone()))
+        };
+
+    for i in 0..steps {
+        let obs_payloads = get_payloads(i);
         let step_start = Instant::now();
         let crystal = macro_step(&mut state, &obs_payloads, &config, &adapter)
             .unwrap_or(None);
@@ -356,7 +378,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
     }
 
     save_archive(&state.archive);
-    println!("\nRun complete. {} macro-steps executed.", ticks);
+    println!("\nRun complete. {} macro-steps executed.", steps);
     println!("Metrics written to {}", metrics_path.display());
 }
 
