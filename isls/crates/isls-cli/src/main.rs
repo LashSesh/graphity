@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use isls_types::{Config, RunDescriptor};
+use isls_types::{Config, Observation, RunDescriptor};
 use isls_engine::{GlobalState, macro_step};
 use isls_observe::PassthroughAdapter;
 use isls_archive::Archive;
@@ -20,7 +20,7 @@ use isls_harness::{
 #[derive(Debug)]
 enum Command {
     Init,
-    Ingest { adapter: String, path: Option<String>, entities: Option<usize> },
+    Ingest { adapter: String, path: Option<String>, entities: Option<usize>, scenario: Option<String> },
     Run { replay: Option<String>, mode: RunMode, ticks: usize },
     Bench,
     Validate { formal: bool, retro: bool },
@@ -52,7 +52,10 @@ fn parse_args(args: &[String]) -> Command {
             let entities = args.iter().position(|a| a == "--entities")
                 .and_then(|i| args.get(i + 1))
                 .and_then(|s| s.parse().ok());
-            Command::Ingest { adapter, path, entities }
+            let scenario = args.iter().position(|a| a == "--scenario")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Ingest { adapter, path, entities, scenario }
         }
         "run" => {
             let replay = args.iter().position(|a| a == "--replay")
@@ -216,19 +219,33 @@ fn cmd_init() {
     println!("  isls status");
 }
 
-fn cmd_ingest(adapter_name: &str, path: Option<&str>, entities: Option<usize>) {
+fn cmd_ingest(adapter_name: &str, path: Option<&str>, entities: Option<usize>, scenario: Option<&str>) {
     ensure_dirs().expect("failed to create ISLS directories");
-    let config = load_config();
     let n = entities.unwrap_or(500);
 
     println!("Ingesting via adapter '{}' (entities: {})...", adapter_name, n);
 
     match adapter_name {
         "synthetic" => {
-            let kind = ScenarioKind::SBasic;
+            let kind = match scenario.unwrap_or("S-Basic") {
+                "S-Regime" | "SRegime" => ScenarioKind::SRegime,
+                "S-Causal" | "SCausal" => ScenarioKind::SCausal,
+                "S-Break"  | "SBreak"  => ScenarioKind::SBreak,
+                "S-Scale"  | "SScale"  => ScenarioKind::SScale,
+                _                      => ScenarioKind::SBasic,
+            };
             let mut gen = SyntheticGenerator::reference(kind);
             let windows = gen.generate();
-            println!("Generated {} observation windows, {} entities each.", windows.len(), n.min(windows.first().map(|w| w.len()).unwrap_or(0)));
+            let entity_count = windows.first().map(|w| w.len()).unwrap_or(0);
+            // Persist each window as one JSONL line so cmd_run can load them.
+            let windows_path = isls_dir().join("data/hot/windows.jsonl");
+            let lines: String = windows.iter()
+                .filter_map(|w| serde_json::to_string(w).ok())
+                .map(|s| s + "\n")
+                .collect();
+            std::fs::write(&windows_path, lines).expect("failed to write windows");
+            println!("Generated {} observation windows, {} entities each.", windows.len(), entity_count);
+            println!("Saved to {}", windows_path.display());
             println!("Data ready for `isls run`.");
         }
         "file-csv" => {
@@ -271,15 +288,35 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
     let mut state = GlobalState::new(&config);
     let adapter = PassthroughAdapter::new("isls-run");
     let mut collector = MetricCollector::new();
-    let start = Instant::now();
     let metrics_path = isls_dir().join("metrics/metrics.jsonl");
     let alerts_path = isls_dir().join("metrics/alerts.jsonl");
 
-    // Run a few steps with synthetic data for demonstration
-    let mut gen = SyntheticGenerator::reference(ScenarioKind::SBasic);
-    let windows = gen.generate();
+    // Load observation windows that were previously written by `ingest`.
+    // Fall back to fresh synthetic data only if nothing has been ingested yet.
+    let windows: Vec<Vec<Observation>> = {
+        let windows_path = isls_dir().join("data/hot/windows.jsonl");
+        if windows_path.exists() {
+            let s = std::fs::read_to_string(&windows_path).unwrap_or_default();
+            let loaded: Vec<Vec<Observation>> = s.lines()
+                .filter_map(|line| serde_json::from_str(line).ok())
+                .collect();
+            if !loaded.is_empty() {
+                loaded
+            } else {
+                let mut gen = SyntheticGenerator::reference(ScenarioKind::SBasic);
+                gen.generate()
+            }
+        } else {
+            println!("Warning: no ingested data found at ~/.isls/data/hot/windows.jsonl");
+            println!("Run `isls ingest` first for best results. Falling back to fresh synthetic data.");
+            let mut gen = SyntheticGenerator::reference(ScenarioKind::SBasic);
+            gen.generate()
+        }
+    };
+    let n_windows = windows.len();
 
-    for (i, window) in windows.iter().take(ticks).enumerate() {
+    for i in 0..ticks {
+        let window = &windows[i % n_windows];
         let obs_payloads: Vec<Vec<u8>> = window.iter().map(|o| o.payload.clone()).collect();
         let step_start = Instant::now();
         let crystal = macro_step(&mut state, &obs_payloads, &config, &adapter)
@@ -319,7 +356,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
     }
 
     save_archive(&state.archive);
-    println!("\nRun complete. {} macro-steps executed.", windows.len().min(ticks));
+    println!("\nRun complete. {} macro-steps executed.", ticks);
     println!("Metrics written to {}", metrics_path.display());
 }
 
@@ -632,8 +669,8 @@ fn main() {
 
     match cmd {
         Command::Init => cmd_init(),
-        Command::Ingest { adapter, path, entities } => {
-            cmd_ingest(&adapter, path.as_deref(), entities);
+        Command::Ingest { adapter, path, entities, scenario } => {
+            cmd_ingest(&adapter, path.as_deref(), entities, scenario.as_deref());
         }
         Command::Run { replay, mode, ticks } => {
             cmd_run(replay.as_deref(), mode, ticks);
