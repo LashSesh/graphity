@@ -245,6 +245,13 @@ impl SyntheticGenerator {
         let n = self.scenario.entities;
         let w = self.scenario.windows;
 
+        eprintln!("S-Basic: planting {} constraints", self.scenario.planted_constraints.len());
+        for pc in &self.scenario.planted_constraints {
+            eprintln!("  planted {:?} '{}': windows {}..={}, strength={:.3}, params={:?}",
+                      pc.template, pc.id, pc.active_from, pc.active_until,
+                      pc.strength, pc.parameters);
+        }
+
         let mut current_regime = RegimeType::Normal;
         let mut result = Vec::with_capacity(w);
 

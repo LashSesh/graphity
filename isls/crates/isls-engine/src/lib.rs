@@ -254,9 +254,21 @@ pub fn macro_step(
     // Kairos gate check (Inv I9, Inv I18)
     let gate = metrics.gate_snapshot(&config.thresholds);
     if !gate.kairos {
+        // Report which individual gates are failing so we can tune thresholds.
+        eprintln!("tick {}: kairos FAILED — d={:.4}(need>={:.4}) q={:.4}(need>={:.4}) r={:.4}(need>={:.4}) g={:.4}(need>={:.4}) j={:.4}(need>={:.4}) p={:.4}(need>={:.4}) n={:.4}(need>={:.4}) k={:.4}(need>={:.4})",
+                  state.commit_index,
+                  gate.d, config.thresholds.d,
+                  gate.q, config.thresholds.q,
+                  gate.r, config.thresholds.r,
+                  gate.g, config.thresholds.g,
+                  gate.j, config.thresholds.j,
+                  gate.p, config.thresholds.p,
+                  gate.n, config.thresholds.n,
+                  gate.k, config.thresholds.k);
         state.engine_state = EngineState::Rejected("kairos failed".into());
         return Ok(None);
     }
+    eprintln!("tick {}: kairos PASSED", state.commit_index);
     state.engine_state = EngineState::KairosPrimed;
 
     // L2: Constraint extraction (ECLS assimilated)
@@ -264,6 +276,9 @@ pub fn macro_step(
     let library = default_operator_library();
     let window = TimeWindow::all();
     let (program, region) = inverse_weave(&state.graph, &window, &library, &config.extraction);
+    eprintln!("tick {}: extracted {} constraints, {} region vertices, graph has {} vertices {} edges",
+              state.commit_index, program.len(), region.len(),
+              state.graph.graph.node_count(), state.graph.graph.edge_count());
 
     // Operators: projection
     state.engine_state = EngineState::Projecting;
