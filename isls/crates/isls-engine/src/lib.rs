@@ -216,6 +216,13 @@ pub fn macro_step(
     config: &Config,
     adapter: &dyn ObservationAdapter,
 ) -> Result<Option<SemanticCrystal>> {
+    // Unconditionally advance the macro-step counter so diagnostics and
+    // downstream metrics always see a monotonically increasing tick index,
+    // regardless of whether the step ends in a crystal commit or a gate
+    // rejection.  Previously commit_index only incremented on a successful
+    // crystal, causing all ticks to be reported as "tick 0".
+    state.commit_index += 1;
+
     let ctx = MeasurementContext::default();
 
     // L0: Canonicalize observations
@@ -232,10 +239,28 @@ pub fn macro_step(
 
     // Embedding + Mandorla
     state.engine_state = EngineState::Embedding;
-    // Update carrier phase
-    let carrier = &state.phase_ladder[state.active_carrier];
-    let (ha, hb) = helix_pair(carrier.helix_a.tau + config.temporal.dt2, carrier.helix_a.phi, carrier.helix_a.r);
+    // Advance the active carrier's phase by one dt2 step and recompute its
+    // mandorla.  Previously (ha, hb, mand) were computed locally but never
+    // written back, so carrier.helix_a.tau was always the initial value and
+    // the carrier state never accumulated across ticks.
+    let (ha, hb) = {
+        let carrier = &state.phase_ladder[state.active_carrier];
+        helix_pair(
+            carrier.helix_a.tau + config.temporal.dt2,
+            carrier.helix_a.phi,
+            carrier.helix_a.r,
+        )
+    };
     let mand = mandorla(&ha, &hb, config.carrier.lambda, config.carrier.mu_r);
+
+    // Write the new helix positions and mandorla back into the phase ladder so
+    // the next tick picks up from where this one left off.
+    {
+        let carrier_mut = &mut state.phase_ladder[state.active_carrier];
+        carrier_mut.helix_a = ha;
+        carrier_mut.helix_b = hb;
+        carrier_mut.mandorla = mand.clone();
+    }
 
     state.engine_state = EngineState::MandorlaForming;
 
@@ -365,7 +390,8 @@ pub fn macro_step(
     // Commit (append to immutable archive, Inv I10)
     state.archive.append(crystal.clone());
     state.engine_state = EngineState::Committed;
-    state.commit_index += 1;
+    // commit_index is already incremented unconditionally at the top of
+    // macro_step; do not increment again here.
 
     // L4: Morphogenic update (Inv I11: non-retroactive)
     morphogenic_update(&mut state.graph, &mut state.morph, &[crystal.clone()], &config.adaptation);
