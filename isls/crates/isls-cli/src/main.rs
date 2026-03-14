@@ -7,13 +7,70 @@ use std::time::Instant;
 
 use isls_types::{Config, RunDescriptor};
 use isls_engine::{GlobalState, macro_step};
-use isls_observe::PassthroughAdapter;
+use isls_observe::{ObservationAdapter, PassthroughAdapter};
 use isls_archive::Archive;
 use isls_harness::{
     BenchSuite, FormalValidator, FullReport, MetricCollector, MetricSnapshot,
     ReportGenerator, RetroValidator, ScenarioKind, SyntheticGenerator, SystemOverview,
     generate_iteration_guidance, AlertLevel,
 };
+
+// ─── JSON Entity Adapter ──────────────────────────────────────────────────────
+
+/// Adapter that derives source_id from the "entity" field in a JSON payload.
+/// Payloads written by `ingest` / the synthetic generator have the form
+/// `{"entity":<N>,"value":<f>,"window":<W>}`.  Extracting entity N and
+/// using its string representation ("0", "1", …) as source_id exactly
+/// matches what the synthetic generator sets on the original Observation
+/// structs, so the persist layer maps each payload back to its stable vertex.
+struct JsonEntityAdapter {
+    fallback_id: String,
+}
+
+impl JsonEntityAdapter {
+    fn new(fallback_id: impl Into<String>) -> Self {
+        Self { fallback_id: fallback_id.into() }
+    }
+}
+
+impl ObservationAdapter for JsonEntityAdapter {
+    fn source_id(&self) -> &str {
+        &self.fallback_id
+    }
+
+    fn canonicalize(
+        &self,
+        raw: &[u8],
+        context: &isls_types::MeasurementContext,
+    ) -> isls_observe::Result<isls_types::Observation> {
+        let payload = raw.to_vec();
+        let digest = isls_types::content_address_raw(&payload);
+
+        // Extract the entity index from the JSON payload and use it as
+        // source_id so every observation for entity N always maps to the
+        // same vertex, regardless of which window it came from.
+        let source_id = std::str::from_utf8(raw)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| v["entity"].as_u64())
+            .map(|e| e.to_string())
+            .unwrap_or_else(|| self.fallback_id.clone());
+
+        Ok(isls_types::Observation {
+            timestamp: 0.0,
+            source_id,
+            provenance: isls_types::ProvenanceEnvelope {
+                origin: self.fallback_id.clone(),
+                chain: Vec::new(),
+                sig: None,
+            },
+            payload,
+            context: context.clone(),
+            digest,
+            schema_version: "1.0.0".to_string(),
+        })
+    }
+}
 
 // ─── CLI Argument Parsing (no external deps) ─────────────────────────────────
 
@@ -292,7 +349,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
     println!("(Press Ctrl+C to stop)");
 
     let mut state = GlobalState::new(&config);
-    let adapter = PassthroughAdapter::new("isls-run");
+    let adapter = JsonEntityAdapter::new("isls-run");
     let mut collector = MetricCollector::new();
     let metrics_path = isls_dir().join("metrics/metrics.jsonl");
     let alerts_path = isls_dir().join("metrics/alerts.jsonl");
