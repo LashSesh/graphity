@@ -194,8 +194,12 @@ impl PersistentGraph {
             self.upsert_vertex(vid, timestamp);
 
             // 2. Update edge annotations via payload
-            // Decode pairs from payload if possible (format: pairs of u64 vertex IDs)
-            if obs.payload.len() >= 16 {
+            // Decode pairs from payload if possible (format: pairs of u64 vertex IDs).
+            // Guard: only treat payload as binary edge data when it is NOT valid UTF-8.
+            // JSON/text payloads are always valid UTF-8; interpreting their bytes as
+            // raw u64 pairs creates phantom vertices from ASCII character codes and is
+            // the root cause of unbounded entity-count growth.
+            if obs.payload.len() >= 16 && std::str::from_utf8(&obs.payload).is_err() {
                 let chunks = obs.payload.chunks_exact(16);
                 for chunk in chunks {
                     let from_bytes: [u8; 8] = chunk[0..8].try_into().unwrap_or([0u8; 8]);
