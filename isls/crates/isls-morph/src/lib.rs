@@ -61,11 +61,16 @@ impl MorphState {
 fn compute_pressure(
     graph: &PersistentGraph,
     morph_state: &MorphState,
-    config: &AdaptationConfig,
+    _config: &AdaptationConfig,
 ) -> BTreeMap<VertexId, f64> {
     let mut pressure = BTreeMap::new();
 
     for (vid, embedding) in &graph.embedding {
+        // Skip unobserved vertices (splits/replicants with zero embedding) —
+        // their large distance from the attractor would cause runaway fission.
+        if embedding.norm_sq() < 1e-9 {
+            continue;
+        }
         // Phi(x,t): gradient flow potential = ||H - H*||^2 (distance from attractor)
         let phi = embedding.distance(&morph_state.attractor);
         // mu(x,t): current morphogenic activation (from pressure map or 0)
@@ -110,11 +115,8 @@ fn apply_mutation(
             if let (Some(&from_idx), Some(&to_idx)) =
                 (graph.id_map.get(from), graph.id_map.get(to))
             {
-                if let Some(edge_idx) = graph.graph.find_edge(from_idx, to_idx) {
-                    if let Some(ann) = graph.graph.edge_weight_mut(edge_idx) {
-                        ann.last_update = ann.last_update; // preserve annotation
-                    }
-                }
+                // Edge exists; annotation preserved as-is
+                let _ = graph.graph.find_edge(from_idx, to_idx);
             }
         }
         MorphMutation::SubgraphReplicate { vertices } => {
@@ -187,7 +189,7 @@ pub fn compute_attractor_centroid(
 pub fn morphogenic_update(
     graph: &mut PersistentGraph,
     morph_state: &mut MorphState,
-    crystals: &[SemanticCrystal],
+    _crystals: &[SemanticCrystal],
     config: &AdaptationConfig,
 ) -> Vec<MorphMutation> {
     let mut mutations = Vec::new();
@@ -205,21 +207,32 @@ pub fn morphogenic_update(
         }
     }
 
-    // Node merges: pairs of vertices within merge_distance
+    // Node merges: pick up to 5 closest pairs within merge_distance.
+    // Merging ALL pairs is O(n²) and creates excessive synthetic vertices;
+    // a greedy top-K approach preserves the merge semantics while bounding growth.
     {
-        let vids: Vec<VertexId> = graph.embedding.keys().copied().collect();
-        for i in 0..vids.len() {
-            for j in (i + 1)..vids.len() {
+        let vids: Vec<VertexId> = graph.embedding.keys()
+            .filter(|&&vid| graph.embedding.get(&vid).map(|e| e.norm_sq() > 1e-9).unwrap_or(false))
+            .copied()
+            .collect();
+        let mut candidates: Vec<(f64, VertexId, VertexId)> = Vec::new();
+        for i in 0..vids.len().min(200) {
+            for j in (i + 1)..vids.len().min(200) {
                 let vi = vids[i];
                 let vj = vids[j];
                 if let (Some(si), Some(sj)) =
                     (graph.embedding.get(&vi), graph.embedding.get(&vj))
                 {
-                    if si.distance(sj) < config.merge_distance {
-                        mutations.push(MorphMutation::NodeMerge { u: vi, v: vj });
+                    let d = si.distance(sj);
+                    if d < config.merge_distance {
+                        candidates.push((d, vi, vj));
                     }
                 }
             }
+        }
+        candidates.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        for (_, u, v) in candidates.into_iter().take(5) {
+            mutations.push(MorphMutation::NodeMerge { u, v });
         }
     }
 

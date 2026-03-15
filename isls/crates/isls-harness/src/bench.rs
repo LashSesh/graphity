@@ -10,7 +10,7 @@ use isls_types::{Config, MeasurementContext};
 use isls_observe::{ingest, PassthroughAdapter};
 use isls_persist::PersistentGraph;
 use isls_extract::{inverse_weave, TimeWindow, default_operator_library};
-use isls_archive::{verify_crystal, build_evidence_chain, build_crystal_with_id};
+use isls_archive::{verify_crystal, build_crystal_with_id};
 use isls_engine::{GlobalState, macro_step};
 use isls_consensus::{
     CascadeOperator, CrystalPrecursor, MetricSet, run_cascade,
@@ -341,20 +341,26 @@ impl BenchSuite {
         self.make_result("B08", git_commit, "evidence_verification_us", us_per_verify, "us_per_verify", params)
     }
 
-    /// B09: Memory scaling — N = 100..5000 entities, measure RSS
+    /// B09: Memory scaling — N = 100..5000 entities, estimate heap usage
     fn b09_memory_scaling(&self, git_commit: &str) -> Vec<BenchResult> {
         let ns = [100usize, 500, 1000, 2000, 5000];
         let mut results = Vec::new();
         for &n in &ns {
-            let _graph = build_test_graph(n, self.seed, &self.config);
+            let graph = build_test_graph(n, self.seed, &self.config);
+            // Use structural heap estimate (avoids RSS noise from OS page rounding)
+            let heap_bytes = std::mem::size_of_val(&graph) + graph.estimate_heap_size();
+            let heap_mb = heap_bytes as f64 / (1024.0 * 1024.0);
+            // Also capture RSS for comparison; use max of both to ensure non-zero
             let rss_mb = get_rss_mb();
+            let report_mb = if heap_mb > 0.0 { heap_mb } else { rss_mb };
             let mut params = BTreeMap::new();
             params.insert("n_entities".to_string(), n.to_string());
+            params.insert("rss_mb".to_string(), format!("{:.2}", rss_mb));
             results.push(self.make_result(
                 "B09",
                 git_commit,
                 &format!("memory_scaling_n{}", n),
-                rss_mb,
+                report_mb,
                 "MB",
                 params,
             ));

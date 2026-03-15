@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use isls_types::{
-    content_address, content_address_raw, EvidenceChain, EvidenceEntry, Hash256,
+    content_address, content_address_raw, EvidenceChain, EvidenceEntry,
     ProvenanceEnvelope, SemanticCrystal,
 };
 use thiserror::Error;

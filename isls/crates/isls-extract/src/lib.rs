@@ -94,7 +94,7 @@ impl Operator for CorrelationOp {
     fn id(&self) -> &str { "correlation" }
     fn version(&self) -> &str { "1.0.0" }
     fn template(&self) -> ConstraintTemplate { ConstraintTemplate::Correlation }
-    fn evaluate(&self, input: &FiveDState, params: &BTreeMap<String, f64>) -> f64 {
+    fn evaluate(&self, input: &FiveDState, _params: &BTreeMap<String, f64>) -> f64 {
         // Normalized dot product as correlation proxy
         let norm_sq = input.norm_sq();
         if norm_sq < 1e-10 { 0.0 } else { (1.0 - 1.0 / (1.0 + norm_sq)).min(1.0) }

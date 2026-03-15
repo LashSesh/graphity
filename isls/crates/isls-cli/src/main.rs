@@ -7,12 +7,12 @@ use std::time::Instant;
 
 use isls_types::{Config, RunDescriptor};
 use isls_engine::{GlobalState, macro_step};
-use isls_observe::{ObservationAdapter, PassthroughAdapter};
+use isls_observe::ObservationAdapter;
 use isls_archive::Archive;
 use isls_harness::{
     BenchSuite, FormalValidator, FullReport, MetricCollector, MetricSnapshot,
     ReportGenerator, RetroValidator, ScenarioKind, SyntheticGenerator, SystemOverview,
-    generate_iteration_guidance, AlertLevel,
+    generate_iteration_guidance,
 };
 
 // ─── JSON Entity Adapter ──────────────────────────────────────────────────────
@@ -229,7 +229,7 @@ fn append_jsonl(path: &PathBuf, line: &str) {
 
 // ─── Metric Helpers ───────────────────────────────────────────────────────────
 
-fn build_snapshot_from_state(state: &GlobalState, collector: &mut MetricCollector) -> MetricSnapshot {
+fn build_snapshot_from_state(state: &GlobalState, collector: &mut MetricCollector, basket_lift: f64) -> MetricSnapshot {
     let active_v = state.graph.active_vertices().len();
     let archive_len = state.archive.len();
     collector.collect(
@@ -245,7 +245,7 @@ fn build_snapshot_from_state(state: &GlobalState, collector: &mut MetricCollecto
         100.0, // extraction throughput
         0.0,   // carrier migration latency
         active_v,
-        0.1,   // basket quality lift
+        basket_lift,
     )
 }
 
@@ -395,12 +395,47 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
             (actual, Box::new(move |i| synthetic[i % n].clone()))
         };
 
+    let mut prev_constraints: usize = 0;
+    let mut constraint_first_seen_step: Option<usize> = None;
+
     for i in 0..steps {
         let obs_payloads = get_payloads(i);
         let step_start = Instant::now();
         let crystal = macro_step(&mut state, &obs_payloads, &config, &adapter)
             .unwrap_or(None);
         let step_secs = step_start.elapsed().as_secs_f64();
+
+        let active_constraints = state.candidates.len();
+
+        // M20: record whether constraints from previous tick are still active
+        if prev_constraints > 0 {
+            collector.record_constraint_hit(active_constraints >= prev_constraints);
+        }
+
+        // M22: track when constraints first appear; record lead time on crystal
+        if active_constraints > 0 && constraint_first_seen_step.is_none() {
+            constraint_first_seen_step = Some(i);
+        }
+        if let Some(ref c) = crystal {
+            if let Some(first) = constraint_first_seen_step {
+                let lead_steps = (i - first) as f64;
+                collector.record_lead_time(lead_steps * step_secs.max(0.001));
+            }
+            // M21: crystal passed consensus → predictive value = stability_score > threshold
+            collector.record_prediction_outcome(
+                c.stability_score > config.consensus.consensus_threshold,
+            );
+        }
+
+        prev_constraints = active_constraints;
+
+        // M23: basket quality lift = constraint coverage change per step
+        let coverage_before = prev_constraints as f64;
+        let basket_lift = if coverage_before > 0.0 {
+            (active_constraints as f64 - coverage_before) / coverage_before
+        } else {
+            0.0
+        };
 
         collector.record_ingestion(obs_payloads.len() as u64);
         collector.record_macro_step(
@@ -411,8 +446,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
             crystal.as_ref().map(|c| c.commit_proof.consensus_result.mci),
             None,
         );
-
-        let snap = build_snapshot_from_state(&state, &mut collector);
+        let snap = build_snapshot_from_state(&state, &mut collector, basket_lift);
         append_jsonl(&metrics_path, &MetricCollector::to_jsonl(&snap));
 
         let alerts = collector.check_alerts(&snap);
@@ -439,7 +473,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
     println!("Metrics written to {}", metrics_path.display());
 }
 
-fn cmd_run_replay(path: &str, config: &Config) {
+fn cmd_run_replay(path: &str, _config: &Config) {
     println!("Replaying from descriptor: {}", path);
     let descriptor_json = std::fs::read_to_string(path)
         .unwrap_or_else(|_| {
@@ -564,11 +598,21 @@ fn cmd_report(json: bool, html: bool) {
     let archive = load_archive();
     let mut collector = MetricCollector::new();
 
-    // Build a default state for reporting
-    let _state = GlobalState::new(&config);
-    let snap = collector.collect(
-        0, 0, 0, archive.len(), 0, 1.0, 0, 0, 0, 100.0, 0.0, 0, 0.1,
-    );
+    // Load last MetricSnapshot from metrics.jsonl written by `run`
+    let metrics_path = isls_dir().join("metrics/metrics.jsonl");
+    let snap = std::fs::read_to_string(&metrics_path)
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .filter(|l| !l.is_empty())
+                .last()
+                .and_then(|line| serde_json::from_str::<MetricSnapshot>(line).ok())
+        })
+        .unwrap_or_else(|| {
+            collector.collect(0, 0, 0, archive.len(), 0, 1.0, 0, 0, 0, 100.0, 0.0, 0, 0.1)
+        });
+
+    let entity_count = snap.m24_coverage_growth;
 
     let alerts = collector.check_alerts(&snap);
     let health = MetricCollector::overall_health(&snap);
@@ -577,11 +621,44 @@ fn cmd_report(json: bool, html: bool) {
     let overview = SystemOverview {
         version: "1.0.0".to_string(),
         uptime_secs: 0,
-        entity_count: 0,
+        entity_count,
         edge_count: 0,
         crystal_count: archive.len(),
         storage_bytes: 0,
         generated_at: chrono::Utc::now(),
+    };
+
+    // Build validation HTML fragment from formal validator
+    let validation_html = {
+        let pinned = BTreeMap::new();
+        let vr = FormalValidator::validate(&archive, &pinned);
+        if vr.total_crystals == 0 {
+            String::new()
+        } else {
+            let pass_color = if vr.failed_crystals == 0 { "#059669" } else { "#DC2626" };
+            let mut html = format!(
+                "<p>Total: <b>{}</b> &nbsp; Passed: <b style='color:{}'>{}</b> &nbsp; Failed: <b>{}</b> &nbsp; Pass rate: <b>{:.1}%</b></p>",
+                vr.total_crystals, pass_color, vr.passed_crystals, vr.failed_crystals,
+                vr.pass_rate() * 100.0
+            );
+            // Crystal details table
+            html.push_str("<table><thead><tr><th>Crystal ID</th>");
+            let check_names = ["content_address","evidence_chain","operator_versions","gate_kairos","dual_consensus","por_trace","free_energy","immutability"];
+            for c in check_names { html.push_str(&format!("<th>{}</th>", c)); }
+            html.push_str("</tr></thead><tbody>");
+            for cr in &vr.crystal_results {
+                let short_id = if cr.crystal_id.len() > 16 { &cr.crystal_id[..16] } else { &cr.crystal_id };
+                let row_color = if cr.all_passed { "#059669" } else { "#DC2626" };
+                html.push_str(&format!("<tr><td style='font-family:monospace;color:{}'>{}</td>", row_color, short_id));
+                for check in check_names {
+                    let passed = cr.checks.iter().find(|c| c.check_id == check).map(|c| c.passed).unwrap_or(false);
+                    html.push_str(&format!("<td style='text-align:center'>{}</td>", if passed { "✓" } else { "✗" }));
+                }
+                html.push_str("</tr>");
+            }
+            html.push_str("</tbody></table>");
+            html
+        }
     };
 
     let report = FullReport {
@@ -591,16 +668,17 @@ fn cmd_report(json: bool, html: bool) {
         iteration_items: items.clone(),
         health: health.clone(),
         history_len: collector.history.len(),
+        validation_html,
     };
 
     if json {
         println!("{}", ReportGenerator::json(&report));
     } else if html {
         let html_content = ReportGenerator::html(&report);
-        // Write to file and print to stdout
-        let path = isls_dir().join("reports/latest.html");
+        let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+        let path = isls_dir().join(format!("reports/report-{}.html", ts));
         let _ = std::fs::write(&path, &html_content);
-        println!("{}", html_content);
+        println!("{}", path.display());
     } else {
         // Default: text report
         print_text_report(&report);
@@ -682,7 +760,7 @@ fn print_text_report(report: &FullReport) {
 
 fn cmd_status() {
     ensure_dirs().ok();
-    let config = load_config();
+    let _config = load_config();
     let archive = load_archive();
     let mut collector = MetricCollector::new();
 

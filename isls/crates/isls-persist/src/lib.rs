@@ -128,6 +128,21 @@ impl PersistentGraph {
         Self::default()
     }
 
+    /// Estimate heap size in bytes (structural estimate, not exact RSS)
+    pub fn estimate_heap_size(&self) -> usize {
+        use isls_types::{FiveDState, EdgeAnnotation};
+        let vertices = self.graph.node_count();
+        let edges = self.graph.edge_count();
+        // NodeIndex is usize; VertexId is u64
+        let id_map_bytes = self.id_map.len() * (std::mem::size_of::<u64>() + std::mem::size_of::<usize>());
+        let vertex_bytes = vertices * std::mem::size_of::<VertexData>();
+        let edge_bytes = edges * std::mem::size_of::<EdgeAnnotation>();
+        let embedding_bytes = self.embedding.len() * std::mem::size_of::<FiveDState>();
+        let history_bytes = self.history.len() * std::mem::size_of::<ObservationRecord>();
+        let tensor_bytes = self.tensor.len() * 64; // TensorArchive estimate per vertex
+        id_map_bytes + vertex_bytes + edge_bytes + embedding_bytes + history_bytes + tensor_bytes
+    }
+
     /// Upsert a vertex; returns its NodeIndex
     pub fn upsert_vertex(&mut self, id: VertexId, timestamp: f64) -> NodeIndex {
         if let Some(&nidx) = self.id_map.get(&id) {
@@ -385,8 +400,8 @@ fn fnv_to_unit(data: &[u8]) -> f64 {
 
 /// Derive a vertex ID from a string (deterministic, no rand)
 pub fn derive_vertex_id(s: &str) -> VertexId {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    
+    
     // Note: DefaultHasher is not guaranteed deterministic across runs in general,
     // but we use a FNV-like manual hash for determinism
     let bytes = s.as_bytes();
