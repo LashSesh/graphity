@@ -357,8 +357,8 @@ pub struct CarrierConfig {
 impl Default for CarrierConfig {
     fn default() -> Self {
         Self {
-            lambda: 1.0,
-            mu_r: 1.0,
+            lambda: 0.1,
+            mu_r: 0.3,
             lambda_q: 0.33,
             lambda_r: 0.33,
             lambda_m: 0.34,
@@ -517,12 +517,12 @@ impl Default for NormalizationConfig {
             mu_s: 1.0,
             lambda_r: 1.0,
             lambda_p: 1.0,
-            lambda_seam: 1.0,
+            lambda_seam: 0.1,
             gamma_d: 0.33,
             gamma_q: 0.33,
             gamma_r: 0.34,
-            lambda_c: 0.5,
-            lambda_e: 0.5,
+            lambda_c: 1.0,
+            lambda_e: 0.0,
         }
     }
 }
