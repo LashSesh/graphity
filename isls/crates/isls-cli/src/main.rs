@@ -233,7 +233,7 @@ fn build_snapshot_from_state(state: &GlobalState, collector: &mut MetricCollecto
     let active_v = state.graph.active_vertices().len();
     let archive_len = state.archive.len();
     collector.collect(
-        state.candidates.len(),
+        state.last_constraint_count,
         active_v,
         active_v, // edge count approximation
         archive_len,
@@ -405,7 +405,8 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
             .unwrap_or(None);
         let step_secs = step_start.elapsed().as_secs_f64();
 
-        let active_constraints = state.candidates.len();
+        // M3: read real constraint count extracted this tick by the engine
+        let active_constraints = state.last_constraint_count;
 
         // M20: record whether constraints from previous tick are still active
         if prev_constraints > 0 {
@@ -438,9 +439,10 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
         };
 
         collector.record_ingestion(obs_payloads.len() as u64);
+        // M9: pass real gate result so gate_selectivity reflects actual kairos passes
         collector.record_macro_step(
             step_secs,
-            false,
+            state.last_gate_passed,
             crystal.is_some(),
             crystal.as_ref().map(|c| c.free_energy),
             crystal.as_ref().map(|c| c.commit_proof.consensus_result.mci),

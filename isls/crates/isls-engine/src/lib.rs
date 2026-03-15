@@ -1,10 +1,11 @@
 // isls-engine: State machine, orchestrator (C9)
 // depends on all other crates
 
+use std::collections::BTreeMap;
 use isls_types::{
     CommitIndex, CommitProof, Config, FiveDState,
     MandorlaState, MeasurementContext, NullCenter, Observation, PhaseLadder,
-    RunDescriptor, SemanticCrystal,
+    RunDescriptor, SemanticCrystal, VertexId,
 };
 use isls_observe::{ingest, ObservationAdapter, PassthroughAdapter};
 use isls_persist::PersistentGraph;
@@ -77,6 +78,12 @@ pub struct GlobalState {
     pub archive: Archive,
     pub null_center: NullCenter, // Inv I13: always present, always empty
     pub t2: f64,                 // intrinsic time
+    /// Embeddings from the previous macro-step, used to compute d-metric (change).
+    pub prev_embeddings: BTreeMap<VertexId, FiveDState>,
+    /// Constraint count extracted during the last macro-step (for M3).
+    pub last_constraint_count: usize,
+    /// Whether the Kairos gate passed on the last macro-step (for M9).
+    pub last_gate_passed: bool,
 }
 
 impl GlobalState {
@@ -96,32 +103,59 @@ impl GlobalState {
             archive: Archive::new(),
             null_center: NullCenter,
             t2: 0.0,
+            prev_embeddings: BTreeMap::new(),
+            last_constraint_count: 0,
+            last_gate_passed: false,
         }
     }
 }
 
 // ─── Metric Computation ───────────────────────────────────────────────────────
 
-/// Compute all metrics from the current graph, mandorla, and H5 state
+/// Compute all metrics from the current graph, mandorla, and H5 state.
+/// `prev_embeddings` holds embeddings from the previous macro-step and is used
+/// to compute the deformation metric d as the mean relative change per vertex.
 pub fn compute_all_metrics(
     graph: &PersistentGraph,
     mandorla: &MandorlaState,
     h5: &FiveDState,
     config: &Config,
+    prev_embeddings: &BTreeMap<VertexId, FiveDState>,
 ) -> MetricSet {
     let norm = &config.normalization;
 
-    // D: deformation metric — average norm of OBSERVED embeddings only.
-    // Split/replicated vertices inherit FiveDState::default() (all zeros) and must
-    // be excluded so that morphogenic growth does not dilute the diversity signal.
-    let avg_norm: f64 = {
-        let observed: Vec<f64> = graph.embedding.values()
-            .map(|s| s.norm_sq().sqrt())
-            .filter(|&n| n > 1e-9)
+    // D: deformation metric — mean relative embedding change since the last tick.
+    // On the first tick prev_embeddings is empty; treat that as maximum novelty (0.75).
+    // Zero-embedding vertices (split/replicated) are excluded from both numerator
+    // and denominator so morphogenic growth does not dilute the signal.
+    let d_raw: f64 = if prev_embeddings.is_empty() {
+        // First tick: no prior state → maximum novelty
+        0.75
+    } else {
+        let samples: Vec<f64> = graph.embedding.iter()
+            .filter_map(|(vid, curr)| {
+                let curr_norm = curr.norm_sq().sqrt();
+                if curr_norm < 1e-9 { return None; }
+                let prev = prev_embeddings.get(vid)?;
+                let prev_norm = prev.norm_sq().sqrt();
+                if prev_norm < 1e-9 { return None; }
+                // Euclidean distance in 5-D embedding space
+                let dp = curr.p   - prev.p;
+                let dr = curr.rho - prev.rho;
+                let dw = curr.omega - prev.omega;
+                let dc = curr.chi  - prev.chi;
+                let de = curr.eta  - prev.eta;
+                let diff = (dp*dp + dr*dr + dw*dw + dc*dc + de*de).sqrt();
+                Some(diff / (curr_norm + 1e-9))
+            })
             .collect();
-        if observed.is_empty() { 0.0 } else { observed.iter().sum::<f64>() / observed.len() as f64 }
+        if samples.is_empty() {
+            // No vertices matched previous tick → treat as highly novel
+            0.75
+        } else {
+            samples.iter().sum::<f64>() / samples.len() as f64
+        }
     };
-    let d_raw = avg_norm;
     let d = isls_consensus::norm_saturate(d_raw, norm.mu_d);
 
     // Q: coherence (from mandorla kappa)
@@ -268,7 +302,9 @@ pub fn macro_step(
 
     // Resonance evaluation
     state.engine_state = EngineState::Resonating;
-    let metrics = compute_all_metrics(&state.graph, &mand, &state.h5_state, config);
+    let metrics = compute_all_metrics(&state.graph, &mand, &state.h5_state, config, &state.prev_embeddings);
+    // Save current embeddings for next tick's d-metric computation
+    state.prev_embeddings = state.graph.embedding.clone();
 
     // Check friction/shock -> migration
     if metrics.f_friction >= config.thresholds.f_friction
@@ -280,6 +316,7 @@ pub fn macro_step(
 
     // Kairos gate check (Inv I9, Inv I18)
     let gate = metrics.gate_snapshot(&config.thresholds);
+    state.last_gate_passed = gate.kairos;
     if !gate.kairos {
         // Report which individual gates are failing so we can tune thresholds.
         eprintln!("tick {}: kairos FAILED — d={:.4}(need>={:.4}) q={:.4}(need>={:.4}) r={:.4}(need>={:.4}) g={:.4}(need>={:.4}) j={:.4}(need>={:.4}) p={:.4}(need>={:.4}) n={:.4}(need>={:.4}) k={:.4}(need>={:.4})",
@@ -303,6 +340,7 @@ pub fn macro_step(
     let library = default_operator_library();
     let window = TimeWindow::all();
     let (program, region) = inverse_weave(&state.graph, &window, &library, &config.extraction);
+    state.last_constraint_count = program.len();
     eprintln!("tick {}: extracted {} constraints, {} region vertices, graph has {} vertices {} edges",
               state.commit_index, program.len(), region.len(),
               state.graph.graph.node_count(), state.graph.graph.edge_count());
