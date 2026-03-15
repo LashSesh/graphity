@@ -135,8 +135,8 @@ fn parse_args(args: &[String]) -> Command {
             Command::Validate { formal: formal || (!formal && !retro), retro }
         }
         "report" => {
-            let json = args.contains(&"--json".to_string());
-            let html = args.contains(&"--html".to_string());
+            let json = args.contains(&"--json".to_string()) || args.contains(&"json".to_string());
+            let html = args.contains(&"--html".to_string()) || args.contains(&"html".to_string());
             Command::Report { json, html }
         }
         "status" => Command::Status,
@@ -675,7 +675,7 @@ fn cmd_report(json: bool, html: bool) {
         println!("{}", ReportGenerator::json(&report));
     } else if html {
         let html_content = ReportGenerator::html(&report);
-        let ts = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
+        let ts = chrono::Utc::now().format("%Y%m%d-%H%M%S");
         let path = isls_dir().join(format!("reports/report-{}.html", ts));
         let _ = std::fs::write(&path, &html_content);
         println!("{}", path.display());
@@ -920,6 +920,20 @@ mod tests {
             Command::Report { html: true, .. } => {}
             _ => panic!("expected Report html"),
         }
+    }
+
+    #[test]
+    fn test_parse_report_html_positional() {
+        let cmd = parse_args(&args(&["isls", "report", "html"]));
+        match cmd {
+            Command::Report { html: true, .. } => {}
+            _ => panic!("expected Report html from positional arg"),
+        }
+    }
+
+    #[test]
+    fn test_report_html_runs() {
+        cmd_report(false, true);
     }
 
     #[test]
