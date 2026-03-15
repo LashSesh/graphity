@@ -510,7 +510,7 @@ pub struct NormalizationConfig {
 impl Default for NormalizationConfig {
     fn default() -> Self {
         Self {
-            mu_d: 1.0,
+            mu_d: 0.20, // calibrated for relative-change d-metric (d_raw ≈ 0.15–0.35)
             mu_q: 1.0,
             mu_j: 1.0,
             mu_f: 1.0,
