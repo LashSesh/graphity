@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use isls_types::{ConstraintCandidate, ConstraintTemplate, ConstraintProgram, Observation,
+use isls_types::{ConstraintTemplate, ConstraintProgram, Observation,
                   MeasurementContext, ProvenanceEnvelope, content_address_raw};
 
 // ─── Regime Type ──────────────────────────────────────────────────────────────
@@ -398,6 +398,7 @@ impl SyntheticGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use isls_types::ConstraintCandidate;
 
     #[test]
     fn test_s_basic_generates_observations() {
