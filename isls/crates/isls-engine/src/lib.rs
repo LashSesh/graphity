@@ -379,7 +379,7 @@ pub fn macro_step(
         region,
         stability_score,
         state.commit_index,
-        0.0, // free_energy computed separately
+        -(program.len() as f64) * stability_score,
         state.active_carrier,
         program,
         commit_proof,

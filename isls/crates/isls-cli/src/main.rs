@@ -564,11 +564,21 @@ fn cmd_report(json: bool, html: bool) {
     let archive = load_archive();
     let mut collector = MetricCollector::new();
 
-    // Build a default state for reporting
-    let _state = GlobalState::new(&config);
-    let snap = collector.collect(
-        0, 0, 0, archive.len(), 0, 1.0, 0, 0, 0, 100.0, 0.0, 0, 0.1,
-    );
+    // Load last MetricSnapshot from metrics.jsonl written by `run`
+    let metrics_path = isls_dir().join("metrics/metrics.jsonl");
+    let snap = std::fs::read_to_string(&metrics_path)
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .filter(|l| !l.is_empty())
+                .last()
+                .and_then(|line| serde_json::from_str::<MetricSnapshot>(line).ok())
+        })
+        .unwrap_or_else(|| {
+            collector.collect(0, 0, 0, archive.len(), 0, 1.0, 0, 0, 0, 100.0, 0.0, 0, 0.1)
+        });
+
+    let entity_count = snap.m24_coverage_growth;
 
     let alerts = collector.check_alerts(&snap);
     let health = MetricCollector::overall_health(&snap);
@@ -577,7 +587,7 @@ fn cmd_report(json: bool, html: bool) {
     let overview = SystemOverview {
         version: "1.0.0".to_string(),
         uptime_secs: 0,
-        entity_count: 0,
+        entity_count,
         edge_count: 0,
         crystal_count: archive.len(),
         storage_bytes: 0,
