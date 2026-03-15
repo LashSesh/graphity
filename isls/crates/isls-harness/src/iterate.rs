@@ -68,7 +68,7 @@ impl IterationItem {
 /// Implements all 10 diagnosis rules from the specification.
 pub fn generate_iteration_guidance(
     metrics: &MetricSnapshot,
-    config: &Config,
+    _config: &Config,
 ) -> Vec<IterationItem> {
     let mut items = Vec::new();
 

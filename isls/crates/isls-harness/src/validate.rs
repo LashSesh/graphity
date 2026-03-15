@@ -2,10 +2,9 @@
 // V-Formal, V-Retro, V-Live validation levels
 
 use std::collections::BTreeMap;
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use isls_types::{content_address, SemanticCrystal};
+use isls_types::SemanticCrystal;
 use isls_archive::{Archive, verify_crystal};
 use isls_persist::PersistentGraph;
 

@@ -1,7 +1,6 @@
 // isls-harness/src/metrics.rs
 // 24 metrics (M1-M24) with collection, alert thresholds, and persistence
 
-use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
@@ -380,31 +379,31 @@ impl MetricCollector {
         // M19: carrier migration latency
         let m19 = carrier_migration_latency_secs;
 
-        // M20: constraint hit rate
+        // M20: constraint hit rate — 0.0 until actual samples arrive
         let m20 = if self.constraint_samples.is_empty() {
-            0.8 // default healthy
+            0.0
         } else {
             self.constraint_samples.iter().sum::<f64>()
                 / self.constraint_samples.len() as f64
         };
 
-        // M21: crystal predictive value
+        // M21: crystal predictive value — 0.0 until actual samples arrive
         let m21 = if self.prediction_samples.is_empty() {
-            0.7
+            0.0
         } else {
             self.prediction_samples.iter().sum::<f64>()
                 / self.prediction_samples.len() as f64
         };
 
-        // M22: signal lead time
+        // M22: signal lead time — 0.0 until actual samples arrive
         let m22 = if self.lead_time_samples.is_empty() {
-            60.0
+            0.0
         } else {
             self.lead_time_samples.iter().sum::<f64>()
                 / self.lead_time_samples.len() as f64
         };
 
-        // M23: basket quality lift
+        // M23: basket quality lift — (coverage_after - coverage_before) / coverage_before
         let m23 = basket_quality_lift;
 
         // M24: coverage growth

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use isls_types::{ConstraintTemplate, ConstraintProgram, ConstraintCandidate, Observation,
+use isls_types::{ConstraintCandidate, ConstraintTemplate, ConstraintProgram, Observation,
                   MeasurementContext, ProvenanceEnvelope, content_address_raw};
 
 // ─── Regime Type ──────────────────────────────────────────────────────────────

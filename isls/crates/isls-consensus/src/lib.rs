@@ -1,9 +1,8 @@
 // isls-consensus: Consensus, PoR gate, proof engine (Layer L3)
 // C5 — depends on isls-types, isls-persist
 
-use std::collections::BTreeMap;
 use isls_types::{
-    ConsensusConfig, ConsensusResult, FiveDState, GateSnapshot, NormalizationConfig,
+    ConsensusConfig, ConsensusResult, GateSnapshot, NormalizationConfig,
     PoRTrace, ThresholdConfig,
 };
 use thiserror::Error;

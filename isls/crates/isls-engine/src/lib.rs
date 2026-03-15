@@ -1,21 +1,20 @@
 // isls-engine: State machine, orchestrator (C9)
 // depends on all other crates
 
-use std::collections::BTreeMap;
 use isls_types::{
-    CommitIndex, CommitProof, Config, ConstraintProgram, FiveDState, GateSnapshot,
-    MandorlaState, MeasurementContext, NullCenter, Observation, PhaseLadder, PoRTrace,
-    RunDescriptor, SemanticCrystal, VertexId, content_address,
+    CommitIndex, CommitProof, Config, FiveDState,
+    MandorlaState, MeasurementContext, NullCenter, Observation, PhaseLadder,
+    RunDescriptor, SemanticCrystal,
 };
 use isls_observe::{ingest, ObservationAdapter, PassthroughAdapter};
 use isls_persist::PersistentGraph;
 use isls_extract::{inverse_weave, TimeWindow, default_operator_library};
 use isls_consensus::{
     CascadeOperator, CrystalPrecursor, DKOperator, dual_consensus, MetricSet, PIOperator,
-    PoRFsm, PoRState, SWOperator, WTOperator,
+    PoRFsm, SWOperator, WTOperator,
 };
 use isls_carrier::{build_phase_ladder, helix_pair, mandorla, restore_neutrality};
-use isls_archive::{Archive, build_crystal_with_id, build_evidence_chain};
+use isls_archive::{Archive, build_crystal_with_id};
 use isls_morph::{intrinsic_step, morphogenic_update, MorphState};
 use thiserror::Error;
 
@@ -112,12 +111,15 @@ pub fn compute_all_metrics(
 ) -> MetricSet {
     let norm = &config.normalization;
 
-    // D: deformation metric (proxy: embedding divergence from default)
-    let avg_norm: f64 = if graph.embedding.is_empty() {
-        0.0
-    } else {
-        graph.embedding.values().map(|s| s.norm_sq().sqrt()).sum::<f64>()
-            / graph.embedding.len() as f64
+    // D: deformation metric — average norm of OBSERVED embeddings only.
+    // Split/replicated vertices inherit FiveDState::default() (all zeros) and must
+    // be excluded so that morphogenic growth does not dilute the diversity signal.
+    let avg_norm: f64 = {
+        let observed: Vec<f64> = graph.embedding.values()
+            .map(|s| s.norm_sq().sqrt())
+            .filter(|&n| n > 1e-9)
+            .collect();
+        if observed.is_empty() { 0.0 } else { observed.iter().sum::<f64>() / observed.len() as f64 }
     };
     let d_raw = avg_norm;
     let d = isls_consensus::norm_saturate(d_raw, norm.mu_d);
