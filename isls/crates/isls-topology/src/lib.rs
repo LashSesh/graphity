@@ -561,7 +561,7 @@ pub fn compute_topological_signature(
             m.insert("Connected".to_string(), betti_0 == 1);
             m
         };
-        mean_propagation_time = f64::NAN;
+        mean_propagation_time = 0.0;
         kuramoto_coherence = 0.0;
     } else {
         let k = config.spectral_k_max.min(n);
@@ -573,9 +573,13 @@ pub fn compute_topological_signature(
         let elapsed = start.elapsed().as_millis() as u64;
         if elapsed < config.budget_ms && n <= 100 {
             let ctqw = ctqw_propagate(&spectral, config);
-            mean_propagation_time = ctqw.mean_propagation_time;
+            mean_propagation_time = if ctqw.mean_propagation_time.is_finite() {
+                ctqw.mean_propagation_time
+            } else {
+                0.0
+            };
         } else {
-            mean_propagation_time = f64::NAN;
+            mean_propagation_time = 0.0;
         }
 
         let mut kstate = init_kuramoto_state(graph);
