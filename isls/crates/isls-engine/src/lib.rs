@@ -19,10 +19,11 @@ use isls_archive::{Archive, build_crystal_with_id};
 use isls_morph::{intrinsic_step, morphogenic_update, MorphState};
 use thiserror::Error;
 
-// Extension crates (C12–C15)
+// Extension crates (C12–C16)
 pub use isls_registry;
 pub use isls_manifest;
 pub use isls_scheduler;
+pub use isls_topology;
 
 #[derive(Debug, Error)]
 pub enum EngineError {
@@ -420,7 +421,7 @@ pub fn macro_step(
     };
 
     // Build crystal (Inv I17: crystal required before commit)
-    let crystal = build_crystal_with_id(
+    let mut crystal = build_crystal_with_id(
         region,
         stability_score,
         state.commit_index,
@@ -429,6 +430,23 @@ pub fn macro_step(
         program,
         commit_proof,
     );
+
+    // C16: Enrich crystal topological signature with spectral/Kuramoto invariants
+    {
+        let topo_config = isls_topology::TopologyConfig::default();
+        let sig = isls_topology::compute_topological_signature(&state.graph, &topo_config);
+        crystal.topology_signature.spectral_gap = sig.spectral_gap;
+        crystal.topology_signature.cheeger_estimate = sig.cheeger_estimate;
+        crystal.topology_signature.kuramoto_coherence = sig.kuramoto_coherence;
+        crystal.topology_signature.mean_propagation_time = sig.mean_propagation_time;
+        crystal.topology_signature.dtl_connected = sig.dtl_predicates
+            .get("Connected").cloned().unwrap_or(false);
+        if !sig.betti_numbers.is_empty() {
+            crystal.topology_signature.betti_0 = sig.betti_numbers[0];
+            crystal.topology_signature.betti_1 = sig.betti_numbers.get(1).cloned().unwrap_or(0);
+            crystal.topology_signature.betti_2 = sig.betti_numbers.get(2).cloned().unwrap_or(0);
+        }
+    }
 
     state.engine_state = EngineState::Monolithizing;
 

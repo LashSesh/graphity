@@ -382,6 +382,7 @@ impl PersistentGraph {
             betti_2,
             spectral_gap,
             euler_char,
+            ..Default::default()
         }
     }
 }

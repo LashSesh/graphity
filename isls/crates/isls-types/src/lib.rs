@@ -124,7 +124,7 @@ pub struct EdgeAnnotation {
     pub active_windows: u64, // n_e count
 }
 
-/// Topological signature (OI-03 resolved)
+/// Topological signature (OI-03 resolved, hardened by C16)
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct TopologySignature {
     pub betti_0: u64,
@@ -132,6 +132,15 @@ pub struct TopologySignature {
     pub betti_2: u64,
     pub spectral_gap: f64,
     pub euler_char: i64,
+    // C16 hardened fields (τ(C) extension)
+    #[serde(default)]
+    pub cheeger_estimate: f64,
+    #[serde(default)]
+    pub kuramoto_coherence: f64,
+    #[serde(default)]
+    pub mean_propagation_time: f64,
+    #[serde(default)]
+    pub dtl_connected: bool,
 }
 
 // ─── Observation Types ───────────────────────────────────────────────────────

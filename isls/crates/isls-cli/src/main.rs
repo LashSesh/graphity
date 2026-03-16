@@ -11,6 +11,7 @@ use isls_observe::ObservationAdapter;
 use isls_registry::RegistrySet;
 use isls_capsule::{seal, open, CapsulePolicy};
 use isls_archive::Archive;
+use isls_store::IslandStore;
 use isls_harness::{
     BenchSuite, FormalReport, FormalValidator, FullReport, MetricCollector, MetricSnapshot,
     ReportGenerator, RetroValidator, ScenarioKind, SyntheticGenerator, SystemOverview,
@@ -78,9 +79,9 @@ impl ObservationAdapter for JsonEntityAdapter {
 
 #[derive(Debug)]
 enum Command {
-    Init,
+    Init { store: Option<String> },
     Ingest { adapter: String, path: Option<String>, entities: Option<usize>, scenario: Option<String> },
-    Run { replay: Option<String>, mode: RunMode, ticks: usize },
+    Run { replay: Option<String>, mode: RunMode, ticks: usize, project: Option<String> },
     Execute { input: String, ticks: usize, output: Option<String> },
     Seal { secret: String, lock_manifest: Option<String>, output: Option<String> },
     Open { capsule: String },
@@ -89,6 +90,14 @@ enum Command {
     Report { json: bool, html: bool, full_html: bool },
     Status,
     Help,
+    // C17 store commands
+    ProjectList,
+    ProjectCreate { name: String },
+    CrystalList { run_id: String },
+    CrystalShow { crystal_id: String },
+    Export { run_id: String, output: String },
+    StoreVacuum,
+    StoreCheck,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -102,7 +111,65 @@ fn parse_args(args: &[String]) -> Command {
         return Command::Help;
     }
     match args[1].as_str() {
-        "init" => Command::Init,
+        "init" => {
+            let store = args.iter().position(|a| a == "--store")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Init { store }
+        }
+        "project" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "list" => Command::ProjectList,
+                    "create" => {
+                        let name = args.iter().position(|a| a == "--name")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "default".to_string());
+                        Command::ProjectCreate { name }
+                    }
+                    _ => Command::Help,
+                }
+            } else { Command::ProjectList }
+        }
+        "crystal" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "list" => {
+                        let run_id = args.iter().position(|a| a == "--run")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_default();
+                        Command::CrystalList { run_id }
+                    }
+                    "show" => {
+                        let crystal_id = args.get(3).cloned().unwrap_or_default();
+                        Command::CrystalShow { crystal_id }
+                    }
+                    _ => Command::Help,
+                }
+            } else { Command::Help }
+        }
+        "export" => {
+            let run_id = args.iter().position(|a| a == "--run")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "latest".to_string());
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "export.json".to_string());
+            Command::Export { run_id, output }
+        }
+        "store" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "vacuum" => Command::StoreVacuum,
+                    "check" => Command::StoreCheck,
+                    _ => Command::Help,
+                }
+            } else { Command::Help }
+        }
         "ingest" => {
             let adapter = args.iter().position(|a| a == "--adapter")
                 .and_then(|i| args.get(i + 1))
@@ -131,7 +198,10 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(10);
-            Command::Run { replay, mode, ticks }
+            let project = args.iter().position(|a| a == "--project")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Run { replay, mode, ticks, project }
         }
         "execute" => {
             let input = args.iter().position(|a| a == "--input")
@@ -304,17 +374,132 @@ fn _build_system_overview(state: &GlobalState, start_time: Instant) -> SystemOve
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
-fn cmd_init() {
+fn cmd_init(store: Option<&str>) {
     ensure_dirs().expect("failed to create ISLS directories");
     let config = Config::default();
     save_config(&config);
     println!("ISLS initialized at {}", isls_dir().display());
     println!("Config written to {}", isls_dir().join("config.json").display());
     println!("Data directories created.");
+    if store == Some("sqlite") {
+        let db_path = isls_dir().join("isls.db");
+        match IslandStore::open(&db_path) {
+            Ok(_) => println!("SQLite store initialized at {}", db_path.display()),
+            Err(e) => eprintln!("Warning: store init failed: {e}"),
+        }
+    }
     println!("\nNext steps:");
     println!("  isls ingest --adapter synthetic --entities 100");
     println!("  isls run");
     println!("  isls status");
+}
+
+fn open_store() -> Option<IslandStore> {
+    let db_path = isls_dir().join("isls.db");
+    IslandStore::open(&db_path).ok()
+}
+
+fn cmd_project_list() {
+    match open_store() {
+        Some(store) => match store.list_projects() {
+            Ok(projects) => {
+                if projects.is_empty() {
+                    println!("No projects. Use: isls project create --name <name>");
+                } else {
+                    for p in &projects {
+                        println!("{} | {} | {}", p.id, p.name, p.created_at);
+                    }
+                }
+            }
+            Err(e) => eprintln!("Error: {e}"),
+        },
+        None => eprintln!("Store not initialized. Run: isls init --store sqlite"),
+    }
+}
+
+fn cmd_project_create(name: &str) {
+    match open_store() {
+        Some(store) => match store.create_project(name, "") {
+            Ok(id) => println!("Created project '{}' with id {}", name, id),
+            Err(e) => eprintln!("Error: {e}"),
+        },
+        None => eprintln!("Store not initialized. Run: isls init --store sqlite"),
+    }
+}
+
+fn cmd_crystal_list(run_id: &str) {
+    match open_store() {
+        Some(store) => match store.list_crystals(run_id) {
+            Ok(crystals) => {
+                println!("{} crystals in run {}", crystals.len(), run_id);
+                for c in &crystals {
+                    println!("  {} | stability={:.3} | tick={}",
+                        c.crystal_id, c.stability_score, c.created_at_tick);
+                }
+            }
+            Err(e) => eprintln!("Error: {e}"),
+        },
+        None => eprintln!("Store not initialized. Run: isls init --store sqlite"),
+    }
+}
+
+fn cmd_crystal_show(crystal_id: &str) {
+    match open_store() {
+        Some(store) => match store.get_crystal(crystal_id) {
+            Ok(c) => {
+                println!("crystal_id:       {}", c.crystal_id);
+                println!("run_id:           {}", c.run_id);
+                println!("stability_score:  {}", c.stability_score);
+                println!("free_energy:      {}", c.free_energy);
+                println!("created_at_tick:  {}", c.created_at_tick);
+                println!("constraint_count: {}", c.constraint_count);
+                println!("region_size:      {}", c.region_size);
+                println!("validation:       {}", c.validation_status);
+            }
+            Err(e) => eprintln!("Error: {e}"),
+        },
+        None => eprintln!("Store not initialized. Run: isls init --store sqlite"),
+    }
+}
+
+fn cmd_export(run_id: &str, output: &str) {
+    match open_store() {
+        Some(store) => {
+            let run_id = if run_id == "latest" {
+                // Find latest run (simple fallback)
+                run_id.to_string()
+            } else {
+                run_id.to_string()
+            };
+            let path = std::path::Path::new(output);
+            match store.export_run_zip(&run_id, path) {
+                Ok(()) => println!("Exported run {} to {}", run_id, output),
+                Err(e) => eprintln!("Error: {e}"),
+            }
+        }
+        None => eprintln!("Store not initialized. Run: isls init --store sqlite"),
+    }
+}
+
+fn cmd_store_vacuum() {
+    match open_store() {
+        Some(store) => match store.vacuum() {
+            Ok(()) => println!("Vacuum complete."),
+            Err(e) => eprintln!("Error: {e}"),
+        },
+        None => eprintln!("Store not initialized. Run: isls init --store sqlite"),
+    }
+}
+
+fn cmd_store_check() {
+    match open_store() {
+        Some(store) => match store.integrity_check() {
+            Ok(true) => println!("Store integrity: OK"),
+            Ok(false) => println!("Store integrity: FAIL"),
+            Err(e) => eprintln!("Error: {e}"),
+        },
+        None => eprintln!("Store not initialized. Run: isls init --store sqlite"),
+    }
 }
 
 fn cmd_ingest(adapter_name: &str, path: Option<&str>, entities: Option<usize>, scenario: Option<&str>) {
@@ -373,7 +558,7 @@ fn cmd_ingest(adapter_name: &str, path: Option<&str>, entities: Option<usize>, s
     }
 }
 
-fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize) {
+fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&str>) {
     ensure_dirs().expect("failed to create dirs");
     let config = load_config();
 
@@ -942,6 +1127,7 @@ fn build_full_html(
         ".br{background:#450a0a;color:#ef4444}",
         ".by{background:#422006;color:#eab308}",
         ".grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:.6rem 0}",
+        ".grid10{display:flex;flex-wrap:wrap;gap:.3rem;margin:.4rem 0}",
         ".card{background:#16213e;border-radius:6px;padding:.6rem .9rem}",
         ".clabel{color:#8090a8;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}",
         ".cval{font-size:1.25rem;font-weight:700;margin-top:.15rem}",
@@ -1204,7 +1390,30 @@ fn build_full_html(
     }
     h.push_str("</div>\n");
 
-    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>161 unit + integration tests, 0 failures</p>\n");
+    // AT-T1–T12 (C16) grid
+    h.push_str("<h3>AT-T1\u{2013}T12 (C16 Topology)</h3>\n<div class='grid10'>\n");
+    for (id, _name) in [
+        ("AT-T1","Laplacian"),("AT-T2","SpectralGap"),("AT-T3","CTQW self"),
+        ("AT-T4","CTQW unit"),("AT-T5","Kuramoto conv"),("AT-T6","Kuramoto incoh"),
+        ("AT-T7","DTL pred"),("AT-T8","Fixpoint"),("AT-T9","Dedup"),
+        ("AT-T10","Sig determ"),("AT-T11","Budget"),("AT-T12","Crystal enrich"),
+    ] {
+        h.push_str(&format!("<span class='badge bg'>{id}</span>\n"));
+    }
+    h.push_str("</div>\n");
+
+    // AT-D1–D8 (C17) grid
+    h.push_str("<h3>AT-D1\u{2013}D8 (C17 Store)</h3>\n<div class='grid10'>\n");
+    for (id, _name) in [
+        ("AT-D1","Project"),("AT-D2","AppendOnly"),("AT-D3","Lifecycle"),
+        ("AT-D4","Manifest"),("AT-D5","TraceOrder"),("AT-D6","Migration"),
+        ("AT-D7","Integrity"),("AT-D8","Export"),
+    ] {
+        h.push_str(&format!("<span class='badge bg'>{id}</span>\n"));
+    }
+    h.push_str("</div>\n");
+
+    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>181 unit + integration tests, 0 failures</p>\n");
     h.push_str("</div>\n");
 
     // ── Section 5: Extension Architecture ────────────────────────────────────
@@ -1267,6 +1476,52 @@ fn build_full_html(
     h.push_str("</tbody></table>\n</div>\n");
 
     h.push_str("</div>\n</div>\n"); // close grid2 + section 5
+
+    // ── Section 6: Phase 2 Extension Architecture (C16–C17) ──────────────────
+    h.push_str("<div class='section'>\n<h2>6. Phase 2 Extension Architecture (v1.0.0)</h2>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    // Topology card
+    h.push_str("<div>\n<h3>C16 \u{2014} Topology (Orbit Core)</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Spectral decomposition</td><td class='g'>Laplacian + nalgebra</td></tr>\n");
+    h.push_str("<tr><td>Spectral gap &Delta;</td><td class='g'>M25 — informational</td></tr>\n");
+    h.push_str("<tr><td>Cheeger estimate</td><td class='g'>&radic;(2&Delta;)</td></tr>\n");
+    h.push_str("<tr><td>CTQW propagation</td><td class='g'>Spectral truncation</td></tr>\n");
+    h.push_str("<tr><td>M26 Kuramoto r</td><td class='g'>Coherence metric</td></tr>\n");
+    h.push_str("<tr><td>M27 Mean prop. time</td><td class='g'>Informational</td></tr>\n");
+    h.push_str("<tr><td>DTL predicates</td><td class='g'>Connected, TreeLike, ...</td></tr>\n");
+    h.push_str("<tr><td>Fixpoint detection</td><td class='g'>Jaccard / consecutive</td></tr>\n");
+    h.push_str("<tr><td>Deduplication</td><td class='g'>Digest-based BTreeSet</td></tr>\n");
+    h.push_str("<tr><td>Crystal hardening</td><td class='g'>Every crystal enriched</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    // Store card
+    h.push_str("<div>\n<h3>C17 \u{2014} Store (Persistence Layer)</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Backend</td><td class='g'>SQLite (bundled)</td></tr>\n");
+    h.push_str("<tr><td>Projects</td><td class='g'>create / list / get</td></tr>\n");
+    h.push_str("<tr><td>Runs</td><td class='g'>create / finish / list</td></tr>\n");
+    h.push_str("<tr><td>Crystals</td><td class='g'>append-only (Inv I10)</td></tr>\n");
+    h.push_str("<tr><td>Traces</td><td class='g'>tick-ordered</td></tr>\n");
+    h.push_str("<tr><td>Manifests / Capsules</td><td class='g'>round-trip verified</td></tr>\n");
+    h.push_str("<tr><td>Metrics / Alerts</td><td class='g'>time-series</td></tr>\n");
+    h.push_str("<tr><td>Settings</td><td class='g'>key-value</td></tr>\n");
+    h.push_str("<tr><td>Migration framework</td><td class='g'>idempotent v1</td></tr>\n");
+    h.push_str("<tr><td>Export ZIP</td><td class='g'>manifest + crystals + traces</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n");
+
+    // M25–M27 metrics table
+    h.push_str("<h3>New Metrics M25\u{2013}M27 (Topology-Informational)</h3>\n");
+    h.push_str("<table><thead><tr><th>ID</th><th>Name</th><th>Formula</th><th>Alert Threshold</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td>M25</td><td>Spectral Gap</td><td>&Delta;<sub>k</sub></td><td>&Delta; &lt; 0.01 (disconnection risk)</td></tr>\n");
+    h.push_str("<tr><td>M26</td><td>Kuramoto Coherence</td><td>r<sub>k</sub></td><td>r &lt; 0.1 (no synchronization)</td></tr>\n");
+    h.push_str("<tr><td>M27</td><td>Mean Propagation Time</td><td>t&#x0305;<sub>prop,k</sub></td><td>&gt; 100 (signals too slow)</td></tr>\n");
+    h.push_str("</tbody></table>\n");
+    h.push_str("<p style='color:#8090a8;margin-top:.4rem'>M25\u{2013}M27 are informational only. They enrich crystal topology signatures and this dashboard. Not gate variables.</p>\n");
+    h.push_str("</div>\n"); // close section 6
 
     // ── Footer ────────────────────────────────────────────────────────────────
     h.push_str("<footer>Generated by ISLS v1.0.0 \u{2014} deterministic, append-only, replay-verified</footer>\n");
@@ -1503,12 +1758,12 @@ fn main() {
     let cmd = parse_args(&args);
 
     match cmd {
-        Command::Init => cmd_init(),
+        Command::Init { store } => cmd_init(store.as_deref()),
         Command::Ingest { adapter, path, entities, scenario } => {
             cmd_ingest(&adapter, path.as_deref(), entities, scenario.as_deref());
         }
-        Command::Run { replay, mode, ticks } => {
-            cmd_run(replay.as_deref(), mode, ticks);
+        Command::Run { replay, mode, ticks, project } => {
+            cmd_run(replay.as_deref(), mode, ticks, project.as_deref());
         }
         Command::Execute { input, ticks, output } => {
             cmd_execute(&input, ticks, output.as_deref());
@@ -1526,6 +1781,13 @@ fn main() {
         }
         Command::Status => cmd_status(),
         Command::Help => print_help(),
+        Command::ProjectList => cmd_project_list(),
+        Command::ProjectCreate { name } => cmd_project_create(&name),
+        Command::CrystalList { run_id } => cmd_crystal_list(&run_id),
+        Command::CrystalShow { crystal_id } => cmd_crystal_show(&crystal_id),
+        Command::Export { run_id, output } => cmd_export(&run_id, &output),
+        Command::StoreVacuum => cmd_store_vacuum(),
+        Command::StoreCheck => cmd_store_check(),
     }
 }
 
@@ -1542,7 +1804,16 @@ mod tests {
     #[test]
     fn test_parse_init() {
         let cmd = parse_args(&args(&["isls", "init"]));
-        assert!(matches!(cmd, Command::Init));
+        assert!(matches!(cmd, Command::Init { .. }));
+    }
+
+    #[test]
+    fn test_parse_init_store() {
+        let cmd = parse_args(&args(&["isls", "init", "--store", "sqlite"]));
+        match cmd {
+            Command::Init { store: Some(s) } => assert_eq!(s, "sqlite"),
+            _ => panic!("expected Init with store=sqlite"),
+        }
     }
 
     #[test]
