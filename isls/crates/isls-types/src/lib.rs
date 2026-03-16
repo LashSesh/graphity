@@ -281,6 +281,32 @@ pub struct SemanticCrystal {
     pub carrier_instance_idx: usize,
 }
 
+/// Scheduler configuration for the Spiral Scheduler (C15)
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SchedulerConfig {
+    pub enabled: bool,
+    pub n_min: u32,       // >= 1
+    pub n_max: u32,       // >= n_min
+    pub strategy: String, // "max_pressure" | "weighted" | "fixed"
+    pub w_d: f64,         // weight for deformation (if weighted)
+    pub w_f: f64,         // weight for friction
+    pub w_s: f64,         // weight for shock
+}
+
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            n_min: 1,
+            n_max: 10,
+            strategy: "max_pressure".to_string(),
+            w_d: 1.0,
+            w_f: 1.0,
+            w_s: 1.0,
+        }
+    }
+}
+
 /// Run descriptor for replay determinism (ISLS Def 28.1)
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RunDescriptor {
@@ -288,6 +314,12 @@ pub struct RunDescriptor {
     pub operator_versions: BTreeMap<String, String>,
     pub initial_state_digest: Hash256,
     pub seed: Option<u64>,
+    /// Digests of all four registries (operators, profiles, obligations, macros)
+    #[serde(default)]
+    pub registry_digests: BTreeMap<String, Hash256>,
+    /// Spiral scheduler configuration
+    #[serde(default)]
+    pub scheduler: SchedulerConfig,
 }
 
 // ─── Configuration Types ──────────────────────────────────────────────────────

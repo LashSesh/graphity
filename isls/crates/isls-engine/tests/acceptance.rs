@@ -102,6 +102,8 @@ fn at_03_replay_determinism() {
         operator_versions: BTreeMap::new(),
         initial_state_digest: [0u8; 32],
         seed: None,
+        registry_digests: BTreeMap::new(),
+        scheduler: isls_types::SchedulerConfig::default(),
     };
 
     let obs_batches: Vec<Vec<Vec<u8>>> = vec![

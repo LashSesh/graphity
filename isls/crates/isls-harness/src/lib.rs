@@ -8,6 +8,8 @@ pub mod validate;
 pub mod synthetic;
 pub mod report;
 pub mod iterate;
+#[cfg(test)]
+pub mod extension_tests;
 
 // Re-export key types for convenience
 pub use metrics::{Alert, AlertLevel, MetricCollector, MetricSnapshot};

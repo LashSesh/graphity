@@ -1,5 +1,5 @@
 // isls-harness/src/bench.rs
-// 10 benchmarks (B01-B10) with regression tracking
+// 15 benchmarks (B01-B15) with regression tracking
 
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -16,6 +16,10 @@ use isls_consensus::{
     CascadeOperator, CrystalPrecursor, MetricSet, run_cascade,
     dual_consensus, default_primal_ops, default_dual_ops,
 };
+use isls_registry::{Registry, RegistryEntry, RegistryKind, RegistrySet};
+use isls_manifest::{build_manifest, verify_manifest, TraceEntry};
+use isls_capsule::{seal, open, CapsulePolicy};
+use isls_scheduler::compute_substeps;
 
 // ─── Bench Result ─────────────────────────────────────────────────────────────
 
@@ -93,7 +97,7 @@ impl BenchSuite {
         Self { config, seed }
     }
 
-    /// Run all 10 benchmarks and return results
+    /// Run all 15 benchmarks and return results
     pub fn run_all(&self) -> Vec<BenchResult> {
         let mut results = Vec::new();
         let git_commit = self.get_git_commit();
@@ -108,6 +112,12 @@ impl BenchSuite {
         results.push(self.b08_evidence_verification(&git_commit));
         results.extend(self.b09_memory_scaling(&git_commit));
         results.push(self.b10_full_macro_step(&git_commit));
+        // Extension benchmarks (C12–C15)
+        results.push(self.b11_registry_resolution(&git_commit));
+        results.push(self.b12_manifest_construction(&git_commit));
+        results.push(self.b13_manifest_verification(&git_commit));
+        results.push(self.b14_capsule_roundtrip(&git_commit));
+        results.push(self.b15_scheduler_overhead(&git_commit));
         results
     }
 
@@ -307,6 +317,8 @@ impl BenchSuite {
             operator_versions: BTreeMap::new(),
             initial_state_digest: [0u8; 32],
             seed: Some(self.seed),
+            registry_digests: BTreeMap::new(),
+            scheduler: isls_types::SchedulerConfig::default(),
         };
 
         const N: usize = 100; // reduced for speed
@@ -386,6 +398,185 @@ impl BenchSuite {
         params.insert("n_observations".to_string(), "10".to_string());
         params.insert("peak_rss_mb".to_string(), rss_mb.to_string());
         self.make_result("B10", git_commit, "full_macro_step_ms", elapsed_ms, "ms", params)
+    }
+
+    /// B11: Registry resolution speed — 1000 entries, 100_000 lookups
+    fn b11_registry_resolution(&self, git_commit: &str) -> BenchResult {
+        const N_ENTRIES: usize = 1_000;
+        const N_LOOKUPS: usize = 100_000;
+
+        let mut reg = Registry::new(RegistryKind::Operator);
+        for i in 0..N_ENTRIES {
+            let entry = RegistryEntry::new(
+                format!("Operator{:04}", i),
+                "1.0.0".to_string(),
+                [0u8; 32],
+                RegistryKind::Operator,
+                BTreeMap::new(),
+            );
+            let _ = reg.register(entry);
+        }
+
+        // Pick a name near the middle for consistent lookup
+        let target = format!("Operator{:04}", N_ENTRIES / 2);
+        let start = Instant::now();
+        for _ in 0..N_LOOKUPS {
+            let _ = reg.resolve(&target);
+        }
+        let elapsed_us = start.elapsed().as_micros() as f64;
+        let us_per_lookup = elapsed_us / N_LOOKUPS as f64;
+
+        let mut params = BTreeMap::new();
+        params.insert("n_entries".to_string(), N_ENTRIES.to_string());
+        params.insert("n_lookups".to_string(), N_LOOKUPS.to_string());
+        self.make_result("B11", git_commit, "registry_resolution", us_per_lookup, "us_per_lookup", params)
+    }
+
+    /// B12: Manifest construction speed — 100-trace run → build_manifest()
+    fn b12_manifest_construction(&self, git_commit: &str) -> BenchResult {
+        use isls_types::{GateSnapshot, SchedulerConfig};
+        let rd = isls_types::RunDescriptor {
+            config: self.config.clone(),
+            operator_versions: BTreeMap::new(),
+            initial_state_digest: [0u8; 32],
+            seed: None,
+            registry_digests: BTreeMap::new(),
+            scheduler: SchedulerConfig::default(),
+        };
+        let archive = isls_archive::Archive::new();
+        let registries = RegistrySet::new();
+        let traces: Vec<TraceEntry> = (0..100).map(|k| TraceEntry {
+            tick: k as u64,
+            input_digest: [0u8; 32],
+            state_digest: [1u8; 32],
+            crystal_id: None,
+            gate_snapshot: GateSnapshot::default(),
+            metrics_digest: [2u8; 32],
+        }).collect();
+        let obs_log: Vec<Vec<Vec<u8>>> = vec![];
+
+        let start = Instant::now();
+        let _ = build_manifest(&rd, &traces, &archive, &registries, "discovery", &obs_log);
+        let elapsed_ms = start.elapsed().as_millis() as f64;
+
+        let mut params = BTreeMap::new();
+        params.insert("n_traces".to_string(), "100".to_string());
+        self.make_result("B12", git_commit, "manifest_construction", elapsed_ms, "ms_per_manifest", params)
+    }
+
+    /// B13: Manifest verification speed — 100 crystal + 100 trace digests
+    fn b13_manifest_verification(&self, git_commit: &str) -> BenchResult {
+        use isls_types::{GateSnapshot, SchedulerConfig};
+        let rd = isls_types::RunDescriptor {
+            config: self.config.clone(),
+            operator_versions: BTreeMap::new(),
+            initial_state_digest: [0u8; 32],
+            seed: None,
+            registry_digests: BTreeMap::new(),
+            scheduler: SchedulerConfig::default(),
+        };
+        let archive = isls_archive::Archive::new();
+        let registries = RegistrySet::new();
+        let traces: Vec<TraceEntry> = (0..100).map(|k| TraceEntry {
+            tick: k as u64,
+            input_digest: [0u8; 32],
+            state_digest: [1u8; 32],
+            crystal_id: None,
+            gate_snapshot: GateSnapshot::default(),
+            metrics_digest: [2u8; 32],
+        }).collect();
+        let obs_log: Vec<Vec<Vec<u8>>> = vec![];
+        let manifest = build_manifest(&rd, &traces, &archive, &registries, "discovery", &obs_log);
+
+        let start = Instant::now();
+        let _ = verify_manifest(&manifest, &rd, &archive, &traces, &registries);
+        let elapsed_ms = start.elapsed().as_millis() as f64;
+
+        let mut params = BTreeMap::new();
+        params.insert("n_traces".to_string(), "100".to_string());
+        self.make_result("B13", git_commit, "manifest_verification", elapsed_ms, "ms_per_verify", params)
+    }
+
+    /// B14: Capsule seal/open round-trip — 10_000 iterations with 1KB secret
+    fn b14_capsule_roundtrip(&self, git_commit: &str) -> BenchResult {
+        use isls_types::SchedulerConfig;
+        const N: usize = 10_000;
+        let secret = vec![0x42u8; 1024]; // 1 KB
+
+        let rd = isls_types::RunDescriptor {
+            config: self.config.clone(),
+            operator_versions: BTreeMap::new(),
+            initial_state_digest: [0u8; 32],
+            seed: None,
+            registry_digests: BTreeMap::new(),
+            scheduler: SchedulerConfig::default(),
+        };
+        let archive = isls_archive::Archive::new();
+        let registries = RegistrySet::new();
+        let traces: Vec<TraceEntry> = vec![];
+        let obs_log: Vec<Vec<Vec<u8>>> = vec![];
+        let manifest = build_manifest(&rd, &traces, &archive, &registries, "discovery", &obs_log);
+
+        let policy = CapsulePolicy {
+            require_lock_program_id: [0u8; 32],
+            require_rd_digest: manifest.rd_digest,
+            require_gate_proofs: vec![],
+            require_manifest_id: Some(manifest.run_id),
+            expires_at: None,
+            max_uses: None,
+        };
+        let master_key: [u8; 32] = *b"bench-capsule-master-key-32bytes";
+
+        let start = Instant::now();
+        for _ in 0..N {
+            let capsule = seal(&secret, policy.clone(), BTreeMap::new(), &master_key, &manifest)
+                .expect("seal must succeed");
+            let _ = open(&capsule, &master_key, &manifest, None)
+                .expect("open must succeed");
+        }
+        let elapsed_us = start.elapsed().as_micros() as f64;
+        let us_per_roundtrip = elapsed_us / N as f64;
+
+        let mut params = BTreeMap::new();
+        params.insert("n_roundtrips".to_string(), N.to_string());
+        params.insert("secret_bytes".to_string(), "1024".to_string());
+        self.make_result("B14", git_commit, "capsule_roundtrip", us_per_roundtrip, "us_per_roundtrip", params)
+    }
+
+    /// B15: Scheduler overhead — 100 macro-steps enabled (n_max=10) vs disabled
+    fn b15_scheduler_overhead(&self, git_commit: &str) -> BenchResult {
+        use isls_types::SchedulerConfig;
+        const N: usize = 100;
+
+        let cfg_disabled = SchedulerConfig { enabled: false, n_min: 1, n_max: 10, ..SchedulerConfig::default() };
+        let cfg_enabled  = SchedulerConfig { enabled: true,  n_min: 1, n_max: 10,
+            strategy: "max_pressure".to_string(), ..SchedulerConfig::default() };
+
+        // Disabled: N iterations
+        let start = Instant::now();
+        for k in 0..N {
+            let _ = compute_substeps(k as f64 * 0.01, 0.0, 0.0, &cfg_disabled);
+        }
+        let disabled_us = start.elapsed().as_micros() as f64;
+
+        // Enabled: N iterations
+        let start = Instant::now();
+        for k in 0..N {
+            let _ = compute_substeps(k as f64 * 0.01, 0.0, 0.0, &cfg_enabled);
+        }
+        let enabled_us = start.elapsed().as_micros() as f64;
+
+        let overhead_pct = if disabled_us > 0.0 {
+            (enabled_us - disabled_us) / disabled_us * 100.0
+        } else {
+            0.0
+        };
+
+        let mut params = BTreeMap::new();
+        params.insert("n_steps".to_string(), N.to_string());
+        params.insert("disabled_us".to_string(), format!("{:.2}", disabled_us));
+        params.insert("enabled_us".to_string(), format!("{:.2}", enabled_us));
+        self.make_result("B15", git_commit, "scheduler_overhead_pct", overhead_pct, "overhead_pct", params)
     }
 }
 
