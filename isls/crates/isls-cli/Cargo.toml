@@ -19,6 +19,8 @@ isls-registry = { path = "../isls-registry" }
 isls-manifest = { path = "../isls-manifest" }
 isls-capsule = { path = "../isls-capsule" }
 isls-scheduler = { path = "../isls-scheduler" }
+isls-store = { path = "../isls-store" }
+isls-topology = { path = "../isls-topology" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

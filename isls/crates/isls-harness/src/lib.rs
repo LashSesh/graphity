@@ -10,6 +10,10 @@ pub mod report;
 pub mod iterate;
 #[cfg(test)]
 pub mod extension_tests;
+#[cfg(test)]
+pub mod topology_tests;
+#[cfg(test)]
+pub mod store_tests;
 
 // Re-export key types for convenience
 pub use metrics::{Alert, AlertLevel, MetricCollector, MetricSnapshot};

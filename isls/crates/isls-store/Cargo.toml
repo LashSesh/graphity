@@ -1,0 +1,15 @@
+[package]
+name = "isls-store"
+version = "1.0.0"
+edition = "2021"
+description = "ISLS Structured Persistence Layer (C17): SQLite-backed project/run/crystal/settings store"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-archive = { path = "../isls-archive" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+rusqlite = { workspace = true }
+sha2 = { workspace = true }

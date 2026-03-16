@@ -15,6 +15,7 @@ isls-morph = { path = "../isls-morph" }
 isls-registry = { path = "../isls-registry" }
 isls-manifest = { path = "../isls-manifest" }
 isls-scheduler = { path = "../isls-scheduler" }
+isls-topology = { path = "../isls-topology" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
