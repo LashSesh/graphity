@@ -1,0 +1,13 @@
+[package]
+name = "isls-pmhd"
+version = "1.0.0"
+edition = "2021"
+description = "ISLS PMHD — C21: Adversarial Hypothesis Drill (Polycentric Multi-Hypothesis Drill)"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_jcs = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }

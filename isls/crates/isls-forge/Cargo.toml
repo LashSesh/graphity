@@ -1,0 +1,16 @@
+[package]
+name = "isls-forge"
+version = "1.0.0"
+edition = "2021"
+description = "ISLS Forge — C23: Generative Synthesis Engine"
+
+[dependencies]
+isls-types       = { path = "../isls-types" }
+isls-pmhd        = { path = "../isls-pmhd" }
+isls-artifact-ir = { path = "../isls-artifact-ir" }
+isls-store       = { path = "../isls-store" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_jcs = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
