@@ -1,0 +1,1125 @@
+%%% =======================================================================
+%%% ISLS Extension Phase 4 v1.0.0
+%%% C19: Universal Gateway
+%%% C20: Domain Adapter Library
+%%% Author: Sebastian Klemm
+%%% Date: 16 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm,algorithmic}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{requirement}{Requirement}[section]
+\newtheorem{invariant}{Invariant}[section]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}{Proposition}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\ISLS}{\textsf{ISLS}}
+\newcommand{\RR}{\mathbb{R}}
+\DeclareMathOperator{\Dig}{Dig}
+\DeclareMathOperator{\Canon}{Canon}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Extension Phase 4 v1.0.0}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Extension Phase 4 v1.0.0},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+{\Huge\bfseries \ISLS{} Extension Phase~4\\[0.3cm]
+v1.0.0}\\[1.5cm]
+{\Large C19: Universal Gateway\\
+C20: Domain Adapter Library}\\[1cm]
+{\large The Plug-and-Play Interface for the\\
+Intelligent Semantic Ledger Substrate}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 16 March 2026}\\[2cm]
+
+\begin{abstract}
+\noindent
+This document specifies the external interface layer for \ISLS{}: a
+Universal Gateway (C19) providing a single unified API for data
+ingestion, crystal querying, and live streaming; and a Domain Adapter
+Library (C20) providing ready-made connectors for common data sources
+and sinks. Together, these two crates transform \ISLS{} from a
+command-line tool into an embeddable, network-accessible service that
+any system can connect to without understanding \ISLS{} internals.
+
+C19 absorbs the Node API pattern from OMNIPOL/ABRAXAS and the
+Filament adapter trait. C20 absorbs the Ingestion Matrix concept from
+MEF-Core and the Domain Adapter pattern from SPEC-003.
+
+After Phase~4, \ISLS{} is operationally complete: data flows in from
+arbitrary sources, crystals flow out to arbitrary consumers, and the
+entire system is controllable via a single REST/WebSocket endpoint.
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Parent:} ISLS v1.0.0 + Extensions Phase 1--3.\\
+\textbf{Absorbs:} OMNIPOL Node API, MEF-Core Ingestion Matrix,
+  SPEC-003 Domain Adapter.
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+%%% =====================================================================
+\part{C19: Universal Gateway}\label{part:gateway}
+
+\section{Purpose}\label{sec:gw:purpose}
+
+The gateway is the single external interface to a running \ISLS{}
+instance. It handles three flows:
+
+\begin{enumerate}[nosep,label=(\alph*)]
+  \item \textbf{Ingest}: accept observations from external sources,
+        canonicalize them, and feed them into the engine.
+  \item \textbf{Query}: expose crystals, manifests, metrics, alerts,
+        and validation results to external consumers.
+  \item \textbf{Stream}: provide real-time event feeds (crystal
+        emissions, gate decisions, metric updates, scale events) via
+        WebSocket or Server-Sent Events.
+\end{enumerate}
+
+One gateway. One port. Three flows. Everything else is an adapter
+(C20) that translates domain-specific protocols into gateway calls.
+
+
+\section{Architecture}\label{sec:gw:arch}
+
+\begin{lstlisting}[title={Gateway Position in the Stack}]
+External World
+    |
+    v
+[isls-gateway]  <-- C19: REST + WebSocket server
+    |
+    +---> [isls-adapters]  <-- C20: domain connectors
+    |
+    +---> [isls-engine]    <-- observation ingestion
+    |
+    +---> [isls-store]     <-- crystal/manifest queries
+    |
+    +---> [isls-archive]   <-- crystal retrieval
+    |
+    +---> [isls-manifest]  <-- manifest retrieval
+    |
+    +---> [isls-capsule]   <-- seal/open operations
+\end{lstlisting}
+
+\begin{requirement}[Single Binary]\label{req:singlebin}
+The gateway \textbf{MUST} be embeddable in the existing \texttt{isls}
+binary via a \texttt{serve} subcommand:
+\begin{lstlisting}
+isls serve --port 8420 --host 0.0.0.0
+\end{lstlisting}
+No separate binary, no separate process. One binary, one command.
+\end{requirement}
+
+\begin{requirement}[Stateless Gateway]\label{req:stateless}
+The gateway itself \textbf{MUST NOT} maintain state beyond request
+handling. All state lives in the engine, store, and archive. The
+gateway is a translation layer, not a service with its own database.
+\end{requirement}
+
+
+\section{REST API}\label{sec:gw:rest}
+
+\subsection{System Endpoints}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{GET} & \texttt{/health} & Liveness check. Returns version,
+  uptime, engine state, crystal count, entity count. \\
+\texttt{GET} & \texttt{/config} & Current RunDescriptor and
+  configuration (read-only). \\
+\texttt{GET} & \texttt{/status} & Engine status: running/idle, current
+  tick, active adapters, scale state. \\
+\end{longtable}
+
+\subsection{Ingestion Endpoints}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{POST} & \texttt{/ingest} & Submit a batch of observations.
+  Body: JSON array of observation objects. Returns: ingestion receipt
+  with observation count, duplicate count, digest. \\
+\texttt{POST} & \texttt{/ingest/stream} & Open a streaming ingestion
+  channel. Body: newline-delimited JSON (NDJSON). Each line is one
+  observation. Returns: per-line receipts. \\
+\texttt{POST} & \texttt{/ingest/file} & Upload a file for ingestion.
+  Multipart form with file field. Adapter auto-detected from
+  Content-Type or file extension. \\
+\texttt{GET} & \texttt{/ingest/adapters} & List available ingestion
+  adapters with their status and configuration. \\
+\end{longtable}
+
+\subsection{Query Endpoints}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{GET} & \texttt{/crystals} & List crystals. Query params:
+  \texttt{?scale=micro\&limit=50\&after=<tick>}. Returns: array of
+  crystal summaries. \\
+\texttt{GET} & \texttt{/crystals/\{id\}} & Get full crystal by ID.
+  Returns: complete crystal JSON including topology signature,
+  evidence chain, constraint program. \\
+\texttt{GET} & \texttt{/crystals/\{id\}/validate} & Run formal
+  validation on a specific crystal. Returns: 8-check breakdown. \\
+\texttt{GET} & \texttt{/crystals/\{id\}/replay} & Download replay pack
+  for this crystal's parent run. \\
+\texttt{GET} & \texttt{/manifests} & List execution manifests.
+  Query params: \texttt{?project=<name>\&limit=10}. \\
+\texttt{GET} & \texttt{/manifests/\{run\_id\}} & Get full manifest by
+  run ID. \\
+\texttt{GET} & \texttt{/manifests/\{run\_id\}/verify} & Verify
+  manifest integrity (MV1--MV6). \\
+\texttt{GET} & \texttt{/metrics} & Get latest metric snapshot.
+  Query params: \texttt{?run=<id>\&tick=<n>}. \\
+\texttt{GET} & \texttt{/metrics/history} & Get metric time series.
+  Query params: \texttt{?metric=M25\&from=<tick>\&to=<tick>}. \\
+\texttt{GET} & \texttt{/alerts} & List active alerts. Query params:
+  \texttt{?level=red\&limit=20}. \\
+\texttt{GET} & \texttt{/scale} & Get current multi-scale state:
+  cluster count, bridge activity, domain count. \\
+\texttt{GET} & \texttt{/scale/universes} & List all Hypercube
+  Universes with aggregate states. \\
+\texttt{GET} & \texttt{/scale/bridges} & List all bridges with
+  activation status. \\
+\texttt{GET} & \texttt{/topology} & Get current spectral
+  decomposition summary: spectral gap, Kuramoto $r$, Cheeger
+  estimate. \\
+\end{longtable}
+
+\subsection{Action Endpoints}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose} \\
+\midrule
+\endfirsthead
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\texttt{POST} & \texttt{/engine/start} & Start the engine loop.
+  Body: \texttt{\{mode, ticks, project\}}. \\
+\texttt{POST} & \texttt{/engine/stop} & Gracefully stop the engine
+  after current tick completes. \\
+\texttt{POST} & \texttt{/engine/step} & Execute exactly one
+  macro-step. Returns: tick result. \\
+\texttt{POST} & \texttt{/execute} & Execute a crystal or program in
+  generative mode. Body: crystal JSON or HDAG. \\
+\texttt{POST} & \texttt{/capsule/seal} & Seal a secret. Body:
+  \texttt{\{secret, lock, master\_key\_ref\}}. \\
+\texttt{POST} & \texttt{/capsule/open} & Open a capsule. Body:
+  capsule JSON + master key reference. \\
+\texttt{POST} & \texttt{/validate/formal} & Run formal validation on
+  all crystals in archive. Returns: summary. \\
+\texttt{GET} & \texttt{/report/html} & Generate and return the full
+  HTML validation report. \\
+\texttt{GET} & \texttt{/export/\{run\_id\}} & Export a complete run as
+  ZIP (manifest + crystals + traces + metrics). \\
+\end{longtable}
+
+\subsection{Response Format}
+
+\begin{definition}[Envelope]\label{def:envelope}
+All responses use a standard envelope:
+\begin{lstlisting}
+{
+  "ok": true,
+  "data": { ... },
+  "meta": {
+    "request_id": "...",
+    "timestamp": "2026-03-16T...",
+    "duration_ms": 42
+  }
+}
+\end{lstlisting}
+Error responses:
+\begin{lstlisting}
+{
+  "ok": false,
+  "error": {
+    "code": "CRYSTAL_NOT_FOUND",
+    "message": "No crystal with ID abc123..."
+  },
+  "meta": { ... }
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Error Codes]\label{def:errors}
+Standard error codes:
+\begin{itemize}[nosep]
+  \item \texttt{400 BAD\_REQUEST}: malformed input.
+  \item \texttt{404 NOT\_FOUND}: crystal, manifest, or run not found.
+  \item \texttt{409 CONFLICT}: determinism conflict (parity failure).
+  \item \texttt{422 VALIDATION\_FAILED}: observation rejected by
+        canonicalization or deduplication.
+  \item \texttt{429 RATE\_LIMITED}: ingestion rate exceeded.
+  \item \texttt{499 GATE\_ABORT}: engine stopped due to gate failure
+        or budget exhaustion.
+  \item \texttt{503 ENGINE\_BUSY}: engine is already running, cannot
+        start a second run.
+\end{itemize}
+\end{definition}
+
+
+\section{WebSocket API}\label{sec:gw:ws}
+
+\begin{definition}[Event Stream]\label{def:eventstream}
+A WebSocket connection to \texttt{ws://host:port/events} delivers a
+real-time event feed. Each message is a JSON object with a
+\texttt{type} field:
+
+\begin{lstlisting}
+{ "type": "crystal",     "data": { crystal summary } }
+{ "type": "gate",        "data": { gate_snapshot } }
+{ "type": "metric",      "data": { metric_snapshot } }
+{ "type": "alert",       "data": { alert } }
+{ "type": "scale_event", "data": { cluster_split/merge/bridge } }
+{ "type": "fixpoint",    "data": { scale, iteration } }
+{ "type": "tick",        "data": { tick_number, entities, crystals } }
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Subscription Filter]\label{def:subfilter}
+Clients \textbf{MAY} send a subscription message to filter events:
+\begin{lstlisting}
+{ "subscribe": ["crystal", "alert", "metric"] }
+\end{lstlisting}
+Default (no subscription message): all event types.
+\end{definition}
+
+\begin{requirement}[Backpressure]\label{req:backpressure}
+If a WebSocket client cannot keep up, the gateway \textbf{MUST}
+buffer up to 1000 events and then drop oldest events. Dropped events
+are counted in the \texttt{/health} endpoint as
+\texttt{ws\_dropped\_events}.
+\end{requirement}
+
+
+\section{Authentication}\label{sec:gw:auth}
+
+\begin{requirement}[Optional API Key]\label{req:apikey}
+Authentication is optional and disabled by default (single-operator
+use case). When enabled via configuration, the gateway \textbf{MUST}
+require a bearer token in the \texttt{Authorization} header:
+\begin{lstlisting}
+Authorization: Bearer <api_key>
+\end{lstlisting}
+The API key is stored as a SHA-256 hash in the configuration. No
+user/role management. One key, one operator.
+\end{requirement}
+
+\begin{requirement}[CORS]\label{req:cors}
+The gateway \textbf{MUST} support configurable CORS headers for
+browser-based clients:
+\begin{lstlisting}
+gateway:
+  cors:
+    allowed_origins: ["http://localhost:*"]
+    allowed_methods: ["GET", "POST"]
+\end{lstlisting}
+\end{requirement}
+
+
+\section{Configuration}\label{sec:gw:config}
+
+\begin{lstlisting}[title={Gateway Configuration (in isls config.yaml)}]
+gateway:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8420
+  max_connections: 100
+  request_timeout_ms: 30000
+  ingestion_rate_limit: 10000  # observations per second
+  auth:
+    enabled: false
+    api_key_hash: ""  # SHA-256 of the API key
+  cors:
+    enabled: false
+    allowed_origins: []
+  ws:
+    max_buffer: 1000
+    heartbeat_interval_ms: 30000
+\end{lstlisting}
+
+
+\section{Rust API}\label{sec:gw:rustapi}
+
+\begin{lstlisting}[title={isls-gateway/src/lib.rs}]
+pub struct GatewayConfig {
+    pub host: String,
+    pub port: u16,
+    pub max_connections: usize,
+    pub request_timeout_ms: u64,
+    pub ingestion_rate_limit: u64,
+    pub auth: AuthConfig,
+    pub cors: CorsConfig,
+    pub ws: WsConfig,
+}
+
+pub struct Gateway {
+    config: GatewayConfig,
+    engine: Arc<Mutex<Engine>>,
+    store: Arc<IslandStore>,
+    archive: Arc<Archive>,
+    adapters: Arc<AdapterRegistry>,
+}
+
+impl Gateway {
+    pub fn new(
+        config: GatewayConfig,
+        engine: Engine,
+        store: IslandStore,
+        archive: Archive,
+        adapters: AdapterRegistry,
+    ) -> Self;
+
+    /// Start the HTTP/WS server (blocking)
+    pub async fn serve(&self) -> Result<()>;
+
+    /// Graceful shutdown
+    pub async fn shutdown(&self) -> Result<()>;
+}
+
+// Ingestion receipt
+pub struct IngestReceipt {
+    pub observations_received: u64,
+    pub observations_accepted: u64,
+    pub duplicates_skipped: u64,
+    pub digest: Hash256,
+    pub timestamp: f64,
+}
+
+// Event types for WebSocket
+pub enum GatewayEvent {
+    Crystal(CrystalSummary),
+    Gate(GateSnapshot),
+    Metric(MetricSnapshot),
+    Alert(AlertRow),
+    ScaleEvent(ScaleEvent),
+    Fixpoint { scale: Scale, iteration: u64 },
+    Tick { number: u64, entities: u64, crystals: u64 },
+}
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{C20: Domain Adapter Library}\label{part:adapters}
+
+\section{Purpose}\label{sec:ad:purpose}
+
+Adapters translate between the external world and \ISLS{}'s canonical
+observation format. Each adapter implements a single trait and handles
+one data source or sink. The adapter library ships with built-in
+adapters for common use cases so that users can connect \ISLS{} to
+their data without writing code.
+
+
+\section{The Filament Trait}\label{sec:ad:filament}
+
+Absorbed from OMNIPOL's Filament concept and MEF-Core's Ingestion
+Matrix.
+
+\begin{definition}[Ingestion Adapter Trait]\label{def:ingesttrait}
+Every ingestion adapter implements:
+\begin{lstlisting}
+pub trait IngestionAdapter: Send + Sync {
+    /// Human-readable name
+    fn name(&self) -> &str;
+
+    /// Which content types / file extensions this adapter handles
+    fn accepts(&self) -> Vec<String>;
+
+    /// Transform raw bytes into canonical observations
+    fn transform(
+        &self,
+        input: &[u8],
+        config: &AdapterConfig,
+    ) -> Result<Vec<Observation>>;
+
+    /// For streaming adapters: start a background source
+    fn start_stream(
+        &self,
+        config: &AdapterConfig,
+        sender: Sender<Vec<Observation>>,
+    ) -> Result<JoinHandle<()>> {
+        // Default: not a streaming adapter
+        Err(AdapterError::NotStreaming)
+    }
+
+    /// Healthcheck
+    fn health(&self) -> AdapterHealth;
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Emission Adapter Trait]\label{def:emittrait}
+Every emission adapter (output sink) implements:
+\begin{lstlisting}
+pub trait EmissionAdapter: Send + Sync {
+    /// Human-readable name
+    fn name(&self) -> &str;
+
+    /// Receive a crystal event and forward it
+    fn emit_crystal(
+        &self,
+        crystal: &SemanticCrystal,
+        config: &AdapterConfig,
+    ) -> Result<()>;
+
+    /// Receive an alert and forward it
+    fn emit_alert(
+        &self,
+        alert: &AlertRow,
+        config: &AdapterConfig,
+    ) -> Result<()>;
+
+    /// Receive a metric snapshot and forward it
+    fn emit_metric(
+        &self,
+        snapshot: &MetricSnapshot,
+        config: &AdapterConfig,
+    ) -> Result<()>;
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Adapter Registry]\label{def:adapterreg}
+The adapter registry holds all available adapters:
+\begin{lstlisting}
+pub struct AdapterRegistry {
+    ingestion: BTreeMap<String, Box<dyn IngestionAdapter>>,
+    emission: BTreeMap<String, Box<dyn EmissionAdapter>>,
+}
+
+impl AdapterRegistry {
+    pub fn new() -> Self;
+    pub fn register_ingestion(&mut self, a: Box<dyn IngestionAdapter>);
+    pub fn register_emission(&mut self, a: Box<dyn EmissionAdapter>);
+    pub fn get_ingestion(&self, name: &str) -> Option<&dyn IngestionAdapter>;
+    pub fn auto_detect(&self, content_type: &str) -> Option<&dyn IngestionAdapter>;
+    pub fn list_ingestion(&self) -> Vec<&str>;
+    pub fn list_emission(&self) -> Vec<&str>;
+
+    /// Register all built-in adapters
+    pub fn register_defaults(&mut self);
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{invariant}[Adapter Determinism]\label{inv:adapterdet}
+Every ingestion adapter's \texttt{transform} method \textbf{MUST} be
+deterministic: identical input bytes with identical config produce
+identical observations. Adapters \textbf{MUST NOT} use
+\texttt{rand}, system time, or network calls inside
+\texttt{transform}. Timestamps in observations come from the data
+itself or from the gateway's ingestion timestamp, not from the
+adapter.
+\end{invariant}
+
+
+\section{Built-In Ingestion Adapters}\label{sec:ad:ingestion}
+
+\subsection{A01: JSON Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{json} \\
+\textbf{Accepts} & \texttt{application/json}, \texttt{.json}, \texttt{.jsonl} \\
+\textbf{Input} & JSON array of objects, or newline-delimited JSON \\
+\textbf{Transform} & Each JSON object becomes one observation. Entity
+  ID from \texttt{id} or \texttt{entity\_id} field. Payload is the
+  full object (canonical JSON). \\
+\textbf{Config} & \texttt{entity\_id\_field}: which field to use as
+  entity ID (default: \texttt{"id"}). \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A02: CSV Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{csv} \\
+\textbf{Accepts} & \texttt{text/csv}, \texttt{.csv}, \texttt{.tsv} \\
+\textbf{Input} & CSV with header row \\
+\textbf{Transform} & Each row becomes one observation. Entity ID from
+  configurable column. Numeric columns parsed as f64. \\
+\textbf{Config} & \texttt{entity\_id\_column}, \texttt{delimiter},
+  \texttt{timestamp\_column} (optional). \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A03: Syslog / Structured Log Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{syslog} \\
+\textbf{Accepts} & \texttt{text/plain} (syslog format),
+  \texttt{application/x-ndjson} (structured logs) \\
+\textbf{Input} & Syslog lines (RFC 5424) or structured JSON logs \\
+\textbf{Transform} & Entity ID from hostname + process name. Payload
+  includes severity, facility, message hash. Structured logs use
+  their own field names. \\
+\textbf{Config} & \texttt{format}: \texttt{rfc5424} or
+  \texttt{structured}. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A04: Cryptocurrency Market Data Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{crypto} \\
+\textbf{Accepts} & \texttt{application/json} (exchange API format) \\
+\textbf{Input} & Ticker data: \texttt{\{symbol, price, volume,
+  timestamp\}} \\
+\textbf{Transform} & Entity ID = trading pair (e.g.,
+  \texttt{BTC-USDT}). Payload includes price, volume, bid/ask
+  spread. Observations batched per window (configurable). \\
+\textbf{Streaming} & Yes. Connects to exchange WebSocket feeds.
+  Built-in support for: Binance ticker stream, CoinGecko polling,
+  generic exchange WebSocket (configurable URL + message format). \\
+\textbf{Config} & \texttt{exchange}, \texttt{symbols} (list or
+  \texttt{"*"}), \texttt{window\_seconds},
+  \texttt{websocket\_url}. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A05: HTTP Polling Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{http\_poll} \\
+\textbf{Accepts} & N/A (streaming adapter only) \\
+\textbf{Input} & Periodically polls a configurable HTTP endpoint \\
+\textbf{Transform} & Response body passed to auto-detected sub-adapter
+  (JSON or CSV). \\
+\textbf{Streaming} & Yes. Polls at configurable interval. \\
+\textbf{Config} & \texttt{url}, \texttt{interval\_seconds},
+  \texttt{headers} (optional), \texttt{response\_format}. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A06: WebSocket Listener Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{websocket} \\
+\textbf{Accepts} & N/A (streaming adapter only) \\
+\textbf{Input} & Connects to an external WebSocket and receives
+  messages \\
+\textbf{Transform} & Each message parsed as JSON observation. \\
+\textbf{Streaming} & Yes. Maintains persistent connection with
+  auto-reconnect. \\
+\textbf{Config} & \texttt{url}, \texttt{subscribe\_message}
+  (optional JSON to send on connect), \texttt{reconnect\_delay\_ms}. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A07: File Watcher Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{file\_watch} \\
+\textbf{Accepts} & N/A (streaming adapter only) \\
+\textbf{Input} & Watches a directory for new or modified files \\
+\textbf{Transform} & New files passed to auto-detected sub-adapter
+  (JSON, CSV, syslog). \\
+\textbf{Streaming} & Yes. Uses filesystem notifications. \\
+\textbf{Config} & \texttt{directory}, \texttt{pattern} (glob),
+  \texttt{recursive}. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A08: Stdin / Pipe Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{stdin} \\
+\textbf{Accepts} & N/A (streaming adapter only) \\
+\textbf{Input} & Reads from stdin (pipe-friendly) \\
+\textbf{Transform} & Each line parsed as JSON observation. \\
+\textbf{Streaming} & Yes. Reads until EOF. \\
+\textbf{Config} & \texttt{format}: \texttt{json} or \texttt{csv}. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{A09: Synthetic Adapter (existing, enhanced)}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{synthetic} \\
+\textbf{Accepts} & N/A (generator, not a real data source) \\
+\textbf{Input} & Generates synthetic observation windows for testing \\
+\textbf{Config} & \texttt{scenario}: S-Basic, S-Regime, S-Causal,
+  S-Break, S-Scale. \\
+\bottomrule
+\end{tabularx}
+
+
+\section{Built-In Emission Adapters}\label{sec:ad:emission}
+
+\subsection{E01: Webhook Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{webhook} \\
+\textbf{Output} & POST crystal/alert/metric JSON to a configurable
+  URL on each event. \\
+\textbf{Config} & \texttt{url}, \texttt{events} (which event types to
+  forward), \texttt{headers} (optional), \texttt{retry\_count}. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{E02: File Writer Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{file\_writer} \\
+\textbf{Output} & Append crystal/alert JSON to JSONL files in a
+  configurable directory. \\
+\textbf{Config} & \texttt{directory}, \texttt{rotate}: daily/size. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{E03: Console / Log Adapter}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Name} & \texttt{console} \\
+\textbf{Output} & Print crystal/alert summaries to stdout. \\
+\textbf{Config} & \texttt{verbosity}: compact/full. \\
+\bottomrule
+\end{tabularx}
+
+
+\section{Adapter Configuration}\label{sec:ad:config}
+
+\begin{lstlisting}[title={Adapter Configuration (in isls config.yaml)}]
+adapters:
+  ingestion:
+    # Crypto market streaming
+    - name: crypto
+      exchange: binance
+      symbols: ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+      window_seconds: 60
+      enabled: true
+
+    # File watcher for log ingestion
+    - name: file_watch
+      directory: /var/log/myapp/
+      pattern: "*.json"
+      recursive: false
+      enabled: true
+
+    # HTTP polling for external API
+    - name: http_poll
+      url: https://api.example.com/metrics
+      interval_seconds: 300
+      headers:
+        Authorization: "Bearer ..."
+      response_format: json
+      entity_id_field: sensor_id
+      enabled: false
+
+  emission:
+    # Webhook for crystal alerts
+    - name: webhook
+      url: https://hooks.slack.com/services/xxx
+      events: [crystal, alert]
+      enabled: true
+
+    # Local file backup
+    - name: file_writer
+      directory: ~/.isls/exports/
+      rotate: daily
+      enabled: true
+\end{lstlisting}
+
+
+\section{Custom Adapter Development}\label{sec:ad:custom}
+
+Third-party adapters implement the \texttt{IngestionAdapter} or
+\texttt{EmissionAdapter} trait and are registered at startup:
+
+\begin{lstlisting}[title={Custom Adapter Example}]
+pub struct MyDatabaseAdapter {
+    connection_string: String,
+}
+
+impl IngestionAdapter for MyDatabaseAdapter {
+    fn name(&self) -> &str { "my_database" }
+
+    fn accepts(&self) -> Vec<String> {
+        vec!["application/x-mydb".into()]
+    }
+
+    fn transform(
+        &self,
+        input: &[u8],
+        config: &AdapterConfig,
+    ) -> Result<Vec<Observation>> {
+        let rows: Vec<Row> = deserialize(input)?;
+        Ok(rows.into_iter().map(|r| Observation {
+            entity_id: r.id.clone(),
+            timestamp: r.ts,
+            payload: serde_json::to_vec(&r)?,
+        }).collect())
+    }
+
+    fn health(&self) -> AdapterHealth {
+        AdapterHealth::Ok
+    }
+}
+
+// Register at startup:
+registry.register_ingestion(Box::new(MyDatabaseAdapter {
+    connection_string: "...".into(),
+}));
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Integration}\label{part:integration}
+
+\section{CLI Extension}\label{sec:cli}
+
+\begin{lstlisting}
+# Start the gateway server
+isls serve --port 8420
+
+# Start with specific adapters enabled
+isls serve --port 8420 --adapter crypto --adapter file_watch
+
+# Start engine + gateway in one command
+isls serve --port 8420 --run --mode shadow --ticks 0  # 0 = infinite
+
+# Ingest via CLI (uses gateway internally)
+isls ingest --adapter json --file data.json
+isls ingest --adapter csv --file sensors.csv --entity-id-column device_id
+isls ingest --adapter crypto --exchange binance --symbols BTCUSDT,ETHUSDT
+
+# Pipe data into ISLS
+cat events.jsonl | isls ingest --adapter stdin --format json
+\end{lstlisting}
+
+
+\section{Typical Deployment Patterns}\label{sec:deploy}
+
+\subsection{Pattern 1: Local Analysis}
+
+\begin{lstlisting}
+isls ingest --adapter csv --file market_data.csv
+isls run --mode shadow --ticks 500
+isls report html
+\end{lstlisting}
+
+\subsection{Pattern 2: Live Monitoring}
+
+\begin{lstlisting}
+isls serve --port 8420 --run --mode shadow --ticks 0 \
+  --adapter crypto --adapter webhook
+# Crypto data streams in, crystals stream out to Slack
+\end{lstlisting}
+
+\subsection{Pattern 3: Embedded Service}
+
+\begin{lstlisting}
+# Another application sends data via REST
+curl -X POST http://localhost:8420/ingest \
+  -H "Content-Type: application/json" \
+  -d '[{"id":"sensor-1","temp":22.5,"ts":1710000000}]'
+
+# Query crystals via REST
+curl http://localhost:8420/crystals?limit=5
+
+# Subscribe to live events
+wscat -c ws://localhost:8420/events
+\end{lstlisting}
+
+\subsection{Pattern 4: Pipeline Integration}
+
+\begin{lstlisting}
+# Kafka -> ISLS -> Webhook
+kafka-console-consumer --topic events | \
+  isls ingest --adapter stdin --format json
+
+# Or use http_poll to pull from any REST API
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Acceptance Tests}\label{part:tests}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead
+\midrule
+\endhead
+\bottomrule
+\endfoot
+AT-GW1 & Health endpoint & Start gateway; GET /health; verify version
+  and uptime. \\
+AT-GW2 & JSON ingest & POST /ingest with 100 JSON observations; verify
+  receipt shows 100 accepted. \\
+AT-GW3 & CSV ingest & POST /ingest/file with CSV; verify observations
+  created with correct entity IDs. \\
+AT-GW4 & Dedup on ingest & POST same observations twice; verify second
+  batch shows duplicates\_skipped > 0. \\
+AT-GW5 & Crystal query & Ingest + run; GET /crystals; verify non-empty
+  list with correct fields. \\
+AT-GW6 & Crystal validate & GET /crystals/\{id\}/validate; verify 8
+  checks all pass. \\
+AT-GW7 & Manifest query & GET /manifests/\{run\_id\}; verify manifest
+  JSON contains expected fields. \\
+AT-GW8 & WebSocket events & Connect to /events; run 10 ticks; verify
+  at least one \texttt{tick} event and one \texttt{crystal} event
+  received. \\
+AT-GW9 & Subscription filter & Subscribe to \texttt{["crystal"]} only;
+  verify no \texttt{tick} events received. \\
+AT-GW10 & Rate limiting & Send observations exceeding rate limit;
+  verify 429 response. \\
+AT-GW11 & Engine start/stop & POST /engine/start; verify running; POST
+  /engine/stop; verify stopped. \\
+AT-GW12 & Execute via API & POST /execute with a crystal; verify
+  crystals produced. \\
+AT-GW13 & Report endpoint & GET /report/html; verify valid HTML
+  returned. \\
+AT-A1 & JSON adapter & Transform 50 JSON objects; verify 50
+  observations with correct entity IDs. \\
+AT-A2 & CSV adapter & Transform 100-row CSV; verify 100 observations
+  with correct columns. \\
+AT-A3 & Syslog adapter & Transform 20 syslog lines; verify 20
+  observations with hostname as entity ID. \\
+AT-A4 & Crypto adapter & Transform Binance-format ticker JSON; verify
+  observations with symbol as entity ID. \\
+AT-A5 & Adapter determinism & Transform same input twice; verify
+  bit-identical observations. \\
+AT-A6 & Adapter registry & Register custom adapter; verify it appears
+  in \texttt{list\_ingestion}. \\
+AT-A7 & Auto-detect & Submit JSON with Content-Type
+  application/json; verify JSON adapter selected. Submit CSV; verify
+  CSV adapter selected. \\
+AT-A8 & Emission webhook & Configure webhook adapter; emit crystal;
+  verify POST received at mock server. \\
+AT-A9 & File watcher & Drop a JSON file in watched directory; verify
+  observations ingested within 5 seconds. \\
+AT-A10 & Stdin pipe & Pipe 10 JSON lines; verify 10 observations
+  ingested. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Dependency Graph and Build Order}\label{part:deps}
+
+\section{Updated Dependency Graph}
+
+\begin{lstlisting}[title={Complete ISLS Dependency Graph after Phase 4}]
+isls-types        <-- (all crates)
+    ^
+isls-registry
+    ^
+isls-observe  <-- isls-persist <-- isls-topology (C16)
+                       ^                ^
+                       |          isls-extract
+                       |                ^
+                       |          isls-scale (C18)
+                       |                ^
+               isls-consensus <-- isls-carrier
+                       ^
+               isls-archive <-- isls-morph
+                       ^
+               isls-manifest
+                       ^
+               isls-capsule
+                       ^
+               isls-scheduler
+                       ^
+               isls-engine
+                       ^
+               isls-store (C17)
+                       ^
+               isls-adapters (C20: adapter trait + 12 built-in adapters)
+                       ^
+               isls-gateway (C19: REST + WebSocket server)
+                       ^
+               isls-harness (extended)
+                       ^
+               isls-cli (extended: serve command)
+\end{lstlisting}
+
+\section{External Dependencies}
+
+\begin{tabular}{l l l}
+\toprule
+\textbf{Crate} & \textbf{Version} & \textbf{Purpose} \\
+\midrule
+\texttt{axum} & 0.7 & HTTP server framework \\
+\texttt{tokio} & 1.0 & Async runtime \\
+\texttt{tokio-tungstenite} & 0.24 & WebSocket support \\
+\texttt{tower-http} & 0.6 & CORS, compression, timeouts \\
+\texttt{notify} & 7.0 & Filesystem watcher (A07) \\
+\texttt{csv} & 1.3 & CSV parsing (A02) \\
+\texttt{tungstenite} & 0.24 & WebSocket client (A06) \\
+\texttt{reqwest} & 0.12 & HTTP client (A05, E01) \\
+\bottomrule
+\end{tabular}
+
+\section{Build Order}
+
+\begin{enumerate}[nosep]
+  \item \texttt{isls-adapters} (C20): depends on \texttt{isls-types},
+        \texttt{isls-observe}. New deps: \texttt{csv}, \texttt{notify},
+        \texttt{reqwest}, \texttt{tungstenite}.
+  \item \texttt{isls-gateway} (C19): depends on \texttt{isls-types},
+        \texttt{isls-engine}, \texttt{isls-store},
+        \texttt{isls-archive}, \texttt{isls-manifest},
+        \texttt{isls-capsule}, \texttt{isls-adapters}. New deps:
+        \texttt{axum}, \texttt{tokio}, \texttt{tokio-tungstenite},
+        \texttt{tower-http}.
+  \item CLI extension: add \texttt{serve} subcommand.
+  \item Harness: add AT-GW and AT-A tests.
+\end{enumerate}
+
+\section{Test Count}
+
+\begin{tabular}{l r r}
+\toprule
+\textbf{Phase} & \textbf{New Tests} & \textbf{Cumulative} \\
+\midrule
+Core (C1--C9) & 130 & 130 \\
+Phase 1 (C10--C15) & 31 & 161 \\
+Phase 2 (C16--C17) & 20 & 181 \\
+Phase 3 (C18) & 15 & 196 \\
+Phase 4 (C19--C20) & 23 & $\ge$ 219 \\
+\bottomrule
+\end{tabular}
+
+
+%%% =====================================================================
+\part{Implementation Handoff}\label{part:handoff}
+
+\section{Verification Sequence}
+
+\begin{lstlisting}
+# Build
+cargo build --workspace --release 2>&1 | grep -c warning  -> 0
+
+# Test
+cargo test --workspace -- --test-threads=1  -> >= 219 passed
+
+# Start gateway
+cargo run --bin isls --release -- serve --port 8420 &
+
+# Ingest via REST
+curl -s -X POST http://localhost:8420/ingest \
+  -H "Content-Type: application/json" \
+  -d '[{"id":"e1","value":1.0},{"id":"e2","value":2.0}]'
+# -> {"ok":true,"data":{"observations_accepted":2,...}}
+
+# Start engine via REST
+curl -s -X POST http://localhost:8420/engine/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"shadow","ticks":50}'
+
+# Query crystals
+curl -s http://localhost:8420/crystals | python -m json.tool
+
+# Get HTML report
+curl -s http://localhost:8420/report/html > report.html
+
+# WebSocket test
+wscat -c ws://localhost:8420/events
+\end{lstlisting}
+
+\section{Completion Criteria}
+
+Phase 4 is complete when:
+\begin{enumerate}[nosep]
+  \item Gateway starts, serves /health, and shuts down cleanly.
+  \item All 9 built-in ingestion adapters transform data correctly.
+  \item All 3 emission adapters emit events correctly.
+  \item REST API returns crystals, manifests, metrics, topology.
+  \item WebSocket delivers live events with subscription filtering.
+  \item \texttt{isls serve} command works as single entry point.
+  \item Custom adapter registration works.
+  \item Total tests $\ge 219$, zero warnings.
+\end{enumerate}
+
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} Extension Phase 4 v1.0.0.\\
+One gateway. Nine adapters. Three emission sinks.\\
+Plug and play.}
+\end{center}
+
+\end{document}
