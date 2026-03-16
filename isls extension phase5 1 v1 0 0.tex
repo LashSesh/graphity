@@ -1,0 +1,906 @@
+%%% =======================================================================
+%%% ISLS Extension Phase 5.1 v1.0.0
+%%% C24: Recursive Decomposition and Hierarchical Composition Engine
+%%% Author: Sebastian Klemm
+%%% Date: 16 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{algorithm,algorithmic}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit,calc,trees}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{axiom}{Axiom}[section]
+\newtheorem{requirement}{Requirement}[section]
+\newtheorem{invariant}{Invariant}[section]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{corollary}{Corollary}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\ISLS}{\textsf{ISLS}}
+\newcommand{\FORGE}{\textsf{FORGE}}
+\newcommand{\PMHD}{\textsf{PMHD}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\NN}{\mathbb{N}}
+\newcommand{\calH}{\mathcal{H}}
+\newcommand{\calC}{\mathcal{C}}
+\newcommand{\calD}{\mathcal{D}}
+\newcommand{\calS}{\mathcal{S}}
+\newcommand{\calT}{\mathcal{T}}
+\newcommand{\calI}{\mathcal{I}}
+\newcommand{\calU}{\mathcal{U}}
+\DeclareMathOperator{\Dig}{Dig}
+\DeclareMathOperator{\Canon}{Canon}
+\DeclareMathOperator{\Decomp}{Decomp}
+\DeclareMathOperator{\Compose}{Compose}
+\DeclareMathOperator{\Resolve}{Resolve}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Extension Phase 5.1 v1.0.0}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Extension Phase 5.1 — Recursive Composition},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries \ISLS{} Extension Phase~5.1\\[0.3cm]
+v1.0.0}\\[1.5cm]
+{\Large C24: Recursive Decomposition and\\
+Hierarchical Composition Engine}\\[1cm]
+{\large Hypercubes of Hypercubes:\\
+From Intent to System through\\
+Atomic Crystallization and Upward Composition}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 16 March 2026}\\[1.5cm]
+
+\begin{abstract}
+\noindent
+This document specifies \texttt{isls-compose} (C24), a recursive
+decomposition and hierarchical composition engine that extends the
+\ISLS{} Forge (C21--C23) from producing single artifacts to producing
+\emph{systems of artifacts} --- complete software components, services,
+or multi-module architectures.
+
+The core mechanism: a top-level DecisionSpec is recursively decomposed
+into atomic sub-specs. Each atom is independently drilled through PMHD
+(C21), crystallized through the 8-gate cascade, and emitted as an
+ArtifactIR (C22). The atomic crystals are then composed upward through
+interface resolution, dependency validation, and hierarchical
+crystallization --- producing a \emph{System Crystal} that contains
+the complete artifact tree with full provenance at every level.
+
+Each crystal at every level is a Hypercube Universe (C18). Interfaces
+between components are Bridges. The atom-molecule-system hierarchy uses
+Scale Ladders. The entire recursive process is deterministic,
+replay-verified, and evidence-bound.
+
+The result is a generative engine that can produce arbitrarily complex
+structured outputs --- not by rendering templates, but by recursive
+adversarial crystallization from intent down to atoms and composition
+back up to systems.
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Parent:} ISLS v1.0.0 + Extensions Phase 1--5.\\
+\textbf{Depends on:} C18 (Scale), C21 (PMHD), C22 (ArtifactIR),
+  C23 (Forge).
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+%%% =====================================================================
+\part{Foundations}\label{part:foundations}
+
+\section{The Problem with Flat Synthesis}\label{sec:problem}
+
+Phase~5 produces single artifacts: one DecisionSpec $\to$ one Monolith
+$\to$ one ArtifactIR $\to$ one output. This is sufficient for
+generating a function, a schema, or a configuration file. It is not
+sufficient for generating a \emph{system}: a multi-component
+architecture with internal interfaces, dependency ordering, layered
+abstractions, and compositional correctness.
+
+A system is not a large artifact. It is a \emph{tree of artifacts}
+where each node is independently valid and the tree as a whole
+satisfies compositional constraints that no single node can express.
+
+\section{Axioms}\label{sec:axioms}
+
+\begin{axiom}[Recursive Decomposability]\label{ax:decomp}
+Any DecisionSpec that describes a system can be decomposed into a
+finite tree of sub-specs, where each leaf spec describes an atomic
+component that is synthesizable by a single Forge run.
+\end{axiom}
+
+\begin{axiom}[Independent Atomic Validity]\label{ax:atomvalid}
+Each atomic component must independently pass the 8-gate validation.
+Compositional validity does not compensate for atomic invalidity.
+\end{axiom}
+
+\begin{axiom}[Compositional Closure]\label{ax:compclosure}
+The composition of individually valid components into a system must
+itself be validated through the 8-gate cascade. The system crystal is
+not merely the union of its parts --- it is a new crystal that proves
+the composition is sound.
+\end{axiom}
+
+\begin{axiom}[Interface-First Decomposition]\label{ax:interface}
+Decomposition is driven by interfaces, not by content. The
+decomposition algorithm identifies \emph{what needs to connect to
+what} before deciding \emph{what each component does}. Interfaces are
+the invariant; implementations are the variables.
+\end{axiom}
+
+\begin{axiom}[Scale Correspondence]\label{ax:scalecorr}
+The decomposition hierarchy maps directly to the Scale architecture
+(C18): atoms are micro-scale Hypercube Universes, modules are
+meso-scale clusters, and the system is the macro-scale domain.
+Bridges between atoms are component interfaces. Ladders between
+levels are the composition operators.
+\end{axiom}
+
+
+\section{Three Levels}\label{sec:levels}
+
+\begin{definition}[Atom]\label{def:atom}
+An atom is a leaf-level component: a single function, type, endpoint,
+schema definition, or configuration block. An atom has no internal
+sub-components. It is the smallest unit that can be independently
+drilled, crystallized, and validated.
+\end{definition}
+
+\begin{definition}[Molecule]\label{def:molecule}
+A molecule is a composition of atoms that together form a coherent
+module: a service, a library, a layer. A molecule has internal
+interfaces (between its atoms) and external interfaces (exposed to
+other molecules or to the system).
+\end{definition}
+
+\begin{definition}[System]\label{def:system}
+A system is a composition of molecules that together form a complete
+deliverable: an application, a service mesh, a platform component.
+The system crystal is the root of the composition tree.
+\end{definition}
+
+\begin{remark}
+The three levels are not fixed. For very complex systems, the hierarchy
+may have more than three levels (atoms $\to$ molecules $\to$ assemblies
+$\to$ systems $\to$ platforms). The decomposition engine supports
+arbitrary depth. Three levels is the minimum useful hierarchy.
+\end{remark}
+
+
+%%% =====================================================================
+\part{Decomposition}\label{part:decomp}
+
+\section{The Decomposition Tree}\label{sec:decomptree}
+
+\begin{definition}[CompositionTree]\label{def:comptree}
+A CompositionTree $\calT$ is a rooted tree where:
+\begin{itemize}[nosep]
+  \item The root is the top-level DecisionSpec $\calD_0$.
+  \item Each internal node is a DecisionSpec $\calD_i$ with children
+        $\{\calD_{i,1}, \ldots, \calD_{i,k_i}\}$.
+  \item Each leaf is an atomic DecisionSpec that is directly
+        forge-able by C23.
+  \item Each edge carries an InterfaceContract specifying what the
+        child provides to or requires from its parent and siblings.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[InterfaceContract]\label{def:contract}
+An InterfaceContract $\calI$ between two nodes specifies:
+\[
+  \calI = \langle \mathtt{provider}, \mathtt{consumer},
+          \mathtt{provides}, \mathtt{requires},
+          \mathtt{protocol}, \mathtt{direction} \rangle
+\]
+where:
+\begin{itemize}[nosep]
+  \item \texttt{provides}: list of named capabilities with type
+        signatures (e.g., \texttt{"authenticate(token) -> User"}),
+  \item \texttt{requires}: list of named dependencies with type
+        signatures,
+  \item \texttt{protocol}: interaction pattern
+        (\texttt{sync\_call}, \texttt{async\_message},
+        \texttt{shared\_type}, \texttt{event\_stream}),
+  \item \texttt{direction}: $\texttt{Unidirectional}$ or
+        $\texttt{Bidirectional}$.
+\end{itemize}
+\end{definition}
+
+
+\section{Decomposition Algorithm}\label{sec:decompalgo}
+
+\begin{algorithm}[H]
+\caption{\textsc{Decompose}: Recursive spec decomposition}
+\label{alg:decompose}
+\begin{algorithmic}[1]
+\REQUIRE Top-level DecisionSpec $\calD_0$, decomposition config $\theta$
+\ENSURE CompositionTree $\calT$
+\STATE $\calT \gets \textsc{NewTree}(\calD_0)$
+\STATE $\textsc{DecomposeNode}(\calT, \calD_0, 0)$
+\RETURN $\calT$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}[H]
+\caption{\textsc{DecomposeNode}: Recursive node decomposition}
+\label{alg:decompnode}
+\begin{algorithmic}[1]
+\REQUIRE Tree $\calT$, spec $\calD$, depth $d$
+\IF{$\textsc{IsAtomic}(\calD, \theta) \;\vee\; d \ge \theta.\mathrm{max\_depth}$}
+  \STATE Mark $\calD$ as leaf in $\calT$
+  \RETURN
+\ENDIF
+\STATE $\{(\calD_1, \calI_1), \ldots, (\calD_k, \calI_k)\} \gets
+  \textsc{IdentifyComponents}(\calD, \theta)$
+\FOR{$j = 1$ \TO $k$}
+  \STATE Add $\calD_j$ as child of $\calD$ in $\calT$ with edge $\calI_j$
+  \STATE $\textsc{DecomposeNode}(\calT, \calD_j, d + 1)$
+\ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\begin{definition}[Atomicity Test]\label{def:atomtest}
+A DecisionSpec is atomic if and only if:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item it describes a single responsibility (one primary capability),
+  \item its estimated component count is $\le \theta_{\mathrm{atom\_max}}$
+        (default: 5 components in the ArtifactIR),
+  \item it has no natural internal interface boundaries,
+  \item or the depth limit has been reached.
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[Component Identification]\label{def:compident}
+Component identification analyzes a non-atomic DecisionSpec and splits
+it along interface boundaries:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item \textbf{Capability clustering}: group related capabilities
+        (e.g., all auth-related capabilities form one component).
+  \item \textbf{Dependency analysis}: identify which capabilities
+        depend on which others; cut at minimal-dependency boundaries.
+  \item \textbf{Interface extraction}: for each cut, define the
+        InterfaceContract (what crosses the boundary).
+  \item \textbf{Sub-spec generation}: create a new DecisionSpec for
+        each cluster, inheriting relevant goals and constraints from
+        the parent, plus new constraints from the interface contracts.
+\end{enumerate}
+The identification is deterministic: same spec and config produce
+identical decomposition.
+\end{definition}
+
+
+\section{Decomposition Strategies}\label{sec:decompstrat}
+
+\begin{definition}[Decomposition Strategies]\label{def:strategies}
+The decomposition engine supports multiple strategies for splitting
+a spec into sub-specs:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item \textbf{LayerDecomp}: split by architectural layers
+        (e.g., data layer, business logic, API layer, presentation).
+  \item \textbf{FeatureDecomp}: split by features / capabilities
+        (each feature becomes a component).
+  \item \textbf{DomainDecomp}: split by domain boundaries
+        (Domain-Driven Design-style bounded contexts).
+  \item \textbf{PipelineDecomp}: split by processing stages
+        (input $\to$ transform $\to$ validate $\to$ output).
+  \item \textbf{HybridDecomp}: combine strategies per level
+        (e.g., LayerDecomp at system level, FeatureDecomp at module
+        level).
+  \item \textbf{CustomDecomp}: user-provided decomposition function.
+\end{enumerate}
+All strategies are deterministic.
+\end{definition}
+
+
+%%% =====================================================================
+\part{Per-Atom Forging}\label{part:atomforge}
+
+\section{Atomic Forge Pipeline}\label{sec:atomforge}
+
+Each leaf in the CompositionTree runs through the standard Phase~5
+forge pipeline independently:
+
+\begin{enumerate}[nosep]
+  \item PMHD Drill on the atomic DecisionSpec $\to$ Monolith
+  \item ArtifactIR from Monolith
+  \item Matrix interpretation (domain-specific)
+  \item Synthesis $\to$ raw output
+  \item Evaluation against constraints
+  \item 8-gate validation $\to$ Atomic Crystal $C_{\mathrm{atom}}$
+\end{enumerate}
+
+\begin{invariant}[Atomic Independence]\label{inv:atomind}
+Each atomic forge run is independent: it does not read the output of
+sibling atoms. It knows about siblings only through the
+InterfaceContracts attached to its DecisionSpec. This ensures that
+each atom can be forged in parallel and that atomic validity is
+self-contained.
+\end{invariant}
+
+\begin{requirement}[Interface Constraint Injection]\label{req:iconstinject}
+When an atom's DecisionSpec is created by decomposition, the
+InterfaceContracts from its parent and siblings are injected as
+additional hard constraints:
+\begin{itemize}[nosep]
+  \item \texttt{provides} entries become ``must export'' constraints.
+  \item \texttt{requires} entries become ``must import'' constraints.
+  \item Type signatures from contracts become compatibility constraints.
+\end{itemize}
+This ensures that independently forged atoms produce compatible
+interfaces.
+\end{requirement}
+
+
+\section{Parallel Forging}\label{sec:parallel}
+
+\begin{definition}[Forge Schedule]\label{def:forgesched}
+The forge schedule determines the order of atomic forge runs. Since
+atoms are independent (by \cref{inv:atomind}), all atoms at the same
+depth level can be forged in parallel. The schedule is a sequence of
+\emph{waves}:
+\[
+  W_d = \{C_{\mathrm{atom}} : \mathrm{depth}(C) = d_{\max}\}
+\]
+Wave $d_{\max}$ (deepest leaves) is forged first, then
+$d_{\max} - 1$, up to the root. Within each wave, all atoms are
+independent and may be forged concurrently.
+\end{definition}
+
+\begin{requirement}[Sequential Fallback]\label{req:seqfallback}
+On single-core systems, atoms within a wave are forged sequentially
+in deterministic order (sorted by sub-spec content address). This
+preserves determinism regardless of parallelism.
+\end{requirement}
+
+
+%%% =====================================================================
+\part{Composition}\label{part:compose}
+
+\section{Interface Resolution}\label{sec:resolve}
+
+\begin{definition}[Interface Resolution]\label{def:resolve}
+After all atoms in a molecule are forged, their interfaces are
+resolved:
+\[
+  \Resolve(\{C_1, \ldots, C_k\}, \{\calI_1, \ldots, \calI_m\})
+  = (\Gamma, \Delta)
+\]
+where $\Gamma$ is the set of \emph{satisfied} interface bindings and
+$\Delta$ is the set of \emph{unsatisfied} requirements.
+\end{definition}
+
+\begin{definition}[Interface Binding]\label{def:binding}
+A binding $(p, c, \calI)$ is satisfied when:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item Component $p$ declares a \texttt{provides} entry matching
+        $\calI.\mathtt{provides}$.
+  \item Component $c$ declares a \texttt{requires} entry matching
+        $\calI.\mathtt{requires}$.
+  \item The type signatures are compatible (structural subtyping: the
+        provider's signature is at least as general as the consumer's
+        expectation).
+  \item The protocol matches.
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[Resolution Failure Modes]\label{def:resfail}
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item \textbf{Unsatisfied requirement}: a consumer needs something
+        no provider offers. The composition cannot proceed.
+  \item \textbf{Type mismatch}: provider and consumer have incompatible
+        type signatures. The offending atom must be re-forged with
+        corrected constraints.
+  \item \textbf{Circular dependency}: the dependency graph among atoms
+        contains a cycle. The decomposition must be revised.
+  \item \textbf{Ambiguous binding}: multiple providers match a single
+        requirement. Resolution uses deterministic tie-breaking
+        (provider with highest quality score, then by content address).
+\end{enumerate}
+\end{definition}
+
+\begin{requirement}[Resolution is Deterministic]\label{req:resdet}
+Interface resolution \textbf{MUST} produce identical bindings under
+identical inputs. All tie-breaking rules are deterministic and
+specified in the Run Descriptor.
+\end{requirement}
+
+
+\section{Upward Crystallization}\label{sec:upcrystal}
+
+\begin{definition}[Molecule Crystal]\label{def:molcrystal}
+A molecule crystal $C_{\mathrm{mol}}$ is produced by composing its
+atomic crystals:
+\[
+  C_{\mathrm{mol}} = \Compose(\{C_{\mathrm{atom},1}, \ldots,
+  C_{\mathrm{atom},k}\}, \Gamma, \calD_{\mathrm{mol}})
+\]
+
+The molecule crystal contains:
+\begin{itemize}[nosep]
+  \item \texttt{sub\_crystal\_ids}: content addresses of all atomic
+        crystals,
+  \item \texttt{interface\_bindings}: the resolved binding set $\Gamma$,
+  \item \texttt{composition\_proof}: evidence that all interfaces are
+        satisfied and the dependency graph is acyclic,
+  \item \texttt{constraint\_program}: the union of atomic constraint
+        programs plus compositional constraints,
+  \item its own \texttt{topology\_signature}: the dependency graph
+        topology of its atoms (using Betti numbers, spectral gap,
+        etc.\ from C16).
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Composition Validation]\label{def:compval}
+The molecule crystal passes through a dedicated composition
+validation before the standard 8-gate cascade:
+\begin{enumerate}[nosep,label=(CV\arabic*)]
+  \item \textbf{All atoms valid}: every sub-crystal passes 8/8 checks.
+  \item \textbf{No unsatisfied interfaces}: $\Delta = \emptyset$.
+  \item \textbf{No type mismatches}: all bindings type-check.
+  \item \textbf{Acyclic dependencies}: topological sort succeeds.
+  \item \textbf{Coverage}: every capability from the parent
+        DecisionSpec is provided by at least one atom.
+  \item \textbf{No orphans}: every atom provides at least one
+        capability that is consumed.
+\end{enumerate}
+After CV1--CV6 pass, the molecule crystal enters the standard
+8-gate cascade.
+\end{definition}
+
+\begin{definition}[System Crystal]\label{def:syscrystal}
+The system crystal $C_{\mathrm{sys}}$ is produced by composing
+molecule crystals. Its structure is identical to a molecule crystal
+but at one level higher:
+\begin{itemize}[nosep]
+  \item \texttt{sub\_crystal\_ids}: content addresses of molecule
+        crystals,
+  \item each molecule crystal itself references its atomic crystals,
+  \item the system crystal's \texttt{topology\_signature} describes
+        the inter-module dependency graph.
+\end{itemize}
+The system crystal passes CV1--CV6 on its molecule children, then
+the 8-gate cascade.
+\end{definition}
+
+\begin{theorem}[Hierarchical Validity]\label{thm:hiervalid}
+If the system crystal passes CV1--CV6 and the 8-gate cascade, then
+every crystal at every level of the hierarchy is independently valid:
+every atom passes 8/8, every molecule passes CV1--CV6 + 8/8, and the
+system passes CV1--CV6 + 8/8. The validity is not inherited downward
+--- it is independently established at each level and verified
+compositionally at each parent level.
+\end{theorem}
+
+\begin{proof}
+By construction: CV1 at the system level requires that all molecule
+sub-crystals pass 8/8. CV1 at the molecule level requires that all
+atomic sub-crystals pass 8/8. The 8-gate cascade at each level
+operates on the crystal's own fields independently. Therefore
+validity at level $n$ implies validity at all levels $< n$, and
+each level's validity is independently checkable.
+\end{proof}
+
+
+\section{Re-Forging on Failure}\label{sec:reforge}
+
+\begin{definition}[Composition Repair]\label{def:repair}
+When interface resolution fails (type mismatch or unsatisfied
+requirement), the composition engine can attempt repair:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item \textbf{Constraint refinement}: add the failing interface
+        requirement as an explicit constraint to the offending atom's
+        DecisionSpec and re-forge.
+  \item \textbf{Adapter synthesis}: forge a new ``glue'' atom whose
+        sole purpose is to bridge the type mismatch between two
+        incompatible atoms.
+  \item \textbf{Decomposition revision}: re-run decomposition with
+        different boundaries if multiple atoms fail to compose.
+\end{enumerate}
+\end{definition}
+
+\begin{requirement}[Repair Budget]\label{req:repairbudget}
+The repair loop \textbf{MUST} be bounded by a configurable budget
+(max re-forge attempts per atom, max adapter atoms, max decomposition
+revisions). When the budget is exhausted, the composition fails with
+a detailed diagnostic listing all unresolved interfaces.
+\end{requirement}
+
+
+%%% =====================================================================
+\part{Synthesized Output}\label{part:output}
+
+\section{System Artifact Assembly}\label{sec:assembly}
+
+\begin{definition}[SystemArtifact]\label{def:sysartifact}
+The final output of a composition run is a SystemArtifact:
+\begin{lstlisting}
+pub struct SystemArtifact {
+    pub system_crystal: SemanticCrystal,
+    pub tree: CompositionTree,
+    pub atoms: Vec<AtomArtifact>,
+    pub molecules: Vec<MoleculeArtifact>,
+    pub bindings: Vec<InterfaceBinding>,
+    pub manifest: ExecutionManifest,
+    pub total_components: usize,
+    pub total_interfaces: usize,
+    pub depth: usize,
+}
+
+pub struct AtomArtifact {
+    pub crystal: SemanticCrystal,
+    pub ir: ArtifactIR,
+    pub synthesis: SynthesisOutput,
+    pub file_path: String,
+}
+
+pub struct MoleculeArtifact {
+    pub crystal: SemanticCrystal,
+    pub atom_ids: Vec<Hash256>,
+    pub bindings: Vec<InterfaceBinding>,
+    pub composition_proof: CompositionProof,
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[File Layout]\label{def:filelayout}
+The emitter produces a file tree reflecting the composition hierarchy:
+\begin{lstlisting}
+output/
+  system.crystal.json          # System crystal
+  manifest.json                # Execution manifest
+  composition_proof.json       # CV1-CV6 evidence
+  modules/
+    auth/
+      auth.crystal.json        # Molecule crystal
+      atoms/
+        auth_handler.rs        # Atom artifact
+        auth_handler.crystal.json
+        token_validator.rs
+        token_validator.crystal.json
+    database/
+      database.crystal.json
+      atoms/
+        schema.sql
+        schema.crystal.json
+        connection.rs
+        connection.crystal.json
+    api/
+      api.crystal.json
+      atoms/
+        routes.rs
+        routes.crystal.json
+        middleware.rs
+        middleware.crystal.json
+  interfaces/
+    bindings.json              # All resolved interface bindings
+    dependency_graph.json      # Topological order
+\end{lstlisting}
+Every file has a companion crystal. Every crystal is independently
+verifiable. The system crystal references all others.
+\end{definition}
+
+
+%%% =====================================================================
+\part{Scale Integration}\label{part:scale}
+
+\section{Mapping to Hypercube Universes}\label{sec:scalemap}
+
+\begin{definition}[Composition-Scale Mapping]\label{def:scalemap}
+The composition hierarchy maps to the C18 Scale architecture:
+\begin{itemize}[nosep]
+  \item Each atom is a micro-scale Hypercube Universe. Its vertices are
+        the ArtifactIR components. Its edges are component dependencies.
+        Its aggregate state is the atom's 5D quality signature.
+  \item Each molecule is a meso-scale Hypercube Universe. Its vertices
+        are the atom-universes. Its edges are interface bindings
+        (Bridges). Its aggregate state is the molecule's composite
+        quality.
+  \item The system is the macro-scale Hypercube Universe. Its vertices
+        are molecule-universes. Its edges are inter-module interfaces.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Composition Bridges]\label{def:compbridges}
+An interface binding between two atoms becomes a Bridge (C18) between
+their Hypercube Universes:
+\begin{itemize}[nosep]
+  \item Weight = type compatibility score,
+  \item Delay = 0 (synchronous composition),
+  \item Phase offset = 0,
+  \item Activation predicate = always active (bindings are resolved,
+        not conditional).
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Composition Ladders]\label{def:compladders}
+The Lift and Projection operators from C18 apply:
+\begin{itemize}[nosep]
+  \item $\mathrm{Lift}_{\mathrm{atom} \to \mathrm{mol}}$: aggregate
+        atom quality metrics into molecule quality.
+  \item $\mathrm{Proj}_{\mathrm{mol} \to \mathrm{atom}}$: propagate
+        molecule-level constraints down to atoms (for re-forging).
+  \item $\mathrm{Lift}_{\mathrm{mol} \to \mathrm{sys}}$: aggregate
+        molecule quality into system quality.
+\end{itemize}
+\end{definition}
+
+
+%%% =====================================================================
+\part{Configuration and API}\label{part:api}
+
+\section{Configuration}\label{sec:config}
+
+\begin{lstlisting}[title={Composition Configuration}]
+compose:
+  max_depth: 4                # max decomposition levels
+  atom_max_components: 5      # atomicity threshold
+  decomposition_strategy: "hybrid"
+  parallel_forge: false       # true if multi-core
+  repair:
+    max_reforge_per_atom: 3
+    max_adapter_atoms: 5
+    max_decomp_revisions: 2
+  quality_thresholds:
+    min_atom_quality: 0.5     # minimum per-axis quality for atoms
+    min_molecule_cv_score: 0.7
+    min_system_coverage: 0.9
+\end{lstlisting}
+
+
+\section{Rust API}\label{sec:rustapi}
+
+\begin{lstlisting}
+// isls-compose/src/lib.rs
+
+pub struct CompositionTree {
+    pub root: TreeNode,
+    pub depth: usize,
+    pub atom_count: usize,
+    pub molecule_count: usize,
+}
+
+pub struct TreeNode {
+    pub spec: DecisionSpec,
+    pub level: CompLevel,
+    pub children: Vec<TreeNode>,
+    pub interfaces: Vec<InterfaceContract>,
+    pub crystal: Option<SemanticCrystal>,
+}
+
+pub enum CompLevel { System, Molecule, Atom }
+
+pub struct InterfaceContract {
+    pub provider: String,
+    pub consumer: String,
+    pub provides: Vec<Capability>,
+    pub requires: Vec<Capability>,
+    pub protocol: Protocol,
+    pub direction: Direction,
+}
+
+pub struct Capability {
+    pub name: String,
+    pub signature: String,     // type signature
+    pub description: String,
+}
+
+pub enum Protocol { SyncCall, AsyncMessage, SharedType, EventStream }
+pub enum Direction { Unidirectional, Bidirectional }
+
+pub struct InterfaceBinding {
+    pub provider_crystal_id: Hash256,
+    pub consumer_crystal_id: Hash256,
+    pub contract: InterfaceContract,
+    pub compatibility_score: f64,
+}
+
+pub struct CompositionProof {
+    pub cv_results: [bool; 6],    // CV1-CV6
+    pub all_atoms_valid: bool,
+    pub unsatisfied: Vec<String>, // empty if success
+    pub dependency_order: Vec<Hash256>,
+    pub coverage: f64,
+}
+
+pub struct CompositionEngine {
+    forge: ForgeEngine,
+    config: ComposeConfig,
+}
+
+impl CompositionEngine {
+    pub fn new(forge: ForgeEngine, config: ComposeConfig) -> Self;
+
+    /// Full pipeline: decompose -> forge atoms -> resolve -> compose -> validate
+    pub fn compose(&mut self, spec: DecisionSpec) -> Result<SystemArtifact>;
+
+    /// Decompose only (for inspection before forging)
+    pub fn decompose(&self, spec: &DecisionSpec) -> Result<CompositionTree>;
+
+    /// Forge all atoms in a tree (after decomposition)
+    pub fn forge_atoms(&mut self, tree: &mut CompositionTree) -> Result<Vec<AtomArtifact>>;
+
+    /// Resolve interfaces between forged atoms
+    pub fn resolve_interfaces(
+        &self, atoms: &[AtomArtifact], contracts: &[InterfaceContract]
+    ) -> Result<(Vec<InterfaceBinding>, Vec<String>)>;
+
+    /// Compose atoms into molecules, molecules into system
+    pub fn compose_upward(
+        &mut self, tree: &mut CompositionTree, atoms: &[AtomArtifact]
+    ) -> Result<SystemArtifact>;
+
+    /// Attempt repair on failed composition
+    pub fn repair(
+        &mut self, tree: &mut CompositionTree, failures: &[String]
+    ) -> Result<SystemArtifact>;
+}
+\end{lstlisting}
+
+
+\section{CLI Integration}\label{sec:cli}
+
+\begin{lstlisting}
+# Compose a full system from a DecisionSpec
+isls compose --spec system-intent.json --domain rust --output system/
+
+# Decompose only (inspect the tree before forging)
+isls compose --spec system-intent.json --decompose-only
+
+# Compose with specific strategy
+isls compose --spec intent.json --strategy layer --max-depth 3
+
+# Compose from existing crystals (re-compose with new interfaces)
+isls compose --crystals crystal1.json,crystal2.json --output composed/
+\end{lstlisting}
+
+
+\section{Gateway Integration}\label{sec:gateway}
+
+\begin{lstlisting}[title={New Gateway Endpoints}]
+POST /compose          Body: {spec, domain, config}
+                       -> SystemArtifact with full crystal tree
+
+POST /compose/decompose  Body: {spec, strategy}
+                         -> CompositionTree (preview, no forging)
+
+GET  /compose/status     -> current composition progress
+                            (atoms forged / total, molecules composed)
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Acceptance Tests}\label{part:tests}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-CO1 & Decomposition determinism & Decompose same spec twice; verify
+  identical trees. \\
+AT-CO2 & Atom forging & Decompose into 3 atoms; forge each; verify
+  3 crystals all pass 8/8. \\
+AT-CO3 & Interface resolution & Forge 3 atoms with compatible
+  interfaces; resolve; verify all bindings satisfied. \\
+AT-CO4 & Type mismatch detection & Forge 2 atoms with incompatible
+  types; verify resolution fails with diagnostic. \\
+AT-CO5 & Upward crystallization & Compose 3 atoms into molecule;
+  verify molecule crystal passes CV1--CV6 + 8/8. \\
+AT-CO6 & System crystal & Compose 2 molecules into system; verify
+  system crystal references both molecules. \\
+AT-CO7 & Hierarchical validity & Validate system crystal; verify
+  every sub-crystal at every level independently valid. \\
+AT-CO8 & Repair on failure & Create intentional type mismatch;
+  verify repair re-forges the atom with corrected constraint. \\
+AT-CO9 & Depth limit & Set max\_depth=1; verify decomposition
+  produces only atoms (no molecules). \\
+AT-CO10 & File layout & Compose a 2-molecule system; verify file
+  tree matches expected layout. \\
+AT-CO11 & Composition determinism & Compose same spec twice; verify
+  identical system crystal ID. \\
+AT-CO12 & Scale mapping & Compose system; verify C18 Hypercube
+  Universes created for atoms, molecules, and system. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Dependency Graph and Handoff}\label{part:handoff}
+
+\section{Dependency Graph}
+
+\begin{lstlisting}
+isls-compose (C24)
+    depends on:
+      isls-pmhd (C21)          -- drill engine
+      isls-artifact-ir (C22)   -- IR construction
+      isls-forge (C23)         -- synthesis + evaluation
+      isls-scale (C18)         -- Hypercube/Bridge/Ladder mapping
+      isls-consensus (C5)      -- 8-gate validation
+      isls-archive (C7)        -- crystal storage
+      isls-manifest (C13)      -- execution manifest
+      isls-store (C17)         -- persistence
+      isls-types (C1)          -- foundation types
+\end{lstlisting}
+
+\section{Test Count}
+
+\begin{tabular}{l r r}
+\toprule
+\textbf{Phase} & \textbf{New Tests} & \textbf{Cumulative} \\
+\midrule
+Phase 1--5 & 231 & 231 \\
+Phase 5.1 (C24) & 12 & $\ge$ 243 \\
+\bottomrule
+\end{tabular}
+
+\section{Completion Criteria}
+
+Phase 5.1 is complete when:
+\begin{enumerate}[nosep]
+  \item Decomposition produces deterministic trees from specs.
+  \item Each atom is independently forged and validated (8/8).
+  \item Interface resolution detects matches and mismatches.
+  \item Molecule crystals pass CV1--CV6 + 8/8.
+  \item System crystals reference all sub-crystals.
+  \item Repair loop handles type mismatches within budget.
+  \item File layout reflects composition hierarchy.
+  \item Scale mapping creates Hypercube Universes at all levels.
+  \item Total tests $\ge 243$, zero warnings.
+  \item \textbf{24 Crates. One binary. Systems from intent.}
+\end{enumerate}
+
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} Extension Phase 5.1 v1.0.0.\\
+Atoms crystallize. Molecules compose. Systems emerge.\\
+Every level proven. Every interface bound. Every crystal verified.}
+\end{center}
+
+\end{document}
