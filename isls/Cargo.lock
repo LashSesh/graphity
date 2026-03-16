@@ -422,6 +422,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-compose"
+version = "1.0.0"
+dependencies = [
+ "isls-artifact-ir",
+ "isls-forge",
+ "isls-pmhd",
+ "isls-scale",
+ "isls-store",
+ "isls-types",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "isls-consensus"
 version = "1.0.0"
 dependencies = [
