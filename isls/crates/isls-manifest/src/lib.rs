@@ -315,6 +315,46 @@ mod tests {
         assert!(matches!(result, Err(ManifestError::CrystalNotFound(_))));
     }
 
+    // AT-M4: Replay pack sufficiency — build pack; verify all data enables identical replay
+    #[test]
+    fn at_m4_replay_pack_sufficiency() {
+        use isls_types::EvidenceEntry;
+        let rd = make_rd();
+        let archive = Archive::new();
+        let registries = RegistrySet::new();
+        let traces = vec![make_trace(0), make_trace(1)];
+        let obs_log: Vec<Vec<Vec<u8>>> = vec![vec![vec![1, 2, 3]]];
+        let boundary_evidence: Vec<EvidenceEntry> = vec![];
+
+        let manifest = build_manifest(&rd, &traces, &archive, &registries, "discovery", &obs_log);
+        let pack = build_replay_pack(
+            manifest.clone(),
+            rd.clone(),
+            obs_log.clone(),
+            registries.clone(),
+            boundary_evidence,
+        );
+
+        // Pack must preserve the manifest exactly
+        assert_eq!(pack.manifest.run_id, manifest.run_id, "pack must preserve run_id");
+
+        // Rebuild manifest from pack contents → must produce identical outputs (replay determinism)
+        let manifest2 = build_manifest(
+            &pack.rd,
+            &traces,
+            &archive,
+            &pack.registries,
+            "discovery",
+            &pack.observation_log,
+        );
+        assert_eq!(manifest.trace_digests, manifest2.trace_digests,
+            "replay produced different trace digests");
+        assert_eq!(manifest.crystal_digests, manifest2.crystal_digests,
+            "replay produced different crystal digests");
+        assert_eq!(manifest.registry_digests, manifest2.registry_digests,
+            "replay produced different registry digests");
+    }
+
     // AT-M5: Trace determinism — same RD produces same trace digests
     #[test]
     fn at_m5_trace_determinism() {

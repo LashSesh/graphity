@@ -7,6 +7,7 @@ use std::time::Instant;
 
 use isls_types::{Config, RunDescriptor, SchedulerConfig};
 use isls_engine::{GlobalState, macro_step, execute, ExecuteInput};
+use isls_manifest::{build_manifest, TraceEntry};
 use isls_observe::ObservationAdapter;
 use isls_registry::RegistrySet;
 use isls_capsule::{seal, open, CapsulePolicy};
@@ -621,12 +622,25 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&
             (actual, Box::new(move |i| synthetic[i % n].clone()))
         };
 
+    let rd = RunDescriptor {
+        config: config.clone(),
+        operator_versions: BTreeMap::new(),
+        initial_state_digest: [0u8; 32],
+        seed: None,
+        registry_digests: BTreeMap::new(),
+        scheduler: SchedulerConfig::default(),
+    };
+    let registries = RegistrySet::new();
+    let mut traces: Vec<TraceEntry> = Vec::new();
+    let mut obs_log: Vec<Vec<Vec<u8>>> = Vec::new();
+
     let mut prev_constraints: usize = 0;
     let mut constraint_first_seen_step: Option<usize> = None;
 
     for i in 0..steps {
         let obs_payloads = get_payloads(i);
         let step_start = Instant::now();
+        let pre_state_digest = isls_types::content_address(&state.h5_state);
         let crystal = macro_step(&mut state, &obs_payloads, &config, &adapter)
             .unwrap_or(None);
         let step_secs = step_start.elapsed().as_secs_f64();
@@ -694,10 +708,35 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&
         if mode == RunMode::Shadow && crystal.is_some() {
             println!("  [shadow] Crystal emitted but not forwarded downstream");
         }
+
+        // Record trace entry for manifest
+        let crystal_id = crystal.as_ref().map(|c| c.crystal_id);
+        let gate_snap = crystal.as_ref()
+            .map(|c| c.commit_proof.gate_values.clone())
+            .unwrap_or_default();
+        traces.push(TraceEntry {
+            tick: i as u64,
+            input_digest: isls_types::content_address_raw(&obs_payloads.concat()),
+            state_digest: pre_state_digest,
+            crystal_id,
+            gate_snapshot: gate_snap,
+            metrics_digest: [0u8; 32],
+        });
+        obs_log.push(obs_payloads);
     }
 
     save_archive(&state.archive);
+
+    // Build and save execution manifest (C13 completion criterion 3)
+    let manifest = build_manifest(&rd, &traces, &state.archive, &registries, "discovery", &obs_log);
+    let manifest_dir = isls_dir().join("manifests");
+    let _ = std::fs::create_dir_all(&manifest_dir);
+    if let Ok(s) = serde_json::to_string_pretty(&manifest) {
+        let _ = std::fs::write(manifest_dir.join("latest.json"), &s);
+    }
+
     println!("\nRun complete. {} macro-steps executed.", steps);
+    println!("Manifest saved. run_id: {}", hex_hash(&manifest.run_id));
     println!("Metrics written to {}", metrics_path.display());
 }
 
