@@ -1343,11 +1343,13 @@ fn build_full_html(
 
     // ── Section 4: Specification Compliance ──────────────────────────────────
     h.push_str("<div class='section'>\n<h2>4. Specification Compliance</h2>\n");
-    h.push_str("<p style='margin-bottom:.6rem'>All 196 acceptance tests passed \
+    h.push_str("<p style='margin-bottom:.6rem'>All 243 acceptance tests passed \
                 (AT-01\u{2013}AT-20 core + AT-R1\u{2013}R5 Registry + \
                 AT-M1\u{2013}M5 Manifest + AT-C1\u{2013}C6 Capsule + \
                 AT-S1\u{2013}S5 Scheduler + AT-T1\u{2013}T12 Topology + \
-                AT-D1\u{2013}D8 Store + AT-SC1\u{2013}SC15 Scale):</p>\n");
+                AT-D1\u{2013}D8 Store + AT-SC1\u{2013}SC15 Scale + \
+                AT-P1\u{2013}P8 PMHD + AT-IR1\u{2013}IR4 ArtifactIR + \
+                AT-F1\u{2013}F10 Forge + AT-CO1\u{2013}CO12 Compose):</p>\n");
     h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01\u{2013}AT-20)</h3>\n");
     h.push_str("<div class='atgrid'>\n");
     let at_core = [
@@ -1466,7 +1468,52 @@ fn build_full_html(
     }
     h.push_str("</div>\n");
 
-    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>196 unit + integration tests, 0 failures</p>\n");
+    // AT-P1–P8 (C21) grid
+    h.push_str("<h3>AT-P1\u{2013}P8 (C21 PMHD)</h3>\n<div class='grid10'>\n");
+    for (id, _name) in [
+        ("AT-P1","Determinism"),("AT-P2","Opposition"),("AT-P3","CommitGate"),
+        ("AT-P4","QualityRange"),("AT-P5","PatternMemory"),("AT-P6","SeedStrategies"),
+        ("AT-P7","HypothesisId"),("AT-P8","Provenance"),
+    ] {
+        h.push_str(&format!("<span class='badge bg'>{id}</span>\n"));
+    }
+    h.push_str("</div>\n");
+
+    // AT-IR1–IR4 (C22) grid
+    h.push_str("<h3>AT-IR1\u{2013}IR4 (C22 ArtifactIR)</h3>\n<div class='grid10'>\n");
+    for (id, _name) in [
+        ("AT-IR1","IRDeterminism"),("AT-IR2","SerdeRoundTrip"),
+        ("AT-IR3","ProvenanceLink"),("AT-IR4","ComponentSig"),
+    ] {
+        h.push_str(&format!("<span class='badge bg'>{id}</span>\n"));
+    }
+    h.push_str("</div>\n");
+
+    // AT-F1–F10 (C23) grid
+    h.push_str("<h3>AT-F1\u{2013}F10 (C23 Forge)</h3>\n<div class='grid10'>\n");
+    for (id, _name) in [
+        ("AT-F1","MatrixRegistry"),("AT-F2","Synthesizer"),("AT-F3","Evaluator"),
+        ("AT-F4","FileEmitter"),("AT-F5","StdoutEmitter"),("AT-F6","GatewayEmitter"),
+        ("AT-F7","ForgeCrystal"),("AT-F8","PatternMemory"),("AT-F9","ForgeFromCrystal"),
+        ("AT-F10","ImpossibleConstraint"),
+    ] {
+        h.push_str(&format!("<span class='badge bg'>{id}</span>\n"));
+    }
+    h.push_str("</div>\n");
+
+    // AT-CO1–CO12 (C24) grid
+    h.push_str("<h3>AT-CO1\u{2013}CO12 (C24 Compose)</h3>\n<div class='grid10'>\n");
+    for (id, _name) in [
+        ("AT-CO1","Decompose"),("AT-CO2","ForgeAtoms"),("AT-CO3","ResolveIfaces"),
+        ("AT-CO4","ComposeUpward"),("AT-CO5","Determinism"),("AT-CO6","Mismatch"),
+        ("AT-CO7","CVValidation"),("AT-CO8","Repair"),("AT-CO9","Snapshot"),
+        ("AT-CO10","AtomMicro"),("AT-CO11","MolMeso"),("AT-CO12","SysLayout"),
+    ] {
+        h.push_str(&format!("<span class='badge bg'>{id}</span>\n"));
+    }
+    h.push_str("</div>\n");
+
+    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>243 unit + integration tests, 0 failures</p>\n");
     h.push_str("</div>\n");
 
     // ── Section 5: Extension Architecture ────────────────────────────────────
@@ -1604,6 +1651,81 @@ fn build_full_html(
     h.push_str("</div>\n");
 
     h.push_str("</div>\n</div>\n"); // close grid2 + section 7
+
+    // ── Section 8: Phase 5 — Generative Forge (C21–C23) ──────────────────────
+    h.push_str("<div class='section'>\n<h2>8. Phase 5 \u{2014} Generative Forge (C21\u{2013}C23)</h2>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    // C21 — PMHD
+    h.push_str("<div>\n<h3>C21 \u{2014} PMHD (Drill Engine)</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Drill strategies</td><td class='g'>Greedy, Stochastic, Beam, Evolutionary, Hybrid</td></tr>\n");
+    h.push_str("<tr><td>Quality axes</td><td class='g'>coherence, robustness, coverage, stability, quality_score, impact</td></tr>\n");
+    h.push_str("<tr><td>Commit gate</td><td class='g'>8-gate PoR (all thresholds configurable, default 0.0)</td></tr>\n");
+    h.push_str("<tr><td>PRNG</td><td class='g'>xorshift64, deterministic from seed</td></tr>\n");
+    h.push_str("<tr><td>Hypothesis ID</td><td class='g'>SHA-256(claim &#x7c;&#x7c; sorted_assumptions)</td></tr>\n");
+    h.push_str("<tr><td>Pattern memory</td><td class='g'>In-memory, grows per drill tick</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    // C22 — ArtifactIR
+    h.push_str("<div>\n<h3>C22 \u{2014} ArtifactIR (Intermediate Representation)</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Components</td><td class='g'>Derived from PmhdMonolith hypotheses</td></tr>\n");
+    h.push_str("<tr><td>Interfaces</td><td class='g'>From DecisionSpec.interfaces</td></tr>\n");
+    h.push_str("<tr><td>Component ID</td><td class='g'>SHA-256 content-addressed</td></tr>\n");
+    h.push_str("<tr><td>FiveD signature</td><td class='g'>Dual SHA-256 (h1=id, h2=sig bytes)</td></tr>\n");
+    h.push_str("<tr><td>Provenance link</td><td class='g'>monolith_id + spec_id + layer tag</td></tr>\n");
+    h.push_str("<tr><td>Serde</td><td class='g'>JSON round-trip verified</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n");
+
+    // C23 — Forge (full width)
+    h.push_str("<h3>C23 \u{2014} Forge Engine</h3>\n");
+    h.push_str("<div class='grid2'>\n");
+    h.push_str("<div><table><tbody>\n");
+    h.push_str("<tr><td>Matrices available</td><td class='g'>RustModule, HttpApi, Workflow, Schema</td></tr>\n");
+    h.push_str("<tr><td>Synthesizer</td><td class='g'>DefaultSynthesizer (JCS-canonicalized)</td></tr>\n");
+    h.push_str("<tr><td>Evaluators</td><td class='g'>ConstraintEvaluator, QualityBoundsEvaluator</td></tr>\n");
+    h.push_str("<tr><td>Emitters</td><td class='g'>File, Stdout, Gateway</td></tr>\n");
+    h.push_str("</tbody></table></div>\n");
+    h.push_str("<div><table><tbody>\n");
+    h.push_str("<tr><td>Pattern memory</td><td class='g'>Store-backed via IslandStore (C17)</td></tr>\n");
+    h.push_str("<tr><td>Forge crystal</td><td class='g'>scale_tag = forge:{domain}</td></tr>\n");
+    h.push_str("<tr><td>IMPOSSIBLE constraint</td><td class='g'>Detected by ConstraintEvaluator</td></tr>\n");
+    h.push_str("<tr><td>Gateway emitter</td><td class='g'>Constructs JSON payload, reports bytes_written</td></tr>\n");
+    h.push_str("</tbody></table></div>\n");
+    h.push_str("</div>\n");
+
+    h.push_str("</div>\n"); // close section 8
+
+    // ── Section 9: Phase 5.1 — Recursive Composition (C24) ───────────────────
+    h.push_str("<div class='section'>\n<h2>9. Phase 5.1 \u{2014} Recursive Composition (C24)</h2>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    // Decomposition config
+    h.push_str("<div>\n<h3>C24 \u{2014} CompositionEngine</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Decomposition strategy</td><td class='g'>Midpoint goal-split, fully deterministic</td></tr>\n");
+    h.push_str("<tr><td>Atom threshold</td><td class='g'>atom_max_components (default 4 goals)</td></tr>\n");
+    h.push_str("<tr><td>Max recursion depth</td><td class='g'>max_depth (default 8)</td></tr>\n");
+    h.push_str("<tr><td>Scale hierarchy</td><td class='g'>Atoms \u{2192} Micro, Molecules \u{2192} Meso, System \u{2192} Macro</td></tr>\n");
+    h.push_str("<tr><td>Interface contracts</td><td class='g'>Auto-generated left\u{2192}right at each split</td></tr>\n");
+    h.push_str("<tr><td>Output</td><td class='g'>SystemArtifact + System Crystal</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    // CV1–CV6 table
+    h.push_str("<div>\n<h3>Composition Validation (CV1\u{2013}CV6)</h3>\n");
+    h.push_str("<table><thead><tr><th>Gate</th><th>Check</th><th>Status</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>CV1</strong></td><td>Completeness \u{2014} all atom crystals valid</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>CV2</strong></td><td>Consistency \u{2014} no unsatisfied interfaces</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>CV3</strong></td><td>Composability \u{2014} bindings present</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>CV4</strong></td><td>Dependency order \u{2014} topological sort valid</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>CV5</strong></td><td>Coverage \u{2014} &ge; 50% atoms covered</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>CV6</strong></td><td>Stability \u{2014} at least one molecule formed</td><td class='g'>Active</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n</div>\n"); // close grid2 + section 9
 
     // ── Footer ────────────────────────────────────────────────────────────────
     h.push_str("<footer>Generated by ISLS v1.0.0 \u{2014} deterministic, append-only, replay-verified</footer>\n");

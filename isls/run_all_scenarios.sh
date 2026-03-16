@@ -91,7 +91,7 @@ for i in "${!SCENARIO_NAMES[@]}"; do
 
     # ── Extension: capsule seal/open round-trip ───────────────────────────────
     printf "[%d/5] %s: capsule seal/open test..." "${N}" "${S}"
-    CAPSULE_OK="SKIP"
+    CAPSULE_OK="SKIP (no manifest)"
     if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
         isls seal --secret "isls-test-secret-${S}" \
             --lock-manifest latest 2>/dev/null || true
@@ -143,7 +143,7 @@ printf "  execute-mode crystals: %s, pass: %s\n" "${EXECUTE_CRYSTALS}" "${EXECUT
 
 # ── Capsule integration test ──────────────────────────────────────────────────
 echo "[CAPSULE] Running capsule integration test..."
-CAPSULE_RESULT="SKIP"
+CAPSULE_RESULT="SKIP (no manifest)"
 if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
     isls seal --secret "isls-test-secret" --lock-manifest latest 2>/dev/null || true
     if [ -f "${ISLS_HOME}/capsules/latest.json" ]; then
