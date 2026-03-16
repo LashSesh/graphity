@@ -261,15 +261,6 @@ impl PersistentGraph {
                 archive.push(snap, timestamp);
             }
 
-            // 5. Decay dormant edges (one decay event per observation).
-            let lambda = config.lambda_decay;
-            let edge_indices: Vec<_> = self.graph.edge_indices().collect();
-            for eidx in edge_indices {
-                if let Some(ann) = self.graph.edge_weight_mut(eidx) {
-                    ann.weight *= (-lambda).exp();
-                }
-            }
-
             // 6. Append to history (append-only, Inv I1).
             self.history.push(ObservationRecord {
                 commit_index: self.commit_index,
@@ -285,21 +276,54 @@ impl PersistentGraph {
                 .push((timestamp, obs.payload.clone()));
         }
 
+        // 5. Decay dormant edges once per batch (equivalent to one decay event
+        //    per observation: total factor = exp(-lambda * n_obs)).
+        //    Moved outside the per-observation loop to avoid O(batch × edges).
+        let lambda = config.lambda_decay;
+        let n_obs = obs_batch.len();
+        if lambda > 0.0 && n_obs > 0 {
+            let decay = (-lambda * n_obs as f64).exp();
+            for eidx in self.graph.edge_indices() {
+                if let Some(ann) = self.graph.edge_weight_mut(eidx) {
+                    ann.weight *= decay;
+                }
+            }
+        }
+
         // ── Co-observation edges (MCCE hypha layer) ──────────────────────────
-        // Entities observed in the same batch are structurally coupled: create
-        // or reinforce an undirected edge between every ordered pair (u < v).
-        // This ensures j = edge_count / vertex_count > 0, which is required for
-        // the Kairos j-gate and for inverse_weave to find stable patterns.
+        // Entities observed in the same batch are structurally coupled.
+        // For small batches (≤ 64): full clique — every ordered pair (u < v).
+        // For large batches (> 64): ring topology — only consecutive pairs.
+        //   Both guarantee j = edge_count / vertex_count > 0 for the j-gate,
+        //   but the ring avoids the O(n²) edge explosion for large scenarios.
         let batch_ts = obs_batch.first().map(|o| o.timestamp).unwrap_or(0.0);
         let n = batch_vids.len();
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let (u, v) = if batch_vids[i] < batch_vids[j] {
-                    (batch_vids[i], batch_vids[j])
-                } else {
-                    (batch_vids[j], batch_vids[i])
-                };
-                self.upsert_edge(u, v, batch_ts);
+        if n <= 64 {
+            for i in 0..n {
+                for j in (i + 1)..n {
+                    let (u, v) = if batch_vids[i] < batch_vids[j] {
+                        (batch_vids[i], batch_vids[j])
+                    } else {
+                        (batch_vids[j], batch_vids[i])
+                    };
+                    self.upsert_edge(u, v, batch_ts);
+                }
+            }
+        } else {
+            // Ring + skip-1: connect i→i+1 and i→i+2 (mod n).
+            // Gives j_raw = 2×n / n = 2.0 → j ≈ 0.67, reliably above the 0.5 threshold.
+            // Total edges: ~2n (linear, not quadratic), avoids graph explosion.
+            for i in 0..n {
+                let next1 = (i + 1) % n;
+                let next2 = (i + 2) % n;
+                for &next in &[next1, next2] {
+                    let (u, v) = if batch_vids[i] < batch_vids[next] {
+                        (batch_vids[i], batch_vids[next])
+                    } else {
+                        (batch_vids[next], batch_vids[i])
+                    };
+                    self.upsert_edge(u, v, batch_ts);
+                }
             }
         }
 

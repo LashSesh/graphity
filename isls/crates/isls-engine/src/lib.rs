@@ -452,29 +452,35 @@ pub fn macro_step(
         }
     }
 
-    // C18: Multi-scale tick (Micro→Meso→Macro lift + cross-scale bridges)
+    // C18: Multi-scale tick (Micro→Meso→Macro lift + cross-scale bridges).
+    // Guard: skip for graphs with > 500 vertices to match the budget-fallback
+    // threshold in compute_topological_signature and avoid O(n²/n³) costs
+    // (kuramoto_phase_cluster, lift_micro_to_meso bridge search) on large graphs.
     {
-        let laplacian = isls_topology::compute_laplacian(&state.graph);
-        let topo_cfg = isls_topology::TopologyConfig::default();
-        let spectral = isls_topology::spectral_decompose(&laplacian, topo_cfg.spectral_k_max);
-        let kuramoto = isls_topology::init_kuramoto_state(&state.graph);
-        let micro = isls_scale::isls_engine_types::MicroState::from_graph(&state.graph);
-        let scale_cfg = isls_scale::ScaleConfig::default();
-        let micro_crystals = state.archive.crystals();
-        let ms_result = isls_scale::multi_scale_tick(
-            &micro,
-            &mut state.scale_state,
-            &spectral,
-            &kuramoto,
-            &scale_cfg,
-            micro_crystals,
-            state.commit_index,
-        );
-        for mc in ms_result.meso_crystals {
-            state.scale_state.meso_crystals.push(mc);
-        }
-        for mc in ms_result.macro_crystals {
-            state.scale_state.macro_crystals.push(mc);
+        let n_vertices = state.graph.graph.node_count();
+        if n_vertices <= 500 {
+            let laplacian = isls_topology::compute_laplacian(&state.graph);
+            let topo_cfg = isls_topology::TopologyConfig::default();
+            let spectral = isls_topology::spectral_decompose(&laplacian, topo_cfg.spectral_k_max);
+            let kuramoto = isls_topology::init_kuramoto_state(&state.graph);
+            let micro = isls_scale::isls_engine_types::MicroState::from_graph(&state.graph);
+            let scale_cfg = isls_scale::ScaleConfig::default();
+            let micro_crystals = state.archive.crystals();
+            let ms_result = isls_scale::multi_scale_tick(
+                &micro,
+                &mut state.scale_state,
+                &spectral,
+                &kuramoto,
+                &scale_cfg,
+                micro_crystals,
+                state.commit_index,
+            );
+            for mc in ms_result.meso_crystals {
+                state.scale_state.meso_crystals.push(mc);
+            }
+            for mc in ms_result.macro_crystals {
+                state.scale_state.macro_crystals.push(mc);
+            }
         }
     }
 
