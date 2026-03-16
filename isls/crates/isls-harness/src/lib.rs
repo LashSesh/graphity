@@ -14,6 +14,8 @@ pub mod extension_tests;
 pub mod topology_tests;
 #[cfg(test)]
 pub mod store_tests;
+#[cfg(test)]
+pub mod scale_tests;
 
 // Re-export key types for convenience
 pub use metrics::{Alert, AlertLevel, MetricCollector, MetricSnapshot};

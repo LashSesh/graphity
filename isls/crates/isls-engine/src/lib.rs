@@ -19,11 +19,12 @@ use isls_archive::{Archive, build_crystal_with_id};
 use isls_morph::{intrinsic_step, morphogenic_update, MorphState};
 use thiserror::Error;
 
-// Extension crates (C12–C16)
+// Extension crates (C12–C18)
 pub use isls_registry;
 pub use isls_manifest;
 pub use isls_scheduler;
 pub use isls_topology;
+pub use isls_scale;
 
 #[derive(Debug, Error)]
 pub enum EngineError {
@@ -90,6 +91,8 @@ pub struct GlobalState {
     pub last_constraint_count: usize,
     /// Whether the Kairos gate passed on the last macro-step (for M9).
     pub last_gate_passed: bool,
+    /// C18 multi-scale state (Micro/Meso/Macro universes and bridges).
+    pub scale_state: isls_scale::MultiScaleState,
 }
 
 impl GlobalState {
@@ -112,6 +115,7 @@ impl GlobalState {
             prev_embeddings: BTreeMap::new(),
             last_constraint_count: 0,
             last_gate_passed: false,
+            scale_state: isls_scale::MultiScaleState::default(),
         }
     }
 }
@@ -445,6 +449,32 @@ pub fn macro_step(
             crystal.topology_signature.betti_0 = sig.betti_numbers[0];
             crystal.topology_signature.betti_1 = sig.betti_numbers.get(1).cloned().unwrap_or(0);
             crystal.topology_signature.betti_2 = sig.betti_numbers.get(2).cloned().unwrap_or(0);
+        }
+    }
+
+    // C18: Multi-scale tick (Micro→Meso→Macro lift + cross-scale bridges)
+    {
+        let laplacian = isls_topology::compute_laplacian(&state.graph);
+        let topo_cfg = isls_topology::TopologyConfig::default();
+        let spectral = isls_topology::spectral_decompose(&laplacian, topo_cfg.spectral_k_max);
+        let kuramoto = isls_topology::init_kuramoto_state(&state.graph);
+        let micro = isls_scale::isls_engine_types::MicroState::from_graph(&state.graph);
+        let scale_cfg = isls_scale::ScaleConfig::default();
+        let micro_crystals = state.archive.crystals();
+        let ms_result = isls_scale::multi_scale_tick(
+            &micro,
+            &mut state.scale_state,
+            &spectral,
+            &kuramoto,
+            &scale_cfg,
+            micro_crystals,
+            state.commit_index,
+        );
+        for mc in ms_result.meso_crystals {
+            state.scale_state.meso_crystals.push(mc);
+        }
+        for mc in ms_result.macro_crystals {
+            state.scale_state.macro_crystals.push(mc);
         }
     }
 

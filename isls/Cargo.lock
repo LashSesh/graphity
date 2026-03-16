@@ -397,6 +397,7 @@ dependencies = [
  "isls-observe",
  "isls-persist",
  "isls-registry",
+ "isls-scale",
  "isls-scheduler",
  "isls-store",
  "isls-topology",
@@ -430,6 +431,7 @@ dependencies = [
  "isls-observe",
  "isls-persist",
  "isls-registry",
+ "isls-scale",
  "isls-scheduler",
  "isls-topology",
  "isls-types",
@@ -464,6 +466,7 @@ dependencies = [
  "isls-observe",
  "isls-persist",
  "isls-registry",
+ "isls-scale",
  "isls-scheduler",
  "isls-store",
  "isls-topology",
@@ -528,6 +531,18 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "isls-scale"
+version = "1.0.0"
+dependencies = [
+ "isls-persist",
+ "isls-topology",
+ "isls-types",
+ "serde",
+ "serde_json",
+ "sha2",
 ]
 
 [[package]]

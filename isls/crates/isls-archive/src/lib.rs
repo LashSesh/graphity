@@ -259,6 +259,10 @@ pub fn build_crystal_with_id(
         created_at,
         free_energy,
         carrier_instance_idx,
+        scale_tag: String::new(),
+        universe_id: String::new(),
+        sub_crystal_ids: Vec::new(),
+        parent_crystal_ids: Vec::new(),
     }
 }
 
