@@ -37,10 +37,12 @@ for /L %%i in (0,1,4) do (
     set T=!TICKS[%%i]!
 
     echo [!N!/5] !S!: cleaning...
-    if exist "%ISLS_HOME%\data"     rmdir /s /q "%ISLS_HOME%\data"
-    if exist "%ISLS_HOME%\metrics"  rmdir /s /q "%ISLS_HOME%\metrics"
-    if exist "%ISLS_HOME%\reports"  rmdir /s /q "%ISLS_HOME%\reports"
-    if exist "%ISLS_HOME%\replay"   rmdir /s /q "%ISLS_HOME%\replay"
+    if exist "%ISLS_HOME%\data"      rmdir /s /q "%ISLS_HOME%\data"
+    if exist "%ISLS_HOME%\metrics"   rmdir /s /q "%ISLS_HOME%\metrics"
+    if exist "%ISLS_HOME%\reports"   rmdir /s /q "%ISLS_HOME%\reports"
+    if exist "%ISLS_HOME%\replay"    rmdir /s /q "%ISLS_HOME%\replay"
+    if exist "%ISLS_HOME%\manifests" rmdir /s /q "%ISLS_HOME%\manifests"
+    if exist "%ISLS_HOME%\capsules"  rmdir /s /q "%ISLS_HOME%\capsules"
     if exist "%ISLS_HOME%\config.json" del /q "%ISLS_HOME%\config.json"
     if not exist "%RESULTS_DIR%" mkdir "%RESULTS_DIR%"
 
@@ -66,16 +68,89 @@ for /L %%i in (0,1,4) do (
         copy /y "%ISLS_HOME%\reports\latest-formal.json" "%RESULTS_DIR%\!S!-formal.json" >nul
     )
 
-    :: Combine validate text + metrics JSON into the spec-required results.txt
+    :: ── Extension: execute mode + manifest ───────────────────────────────────
+    echo [!N!/5] !S!: execute mode + manifest...
+    set MANIFEST_ID=N/A
+    set ARCHIVE_PATH=%ISLS_HOME%\data\crystals\archive.jsonl
+    if exist "!ARCHIVE_PATH!" (
+        %ISLS% execute --input "!ARCHIVE_PATH!" --ticks 10 2>nul > "%RESULTS_DIR%\!S!-execute.txt"
+        if exist "%ISLS_HOME%\manifests\latest.json" (
+            copy /y "%ISLS_HOME%\manifests\latest.json" "%RESULTS_DIR%\!S!-manifest.json" >nul
+            set MANIFEST_ID=generated
+        )
+    )
+    echo   manifest_id: !MANIFEST_ID!
+
+    :: ── Extension: capsule seal/open ─────────────────────────────────────────
+    echo [!N!/5] !S!: capsule seal/open test...
+    set CAPSULE_OK=SKIP
+    if exist "%ISLS_HOME%\manifests\latest.json" (
+        %ISLS% seal --secret "isls-test-secret-!S!" --lock-manifest latest 2>nul
+        if exist "%ISLS_HOME%\capsules\latest.json" (
+            set OPENED_SECRET=FAIL
+            for /f "delims=" %%o in ('%ISLS% open --capsule "%ISLS_HOME%\capsules\latest.json" 2^>nul') do set OPENED_SECRET=%%o
+            if "!OPENED_SECRET!"=="isls-test-secret-!S!" (
+                set CAPSULE_OK=PASS
+                copy /y "%ISLS_HOME%\capsules\latest.json" "%RESULTS_DIR%\!S!-capsule.json" >nul
+            ) else (
+                set CAPSULE_OK=FAIL
+            )
+        )
+    )
+    echo   capsule: !CAPSULE_OK!
+
+    :: Combine validate + manifest info + metrics into results.txt
     type "%RESULTS_DIR%\!S!-validate.txt"  > "%RESULTS_DIR%\!S!-results.txt"
+    echo.                                  >> "%RESULTS_DIR%\!S!-results.txt"
+    echo manifest_id: !MANIFEST_ID!        >> "%RESULTS_DIR%\!S!-results.txt"
+    echo capsule_test: !CAPSULE_OK!        >> "%RESULTS_DIR%\!S!-results.txt"
     echo.                                  >> "%RESULTS_DIR%\!S!-results.txt"
     type "%RESULTS_DIR%\!S!-metrics.json"  >> "%RESULTS_DIR%\!S!-results.txt"
 )
 
 echo.
 
+:: ── Execute mode integration test ─────────────────────────────────────────────
+echo [EXECUTE] Running execute-mode integration test (S-Basic crystal)...
+if exist "%ISLS_HOME%\data"      rmdir /s /q "%ISLS_HOME%\data"
+if exist "%ISLS_HOME%\metrics"   rmdir /s /q "%ISLS_HOME%\metrics"
+if exist "%ISLS_HOME%\reports"   rmdir /s /q "%ISLS_HOME%\reports"
+if exist "%ISLS_HOME%\manifests" rmdir /s /q "%ISLS_HOME%\manifests"
+if exist "%ISLS_HOME%\capsules"  rmdir /s /q "%ISLS_HOME%\capsules"
+if exist "%ISLS_HOME%\config.json" del /q "%ISLS_HOME%\config.json"
+
+%ISLS% ingest --adapter synthetic --scenario S-Basic 2>nul
+%ISLS% run --mode shadow --ticks 100 2>nul
+
+set ARCHIVE_PATH=%ISLS_HOME%\data\crystals\archive.jsonl
+if exist "!ARCHIVE_PATH!" (
+    %ISLS% execute --input "!ARCHIVE_PATH!" --ticks 10 2>nul > "%RESULTS_DIR%\execute-integration.txt"
+    %ISLS% validate --formal 2>nul >> "%RESULTS_DIR%\execute-integration.txt"
+)
+echo   execute-mode integration: done
+
+:: ── Capsule integration test ──────────────────────────────────────────────────
+echo [CAPSULE] Running capsule integration test...
+set CAPSULE_RESULT=SKIP
+if exist "%ISLS_HOME%\manifests\latest.json" (
+    %ISLS% seal --secret "isls-test-secret" --lock-manifest latest 2>nul
+    if exist "%ISLS_HOME%\capsules\latest.json" (
+        set OPENED_FINAL=FAIL
+        for /f "delims=" %%o in ('%ISLS% open --capsule "%ISLS_HOME%\capsules\latest.json" 2^>nul') do set OPENED_FINAL=%%o
+        if "!OPENED_FINAL!"=="isls-test-secret" (
+            set CAPSULE_RESULT=PASS
+        ) else (
+            set CAPSULE_RESULT=FAIL
+        )
+    )
+)
+echo   capsule: %CAPSULE_RESULT%
+echo CAPSULE_INTEGRATION: %CAPSULE_RESULT% > "%RESULTS_DIR%\capsule-integration.txt"
+
+echo.
+
 :: ── Step 3: benchmarks ────────────────────────────────────────────────────────
-echo [BENCH] Running benchmarks...
+echo [BENCH] Running benchmarks B01-B15...
 %ISLS% bench 2>nul
 
 echo.
