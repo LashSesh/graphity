@@ -5,17 +5,35 @@ SETLOCAL ENABLEDELAYEDEXPANSION
 
 set ISLS_HOME=%USERPROFILE%\.isls
 set RESULTS_DIR=%ISLS_HOME%\results
-set ISLS=cargo run --bin isls --release --
+
+:: Determine repo root relative to this script
+set "SCRIPT_DIR=%~dp0"
+set "BINARY=%SCRIPT_DIR%target\release\isls.exe"
 
 :: ── Step 0: full initial clean + build ────────────────────────────────────────
 echo [SETUP] Cleaning all ISLS state...
 if exist "%ISLS_HOME%" rmdir /s /q "%ISLS_HOME%"
 mkdir "%RESULTS_DIR%"
 
-echo [BUILD] Building release binary (this may take a moment)...
-cargo build --bin isls --release 2>nul
+echo [BUILD] Building release binary...
+echo         (First build may be slow: rusqlite compiles bundled SQLite from C source.
+echo          Requires MSVC Build Tools or MinGW-w64. If this fails, install one of:
+echo          - Visual Studio Build Tools: https://aka.ms/vs/17/release/vs_BuildTools.exe
+echo          - LLVM+clang via winget:     winget install LLVM.LLVM
+echo          - MinGW-w64 via rustup:      rustup toolchain install stable-x86_64-pc-windows-gnu)
+echo.
+
+cargo build --bin isls --release
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Build failed. See output above.
+    echo         Common fix: install Visual Studio Build Tools and rerun.
+    exit /b 1
+)
 echo [BUILD] Done.
 echo.
+
+set ISLS="%BINARY%"
 
 :: ── Scenario arrays ───────────────────────────────────────────────────────────
 set SCENARIOS[0]=S-Basic
@@ -123,8 +141,8 @@ if exist "%ISLS_HOME%\config.json" del /q "%ISLS_HOME%\config.json"
 %ISLS% run --mode shadow --ticks 100 2>nul
 
 set ARCHIVE_PATH=%ISLS_HOME%\data\crystals\archive.jsonl
-if exist "!ARCHIVE_PATH!" (
-    %ISLS% execute --input "!ARCHIVE_PATH!" --ticks 10 2>nul > "%RESULTS_DIR%\execute-integration.txt"
+if exist "%ARCHIVE_PATH%" (
+    %ISLS% execute --input "%ARCHIVE_PATH%" --ticks 10 2>nul > "%RESULTS_DIR%\execute-integration.txt"
     %ISLS% validate --formal 2>nul >> "%RESULTS_DIR%\execute-integration.txt"
 )
 echo   execute-mode integration: done
