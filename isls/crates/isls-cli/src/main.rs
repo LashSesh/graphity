@@ -5,9 +5,11 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use isls_types::{Config, RunDescriptor};
-use isls_engine::{GlobalState, macro_step};
+use isls_types::{Config, RunDescriptor, SchedulerConfig};
+use isls_engine::{GlobalState, macro_step, execute, ExecuteInput};
 use isls_observe::ObservationAdapter;
+use isls_registry::RegistrySet;
+use isls_capsule::{seal, open, CapsulePolicy};
 use isls_archive::Archive;
 use isls_harness::{
     BenchSuite, FormalReport, FormalValidator, FullReport, MetricCollector, MetricSnapshot,
@@ -79,6 +81,9 @@ enum Command {
     Init,
     Ingest { adapter: String, path: Option<String>, entities: Option<usize>, scenario: Option<String> },
     Run { replay: Option<String>, mode: RunMode, ticks: usize },
+    Execute { input: String, ticks: usize, output: Option<String> },
+    Seal { secret: String, lock_manifest: Option<String>, output: Option<String> },
+    Open { capsule: String },
     Bench,
     Validate { formal: bool, retro: bool },
     Report { json: bool, html: bool, full_html: bool },
@@ -127,6 +132,40 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(10);
             Command::Run { replay, mode, ticks }
+        }
+        "execute" => {
+            let input = args.iter().position(|a| a == "--input")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "latest".to_string());
+            let ticks = args.iter().position(|a| a == "--ticks")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(10);
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Execute { input, ticks, output }
+        }
+        "seal" => {
+            let secret = args.iter().position(|a| a == "--secret")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_default();
+            let lock_manifest = args.iter().position(|a| a == "--lock-manifest")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Seal { secret, lock_manifest, output }
+        }
+        "open" => {
+            let capsule = args.iter().position(|a| a == "--capsule")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_default();
+            Command::Open { capsule }
         }
         "bench" => Command::Bench,
         "validate" => {
@@ -1108,6 +1147,156 @@ fn cmd_status() {
     println!("{}", status);
 }
 
+// ─── Execute Command (Extension: Generative Mode) ────────────────────────────
+
+fn cmd_execute(input: &str, ticks: usize, output: Option<&str>) {
+    let config = load_config();
+    let rd = RunDescriptor {
+        config: config.clone(),
+        operator_versions: BTreeMap::new(),
+        initial_state_digest: [0u8; 32],
+        seed: None,
+        registry_digests: BTreeMap::new(),
+        scheduler: SchedulerConfig::default(),
+    };
+    let registries = RegistrySet::new();
+
+    // Load crystal from archive or specified path
+    let archive = load_archive();
+    let execute_input = if input == "latest" || input.ends_with(".json") {
+        let crystal = if input == "latest" {
+            archive.crystals().last().cloned()
+        } else {
+            std::fs::read_to_string(input).ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+        };
+        match crystal {
+            Some(c) => ExecuteInput::Crystal(c),
+            None => {
+                eprintln!("No crystal found at '{}'. Run 'isls run' first.", input);
+                return;
+            }
+        }
+    } else {
+        eprintln!("Unsupported input format: {}", input);
+        return;
+    };
+
+    println!("Executing program for {} ticks...", ticks);
+    match execute(execute_input, None, &config, &rd, &registries, ticks) {
+        Ok((crystals, manifest)) => {
+            let committed: Vec<_> = crystals.iter().filter(|c| c.is_some()).collect();
+            println!("Execute complete: {} crystals produced", committed.len());
+            println!("Manifest run_id: {}", hex_hash(&manifest.run_id));
+            if let Some(out_dir) = output {
+                let _ = std::fs::create_dir_all(out_dir);
+                let manifest_path = format!("{}/manifest.json", out_dir);
+                if let Ok(s) = serde_json::to_string_pretty(&manifest) {
+                    let _ = std::fs::write(&manifest_path, s);
+                    println!("Manifest saved to {}", manifest_path);
+                }
+            }
+            // Save manifest to default location
+            let manifest_dir = isls_dir().join("manifests");
+            let _ = std::fs::create_dir_all(&manifest_dir);
+            let manifest_path = manifest_dir.join("latest.json");
+            if let Ok(s) = serde_json::to_string_pretty(&manifest) {
+                let _ = std::fs::write(&manifest_path, &s);
+            }
+        }
+        Err(e) => eprintln!("Execute failed: {:?}", e),
+    }
+}
+
+// ─── Seal Command (Extension: Capsule Protocol) ───────────────────────────────
+
+fn cmd_seal(secret: &str, lock_manifest: Option<&str>, output: Option<&str>) {
+    // Load manifest
+    let manifest_path = match lock_manifest {
+        Some("latest") | None => isls_dir().join("manifests/latest.json"),
+        Some(p) => PathBuf::from(p),
+    };
+
+    let manifest: isls_manifest::ExecutionManifest = match std::fs::read_to_string(&manifest_path) {
+        Ok(s) => match serde_json::from_str(&s) {
+            Ok(m) => m,
+            Err(e) => { eprintln!("Failed to parse manifest: {}", e); return; }
+        },
+        Err(e) => { eprintln!("Failed to read manifest at {:?}: {}", manifest_path, e); return; }
+    };
+
+    let policy = CapsulePolicy {
+        require_lock_program_id: [0u8; 32],
+        require_rd_digest: manifest.rd_digest,
+        require_gate_proofs: vec![],
+        require_manifest_id: Some(manifest.run_id),
+        expires_at: None,
+        max_uses: None,
+    };
+
+    // Use a fixed test key (in production, load from keychain/KMS)
+    let master_key: [u8; 32] = *b"isls-default-master-key-v1.0.0!!";
+
+    match seal(secret.as_bytes(), policy, BTreeMap::new(), &master_key, &manifest) {
+        Ok(capsule) => {
+            let capsule_dir = isls_dir().join("capsules");
+            let _ = std::fs::create_dir_all(&capsule_dir);
+            let out_path = output
+                .map(PathBuf::from)
+                .unwrap_or_else(|| capsule_dir.join("latest.json"));
+            if let Ok(s) = serde_json::to_string_pretty(&capsule) {
+                let _ = std::fs::write(&out_path, &s);
+                println!("Capsule sealed: {:?}", out_path);
+            }
+        }
+        Err(e) => eprintln!("Seal failed: {:?}", e),
+    }
+}
+
+// ─── Open Command (Extension: Capsule Protocol) ───────────────────────────────
+
+fn cmd_open(capsule_path: &str) {
+    let capsule_file = if capsule_path.is_empty() {
+        isls_dir().join("capsules/latest.json")
+    } else {
+        PathBuf::from(capsule_path)
+    };
+
+    let capsule: isls_capsule::Capsule = match std::fs::read_to_string(&capsule_file) {
+        Ok(s) => match serde_json::from_str(&s) {
+            Ok(c) => c,
+            Err(e) => { eprintln!("Failed to parse capsule: {}", e); return; }
+        },
+        Err(e) => { eprintln!("Failed to read capsule at {:?}: {}", capsule_file, e); return; }
+    };
+
+    // Load manifest referenced in capsule bind (or latest)
+    let manifest_path = isls_dir().join("manifests/latest.json");
+    let manifest: isls_manifest::ExecutionManifest = match std::fs::read_to_string(&manifest_path) {
+        Ok(s) => match serde_json::from_str(&s) {
+            Ok(m) => m,
+            Err(e) => { eprintln!("Failed to parse manifest: {}", e); return; }
+        },
+        Err(e) => { eprintln!("Failed to read manifest: {}", e); return; }
+    };
+
+    let master_key: [u8; 32] = *b"isls-default-master-key-v1.0.0!!";
+
+    match open(&capsule, &master_key, &manifest, None) {
+        Ok(plaintext) => {
+            match std::str::from_utf8(&plaintext) {
+                Ok(s) => println!("{}", s),
+                Err(_) => println!("{:?}", plaintext),
+            }
+        }
+        Err(e) => eprintln!("Open failed: {:?}", e),
+    }
+}
+
+fn hex_hash(h: &isls_types::Hash256) -> String {
+    h.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
 fn print_help() {
     println!("ISLS — Invariant Structure Learning System");
     println!("Version 1.0.0");
@@ -1124,6 +1313,15 @@ fn print_help() {
     println!("  run [options]                  Start the macro-step loop");
     println!("    --replay <descriptor>        Deterministic replay from saved descriptor");
     println!("    --mode <shadow|live>         Operation mode (default: live)");
+    println!("  execute [options]              Execute a discovered crystal in generative mode");
+    println!("    --input <path|latest>        Crystal JSON file or 'latest'");
+    println!("    --ticks <n>                  Number of ticks to execute (default: 10)");
+    println!("    --output <dir>               Output directory for manifest");
+    println!("  seal [options]                 Seal a secret under a manifest-bound capsule");
+    println!("    --secret <text>              Secret to seal");
+    println!("    --lock-manifest <path|latest> Manifest to bind to");
+    println!("  open [options]                 Open (decrypt) a capsule");
+    println!("    --capsule <path>             Path to capsule JSON");
     println!("  bench                          Run full benchmark suite, emit report");
     println!("  validate [options]             Run validation suite against collected data");
     println!("    --formal                     V-Formal: invariant checks on all crystals");
@@ -1137,6 +1335,9 @@ fn print_help() {
     println!("  isls init");
     println!("  isls ingest --adapter synthetic --entities 500");
     println!("  isls run");
+    println!("  isls execute --input latest --ticks 10");
+    println!("  isls seal --secret 'my-secret' --lock-manifest latest");
+    println!("  isls open --capsule ~/.isls/capsules/latest.json");
     println!("  isls bench");
     println!("  isls validate --formal");
     println!("  isls report");
@@ -1157,6 +1358,15 @@ fn main() {
         }
         Command::Run { replay, mode, ticks } => {
             cmd_run(replay.as_deref(), mode, ticks);
+        }
+        Command::Execute { input, ticks, output } => {
+            cmd_execute(&input, ticks, output.as_deref());
+        }
+        Command::Seal { secret, lock_manifest, output } => {
+            cmd_seal(&secret, lock_manifest.as_deref(), output.as_deref());
+        }
+        Command::Open { capsule } => {
+            cmd_open(&capsule);
         }
         Command::Bench => cmd_bench(),
         Command::Validate { formal, retro } => cmd_validate(formal, retro),

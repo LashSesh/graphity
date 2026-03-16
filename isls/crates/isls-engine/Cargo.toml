@@ -12,6 +12,9 @@ isls-consensus = { path = "../isls-consensus" }
 isls-carrier = { path = "../isls-carrier" }
 isls-archive = { path = "../isls-archive" }
 isls-morph = { path = "../isls-morph" }
+isls-registry = { path = "../isls-registry" }
+isls-manifest = { path = "../isls-manifest" }
+isls-scheduler = { path = "../isls-scheduler" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

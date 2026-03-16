@@ -15,6 +15,10 @@ isls-archive = { path = "../isls-archive" }
 isls-persist = { path = "../isls-persist" }
 isls-observe = { path = "../isls-observe" }
 isls-harness = { path = "../isls-harness" }
+isls-registry = { path = "../isls-registry" }
+isls-manifest = { path = "../isls-manifest" }
+isls-capsule = { path = "../isls-capsule" }
+isls-scheduler = { path = "../isls-scheduler" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

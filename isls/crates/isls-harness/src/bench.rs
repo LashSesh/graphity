@@ -307,6 +307,8 @@ impl BenchSuite {
             operator_versions: BTreeMap::new(),
             initial_state_digest: [0u8; 32],
             seed: Some(self.seed),
+            registry_digests: BTreeMap::new(),
+            scheduler: isls_types::SchedulerConfig::default(),
         };
 
         const N: usize = 100; // reduced for speed

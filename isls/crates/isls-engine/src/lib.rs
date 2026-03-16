@@ -19,6 +19,11 @@ use isls_archive::{Archive, build_crystal_with_id};
 use isls_morph::{intrinsic_step, morphogenic_update, MorphState};
 use thiserror::Error;
 
+// Extension crates (C12–C15)
+pub use isls_registry;
+pub use isls_manifest;
+pub use isls_scheduler;
+
 #[derive(Debug, Error)]
 pub enum EngineError {
     #[error("observation error: {0}")]
@@ -472,6 +477,113 @@ pub fn run_with_descriptor(
         results.push(result);
     }
     Ok(results)
+}
+
+// ─── Execute Mode (Extension: C15 + Generative Mode) ─────────────────────────
+
+/// Input variants for execute mode (ISLS Extension Def ExecuteInput)
+pub enum ExecuteInput {
+    Crystal(isls_types::SemanticCrystal),
+    Program(isls_types::ConstraintProgram),
+    Hdag(isls_persist::PersistentGraph),
+}
+
+/// Run a program in execute mode, producing crystals + execution manifest.
+///
+/// The program is serialized into synthetic observation payloads and fed through
+/// the standard macro-step pipeline.  The Spiral Scheduler adapts tick granularity
+/// based on current system dynamics when `config.scheduler.enabled` is true.
+pub fn execute(
+    input: ExecuteInput,
+    initial_state: Option<GlobalState>,
+    config: &isls_types::Config,
+    rd: &isls_types::RunDescriptor,
+    registries: &isls_registry::RegistrySet,
+    ticks: usize,
+) -> Result<(Vec<Option<isls_types::SemanticCrystal>>, isls_manifest::ExecutionManifest)> {
+    // Determine program_id and build synthetic observation batch from program
+    let (program_id, obs_payload) = match &input {
+        ExecuteInput::Crystal(c) => {
+            let id = c.crystal_id.iter().map(|b| format!("{:02x}", b)).collect::<String>();
+            let payload = serde_json::to_vec(c).unwrap_or_default();
+            (id, payload)
+        }
+        ExecuteInput::Program(p) => {
+            let payload = serde_json::to_vec(p).unwrap_or_default();
+            ("program".to_string(), payload)
+        }
+        ExecuteInput::Hdag(g) => {
+            let payload = serde_json::to_vec(&g.embedding).unwrap_or_default();
+            ("hdag".to_string(), payload)
+        }
+    };
+
+    let mut state = initial_state.unwrap_or_else(|| GlobalState::new(config));
+    let adapter = PassthroughAdapter::new("execute");
+    let mut results = Vec::new();
+    let mut traces: Vec<isls_manifest::TraceEntry> = Vec::new();
+    let mut obs_log: Vec<Vec<Vec<u8>>> = Vec::new();
+
+    for tick in 0..ticks {
+        // Spiral Scheduler: compute sub-step count
+        let n_substeps = isls_scheduler::compute_substeps(
+            state.prev_embeddings.len() as f64 * 0.01, // proxy for d
+            0.0,
+            0.0,
+            &rd.scheduler,
+        );
+
+        // Run n_substeps of intrinsic dynamics (sub-steps do NOT produce commits)
+        for _sub in 1..n_substeps {
+            state.t2 += config.temporal.dt2 / n_substeps as f64;
+            let attractor = state.morph.attractor.clone();
+            let empty_program = vec![];
+            isls_morph::intrinsic_step(
+                &mut state.h5_state,
+                &attractor,
+                &empty_program,
+                config.temporal.dt2 / n_substeps as f64,
+                config.temporal.gamma,
+            );
+        }
+
+        // Extrinsic macro-step (commit decision)
+        let batch = vec![obs_payload.clone()];
+        obs_log.push(batch.clone());
+
+        let pre_state_digest = isls_types::content_address(&state.h5_state);
+        let crystal_result = macro_step(&mut state, &batch, config, &adapter)?;
+
+        // Record trace entry
+        let crystal_id = crystal_result.as_ref().map(|c| c.crystal_id);
+        let gate_snap = if let Some(ref c) = crystal_result {
+            c.commit_proof.gate_values.clone()
+        } else {
+            isls_types::GateSnapshot::default()
+        };
+        traces.push(isls_manifest::TraceEntry {
+            tick: tick as u64,
+            input_digest: isls_types::content_address_raw(&obs_payload),
+            state_digest: pre_state_digest,
+            crystal_id,
+            gate_snapshot: gate_snap,
+            metrics_digest: [0u8; 32],
+        });
+
+        results.push(crystal_result);
+    }
+
+    // Build execution manifest
+    let manifest = isls_manifest::build_manifest(
+        rd,
+        &traces,
+        &state.archive,
+        registries,
+        &program_id,
+        &obs_log,
+    );
+
+    Ok((results, manifest))
 }
 
 // ─── Temperature Calibration (OI-06) ─────────────────────────────────────────
