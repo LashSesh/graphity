@@ -358,6 +358,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-artifact-ir"
+version = "1.0.0"
+dependencies = [
+ "isls-pmhd",
+ "isls-types",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "isls-capsule"
 version = "1.0.0"
 dependencies = [
@@ -453,6 +466,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-forge"
+version = "1.0.0"
+dependencies = [
+ "isls-artifact-ir",
+ "isls-pmhd",
+ "isls-store",
+ "isls-types",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "isls-harness"
 version = "1.0.0"
 dependencies = [
@@ -518,6 +546,18 @@ dependencies = [
  "isls-types",
  "petgraph",
  "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "isls-pmhd"
+version = "1.0.0"
+dependencies = [
+ "isls-types",
+ "serde",
+ "serde_jcs",
+ "serde_json",
+ "sha2",
  "thiserror",
 ]
 

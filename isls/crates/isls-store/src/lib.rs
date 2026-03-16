@@ -98,6 +98,17 @@ pub struct CapsuleRow {
     pub expires_at: Option<String>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PatternRow {
+    pub id: String,
+    pub monolith_id: String,
+    pub domain: String,
+    pub quality_json: String,
+    pub signature_json: String,
+    pub component_kinds: String, // JSON array
+    pub timestamp: f64,
+}
+
 // ─── Schema Migration SQL ─────────────────────────────────────────────────────
 
 const SCHEMA_V1: &str = "
@@ -196,6 +207,16 @@ CREATE TABLE IF NOT EXISTS settings (
     key             TEXT PRIMARY KEY,
     value           TEXT NOT NULL,
     updated_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS patterns (
+    id              TEXT PRIMARY KEY,
+    monolith_id     TEXT NOT NULL,
+    domain          TEXT NOT NULL,
+    quality_json    TEXT NOT NULL,
+    signature_json  TEXT NOT NULL,
+    component_kinds TEXT NOT NULL,
+    timestamp       REAL NOT NULL
 );
 ";
 
@@ -613,6 +634,52 @@ impl IslandStore {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(StoreError::Sqlite(e)),
         }
+    }
+
+    // ── Patterns (Phase 5) ────────────────────────────────────────────────────
+
+    pub fn insert_pattern(&self, p: &PatternRow) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO patterns \
+             (id, monolith_id, domain, quality_json, signature_json, component_kinds, timestamp) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            params![p.id, p.monolith_id, p.domain, p.quality_json,
+                    p.signature_json, p.component_kinds, p.timestamp],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_patterns(&self, domain: Option<&str>) -> Result<Vec<PatternRow>> {
+        let conn = self.conn.lock().unwrap();
+        let map_row = |row: &rusqlite::Row<'_>| Ok(PatternRow {
+            id: row.get(0)?,
+            monolith_id: row.get(1)?,
+            domain: row.get(2)?,
+            quality_json: row.get(3)?,
+            signature_json: row.get(4)?,
+            component_kinds: row.get(5)?,
+            timestamp: row.get(6)?,
+        });
+        let rows: Vec<PatternRow> = match domain {
+            Some(d) => {
+                let mut stmt = conn.prepare(
+                    "SELECT id,monolith_id,domain,quality_json,signature_json,\
+                     component_kinds,timestamp FROM patterns WHERE domain=?1 ORDER BY timestamp"
+                )?;
+                let v = stmt.query_map(params![d], map_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+                v
+            }
+            None => {
+                let mut stmt = conn.prepare(
+                    "SELECT id,monolith_id,domain,quality_json,signature_json,\
+                     component_kinds,timestamp FROM patterns ORDER BY timestamp"
+                )?;
+                let v = stmt.query_map([], map_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+                v
+            }
+        };
+        Ok(rows)
     }
 
     // ── Maintenance ───────────────────────────────────────────────────────────
