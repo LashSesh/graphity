@@ -126,6 +126,39 @@ fn harness_at_c4_expiry() {
     assert!(result.is_err());
 }
 
+// AT-M4: Replay pack sufficiency — engine replay produces identical crystals
+#[test]
+fn harness_at_m4_replay_pack_sufficiency() {
+    use isls_engine::{execute, ExecuteInput};
+    use isls_manifest::build_replay_pack;
+
+    let rd = make_rd();
+    let registries = RegistrySet::new();
+
+    // First execute run
+    let input1 = ExecuteInput::Program(vec![]);
+    let (_, manifest1) = execute(input1, None, &rd.config, &rd, &registries, 3).unwrap();
+
+    // Build replay pack from first run
+    let pack = build_replay_pack(
+        manifest1.clone(),
+        rd.clone(),
+        vec![],
+        registries.clone(),
+        vec![],
+    );
+
+    // Second execute run (replay) using pack's RD and registries
+    let input2 = ExecuteInput::Program(vec![]);
+    let (_, manifest2) = execute(input2, None, &pack.rd.config, &pack.rd, &pack.registries, 3).unwrap();
+
+    // Deterministic replay: identical trace digests
+    assert_eq!(manifest1.trace_digests, manifest2.trace_digests,
+        "replay must produce identical trace digests");
+    assert_eq!(manifest1.crystal_digests, manifest2.crystal_digests,
+        "replay must produce identical crystal digests");
+}
+
 // ─── Scheduler Tests ─────────────────────────────────────────────────────────
 
 #[test]
