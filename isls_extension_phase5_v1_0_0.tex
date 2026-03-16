@@ -1,0 +1,1174 @@
+%%% =======================================================================
+%%% ISLS Extension Phase 5 v1.0.0
+%%% C21: Adversarial Hypothesis Drill (PMHD)
+%%% C22: Universal Artifact Intermediate Representation
+%%% C23: Generative Synthesis Engine (Forge)
+%%% Author: Sebastian Klemm
+%%% Date: 16 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{algorithm,algorithmic}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,fit}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{axiom}{Axiom}[section]
+\newtheorem{requirement}{Requirement}[section]
+\newtheorem{invariant}{Invariant}[section]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}{Lemma}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\ISLS}{\textsf{ISLS}}
+\newcommand{\FORGE}{\textsf{FORGE}}
+\newcommand{\PMHD}{\textsf{PMHD}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\NN}{\mathbb{N}}
+\newcommand{\calH}{\mathcal{H}}
+\newcommand{\calC}{\mathcal{C}}
+\newcommand{\calQ}{\mathcal{Q}}
+\newcommand{\calP}{\mathcal{P}}
+\newcommand{\calM}{\mathcal{M}}
+\newcommand{\calA}{\mathcal{A}}
+\newcommand{\calE}{\mathcal{E}}
+\newcommand{\calD}{\mathcal{D}}
+\newcommand{\calF}{\mathcal{F}}
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calS}{\mathcal{S}}
+\DeclareMathOperator{\Dig}{Dig}
+\DeclareMathOperator{\Canon}{Canon}
+\DeclareMathOperator{\Drill}{Drill}
+\DeclareMathOperator{\Oppose}{Oppose}
+\DeclareMathOperator{\Commit}{Commit}
+\DeclareMathOperator{\Synth}{Synth}
+\DeclareMathOperator{\Eval}{Eval}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Extension Phase 5 v1.0.0}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Extension Phase 5 v1.0.0 — Generative Forge},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries \ISLS{} Extension Phase~5\\[0.3cm]
+v1.0.0}\\[1.5cm]
+{\Large C21: Adversarial Hypothesis Drill (\PMHD{})\\
+C22: Universal Artifact IR\\
+C23: Generative Synthesis Engine (\FORGE{})}\\[1cm]
+{\large The Generative Counterpart:\\
+From Intent to Evidence-Bound Artifact}\\[1cm]
+{\normalsize Absorbing PMHD + ArtifactIR from MERKABA Factory\\
+and Mining + Matrix from OmniCube}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 16 March 2026}\\[1.5cm]
+
+\begin{abstract}
+\noindent
+This document specifies the generative half of the \ISLS{} substrate:
+three crates that transform structured intent into evidence-bound
+artifacts through adversarial hypothesis drilling, universal
+intermediate representation, and domain-specific synthesis.
+
+C21 (\texttt{isls-pmhd}) implements the Polycentric Multi-Hypothesis
+Drill: a generative process that produces hypotheses, tests them
+adversarially against counterexamples, measures quality across six
+axes (coherence, diversity, novelty, stability, robustness, coverage),
+and commits survivors as Monoliths.
+
+C22 (\texttt{isls-artifact-ir}) defines the universal, flat,
+serializable intermediate representation that any Monolith is
+transformed into before domain-specific synthesis.
+
+C23 (\texttt{isls-forge}) is the synthesis engine that takes an
+ArtifactIR, interprets it through a domain Matrix (Filament),
+evaluates it against constraints, stores patterns in a persistent
+memory, renders the final output, and validates the result through
+\ISLS{}'s 8-gate cascade --- producing a Semantic Crystal that
+contains the artifact with full evidence provenance from DecisionSpec
+to final output.
+
+Together with the analytical core (C1--C20), Phase~5 completes the
+\ISLS{} substrate as a system that can both \emph{discover} programs
+in data and \emph{generate} artifacts from intent, using identical
+formal machinery for both directions.
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Parent:} ISLS v1.0.0 + Extensions Phase 1--4.\\
+\textbf{Absorbs:} MERKABA \texttt{domain-artifact} (PMHD, ArtifactIR,
+  Synth, Eval, Memory, Render), OmniCube \texttt{blueprint-forge}
+  (Mining, Matrix, Materializer).\\
+\textbf{Depends on:} C12 (Registry), C13 (Manifest), C14 (Capsule),
+  C17 (Store), C19 (Gateway).
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+%%% =====================================================================
+\part{Foundations}\label{part:foundations}
+
+\section{The Two Directions}\label{sec:twodirections}
+
+\ISLS{} until Phase~4 is purely analytical: it observes data, discovers
+patterns, and crystallizes them. Phase~5 adds the generative direction:
+it accepts structured intent, drills it adversarially, synthesizes an
+artifact, and crystallizes the result through the same 8-gate cascade.
+
+\begin{definition}[Analytical Direction]\label{def:analytical}
+\[
+  \text{World} \xrightarrow{\text{observe}} G
+  \xrightarrow{\text{extract}} P
+  \xrightarrow{\text{validate}} C_{\text{discovery}}
+\]
+Input: observations. Output: crystal encoding a discovered program.
+\end{definition}
+
+\begin{definition}[Generative Direction]\label{def:generative}
+\[
+  \text{Intent} \xrightarrow{\text{drill}} M
+  \xrightarrow{\text{IR}} A
+  \xrightarrow{\text{synth}} O
+  \xrightarrow{\text{validate}} C_{\text{forge}}
+\]
+Input: DecisionSpec. Output: crystal encoding a generated artifact.
+\end{definition}
+
+\begin{axiom}[Substrate Identity]\label{ax:substrate}
+Both directions use the same state space ($\RR^5$), the same
+canonicalization (JCS + SHA-256), the same Run Descriptor, the same
+Evidence Chain, the same Crystal format, and the same 8-gate cascade.
+A crystal produced by the forge is structurally indistinguishable from
+a crystal produced by discovery. Only the \texttt{program\_id} field
+in the manifest distinguishes provenance.
+\end{axiom}
+
+\begin{axiom}[Adversarial Quality]\label{ax:adversarial}
+No artifact may be committed without surviving adversarial opposition.
+The PMHD drill is not a generator with a quality filter --- it is a
+dialectical process where hypotheses are tested against structured
+counterevidence before commitment.
+\end{axiom}
+
+\begin{axiom}[Memory Persistence]\label{ax:memory}
+The pattern memory is append-only and persistent across runs. Every
+committed monolith enriches the memory for future runs. The memory
+is stored in the \ISLS{} archive (C7) and store (C17), not in an
+ephemeral in-process structure.
+\end{axiom}
+
+
+\section{Absorption Map}\label{sec:absorb}
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Source} & \textbf{Target} & \textbf{Transformation} \\
+\midrule
+MERKABA \texttt{pmhd/} & C21 \texttt{isls-pmhd} & DrillEngine,
+  Hypothesis, Counterexample, QualityMetrics, PmhdMonolith,
+  Provenance. Adapted to use \ISLS{} types, registry, and PoR
+  from C5. \\
+MERKABA \texttt{artifact\_ir} & C22 \texttt{isls-artifact-ir} &
+  ArtifactIR, ArtifactHeader, Component, Interface, Constraint,
+  Metrics, Provenance, Delta. Unchanged structurally; retyped to
+  use Hash256 and \ISLS{} serialization. \\
+MERKABA \texttt{synth/eval/memory/render} & C23 \texttt{isls-forge} &
+  Synthesizers, Evaluators, PatternLibrary, Emitters. Extended with
+  8-gate validation and crystal output. \\
+OmniCube \texttt{qops} & C21 mining strategies & Greedy, Stochastic,
+  Beam, Evolutionary search strategies for hypothesis seed
+  generation. \\
+OmniCube \texttt{blueprint-forge} & C23 domain matrices & Matrix
+  concept: domain-specific interpretation of abstract signatures
+  into concrete artifacts. \\
+\bottomrule
+\end{tabularx}
+
+
+%%% =====================================================================
+\part{Crate C21: \texttt{isls-pmhd}}\label{part:pmhd}
+
+\section{Purpose}\label{sec:pmhd:purpose}
+
+The PMHD crate implements the adversarial hypothesis drill: a
+deterministic process that generates, opposes, evaluates, and commits
+structured hypotheses about what an artifact should be.
+
+
+\section{Core Objects}\label{sec:pmhd:objects}
+
+\begin{definition}[DecisionSpec]\label{def:decisionspec}
+A DecisionSpec $\calD$ is the input to the generative direction:
+\[
+  \calD = \langle \mathtt{id}, \mathtt{intent}, \mathtt{goals},
+          \mathtt{constraints}, \mathtt{seeds},
+          \mathtt{domain}, \mathtt{config} \rangle
+\]
+where:
+\begin{itemize}[nosep]
+  \item \texttt{id}: content-address of the canonical spec,
+  \item \texttt{intent}: natural-language or structured description of
+        the desired artifact,
+  \item \texttt{goals}: key-value map of target quality metrics
+        (e.g., \texttt{\{coherence: 0.7, robustness: 0.8\}}),
+  \item \texttt{constraints}: hard constraints that must be satisfied
+        (list of predicate strings),
+  \item \texttt{seeds}: optional seed crystals from the \ISLS{} archive
+        to guide hypothesis generation,
+  \item \texttt{domain}: target domain identifier
+        (e.g., \texttt{"rust"}, \texttt{"api"}, \texttt{"workflow"}),
+  \item \texttt{config}: PMHD configuration (tick count, pool size,
+        opposition strength).
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Hypothesis]\label{def:hypothesis}
+A hypothesis $h \in \calH$ is a structured claim:
+\[
+  h = \langle \mathtt{id}, \mathtt{claim}, \mathtt{assumptions},
+      \mathtt{evidence}, \mathtt{generation} \rangle
+\]
+where:
+\begin{itemize}[nosep]
+  \item \texttt{id} = SHA-256(claim $\|$ sorted(assumptions)),
+  \item \texttt{claim}: the core assertion (what the artifact should be),
+  \item \texttt{assumptions}: ordered list of supporting assumptions,
+  \item \texttt{evidence}: list of evidence items supporting the claim,
+  \item \texttt{generation}: the drill tick at which this hypothesis
+        was created.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Counterexample]\label{def:counterexample}
+A counterexample $c \in \calC$ is a structured objection:
+\[
+  c = \langle \mathtt{id}, \mathtt{target\_id}, \mathtt{reason},
+      \mathtt{severity} \rangle
+\]
+where $\mathtt{severity} \in [0, 255]$ quantifies the strength of the
+objection.
+\end{definition}
+
+\begin{definition}[Quality Metrics]\label{def:quality}
+The quality of a hypothesis is measured across six axes:
+\[
+  \calQ(h) = \langle q_{\mathrm{coh}}, q_{\mathrm{div}},
+  q_{\mathrm{nov}}, q_{\mathrm{stab}}, q_{\mathrm{rob}},
+  q_{\mathrm{cov}} \rangle \in [0,1]^6
+\]
+\begin{itemize}[nosep]
+  \item $q_{\mathrm{coh}}$: \textbf{Coherence} --- internal consistency
+        of the hypothesis and its evidence.
+  \item $q_{\mathrm{div}}$: \textbf{Diversity} --- breadth of
+        perspectives explored in the drill pool.
+  \item $q_{\mathrm{nov}}$: \textbf{Novelty} --- distance from
+        previously committed monoliths in the pattern memory.
+  \item $q_{\mathrm{stab}}$: \textbf{Stability} --- resilience under
+        repeated adversarial opposition across ticks.
+  \item $q_{\mathrm{rob}}$: \textbf{Robustness} --- survival rate
+        against counterexamples weighted by severity.
+  \item $q_{\mathrm{cov}}$: \textbf{Coverage} --- fraction of the
+        goal space addressed by the hypothesis.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Monolith]\label{def:monolith}
+A PmhdMonolith $m \in \calM$ is the committed output of a drill cycle
+that survived all quality thresholds and the PoR gate:
+\[
+  m = \langle \mathtt{id}, h^*, \mathtt{excalibration},
+      \{c_1, \ldots, c_k\}, \calQ(h^*), \mathtt{provenance} \rangle
+\]
+where $h^*$ is the surviving core hypothesis, \texttt{excalibration}
+is the adversarial sharpening vector, and provenance contains seed,
+config hash, tick range, active set stats, and PoR evidence.
+\end{definition}
+
+
+\section{Drill Algorithm}\label{sec:pmhd:algo}
+
+\begin{algorithm}[H]
+\caption{\textsc{PMHD\_Drill}: Adversarial hypothesis drill}
+\label{alg:drill}
+\begin{algorithmic}[1]
+\REQUIRE DecisionSpec $\calD$, Config $\theta$, PatternMemory $\calP$
+\ENSURE List of PmhdMonoliths $\{m_1, \ldots, m_k\}$
+\STATE $\mathrm{pool} \gets \textsc{SeedHypotheses}(\calD, \calP, \theta)$
+\FOR{$t = 1$ \TO $\theta.\mathrm{ticks}$}
+  \STATE \textit{// Phase 1: Generate}
+  \STATE $\mathrm{pool} \gets \mathrm{pool} \cup
+    \textsc{Mutate}(\mathrm{pool}, \calD, t)$
+  \STATE \textit{// Phase 2: Oppose}
+  \FOR{each $h \in \mathrm{pool}$}
+    \STATE $\mathrm{counters} \gets \textsc{GenerateCounterexamples}(h, \calD, t)$
+    \STATE $h.\mathrm{evidence} \gets h.\mathrm{evidence} \cup
+      \textsc{Defend}(h, \mathrm{counters})$
+  \ENDFOR
+  \STATE \textit{// Phase 3: Evaluate}
+  \FOR{each $h \in \mathrm{pool}$}
+    \STATE $\calQ(h) \gets \textsc{MeasureQuality}(h, \mathrm{pool}, \calP)$
+  \ENDFOR
+  \STATE \textit{// Phase 4: Select and Prune}
+  \STATE $\mathrm{pool} \gets \textsc{TournamentSelect}(\mathrm{pool},
+    \theta.\mathrm{pool\_size})$
+  \STATE \textit{// Phase 5: Commit Gate}
+  \FOR{each $h \in \mathrm{pool}$ where $\calQ(h) \ge \theta.\mathrm{thresholds}$}
+    \IF{$\textsc{PoR\_Gate}(h, \calQ(h), \calD) = \mathrm{FIRE}$}
+      \STATE $m \gets \textsc{CommitMonolith}(h, \calQ(h), t, \calD)$
+      \STATE $\mathrm{monoliths} \gets \mathrm{monoliths} \cup \{m\}$
+      \STATE $\calP.\mathrm{add}(m)$
+    \ENDIF
+  \ENDFOR
+\ENDFOR
+\RETURN $\mathrm{monoliths}$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{definition}[Seed Strategies]\label{def:seedstrat}
+Hypothesis seeding uses strategies absorbed from OmniCube QOPS:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item \textbf{Greedy}: seed from the highest-resonance crystals in
+        the pattern memory that match the DecisionSpec domain.
+  \item \textbf{Stochastic}: deterministic pseudo-random generation
+        from the RD seed, sampling the 5D signature space.
+  \item \textbf{Beam}: maintain $k$ best hypotheses and expand each.
+  \item \textbf{Evolutionary}: mutation + crossover on the hypothesis
+        pool with tournament selection.
+  \item \textbf{Hybrid}: combine greedy seeding with evolutionary
+        expansion (default).
+\end{enumerate}
+All strategies are deterministic under fixed $(\calD, \mathrm{RD})$.
+\end{definition}
+
+\begin{definition}[Commit Gate]\label{def:commitgate}
+The PMHD commit gate fires if and only if:
+\[
+  G_{\PMHD}(h) = \mathbf{1}\!\left[
+    q_{\mathrm{coh}} \ge \theta_{\mathrm{coh}} \;\wedge\;
+    q_{\mathrm{div}} \ge \theta_{\mathrm{div}} \;\wedge\;
+    q_{\mathrm{nov}} \ge \theta_{\mathrm{nov}} \;\wedge\;
+    q_{\mathrm{stab}} \ge \theta_{\mathrm{stab}} \;\wedge\;
+    q_{\mathrm{rob}} \ge \theta_{\mathrm{rob}} \;\wedge\;
+    q_{\mathrm{cov}} \ge \theta_{\mathrm{cov}} \;\wedge\;
+    \mathrm{PoR}(h)
+  \right]
+\]
+The PoR check uses the existing \ISLS{} PoR FSM (C5) applied to the
+drill state trajectory.
+\end{definition}
+
+
+\section{Configuration}\label{sec:pmhd:config}
+
+\begin{lstlisting}[title={PMHD Configuration}]
+pmhd:
+  ticks: 5000
+  pool_size: 50
+  opposition_strength: 0.7   # severity multiplier
+  mutation_rate: 0.3
+  crossover_rate: 0.2
+  seed_strategy: "hybrid"
+  thresholds:
+    coherence: 0.6
+    diversity: 0.4
+    novelty: 0.3
+    stability: 0.5
+    robustness: 0.6
+    coverage: 0.4
+  commit_budget: 20           # max monoliths per run
+  use_pattern_memory: true
+\end{lstlisting}
+
+
+\section{Rust API}\label{sec:pmhd:api}
+
+\begin{lstlisting}
+// isls-pmhd/src/lib.rs
+
+pub struct DecisionSpec {
+    pub id: Hash256,
+    pub intent: String,
+    pub goals: BTreeMap<String, f64>,
+    pub constraints: Vec<String>,
+    pub seeds: Vec<Hash256>,        // crystal IDs from archive
+    pub domain: String,
+    pub config: PmhdConfig,
+}
+
+pub struct Hypothesis {
+    pub id: String,                 // SHA-256(claim || assumptions)
+    pub claim: String,
+    pub assumptions: Vec<String>,
+    pub evidence: Vec<Evidence>,
+    pub generation: u64,
+}
+
+pub struct Counterexample {
+    pub id: String,
+    pub target_id: String,
+    pub reason: String,
+    pub severity: u8,
+}
+
+pub struct QualityMetrics {
+    pub coherence: f64,
+    pub diversity: f64,
+    pub novelty: f64,
+    pub stability: f64,
+    pub robustness: f64,
+    pub coverage: f64,
+}
+
+pub struct PmhdMonolith {
+    pub id: String,
+    pub core_hypothesis: Hypothesis,
+    pub excalibration_vector: Vec<f64>,
+    pub counterexamples: Vec<Counterexample>,
+    pub quality: QualityMetrics,
+    pub provenance: MonolithProvenance,
+}
+
+pub struct DrillEngine {
+    config: PmhdConfig,
+    pool: Vec<Hypothesis>,
+    monoliths: Vec<PmhdMonolith>,
+    pattern_memory: PatternMemory,
+    tick: u64,
+}
+
+pub enum SeedStrategy {
+    Greedy,
+    Stochastic,
+    Beam { width: usize },
+    Evolutionary,
+    Hybrid,
+}
+
+impl DrillEngine {
+    pub fn new(config: PmhdConfig) -> Self;
+    pub fn with_memory(config: PmhdConfig, memory: PatternMemory) -> Self;
+    pub fn drill(&mut self, spec: &DecisionSpec) -> DrillResult;
+    pub fn step(&mut self, spec: &DecisionSpec) -> StepResult;
+    pub fn monoliths(&self) -> &[PmhdMonolith];
+    pub fn pattern_memory(&self) -> &PatternMemory;
+}
+
+pub struct DrillResult {
+    pub monoliths: Vec<PmhdMonolith>,
+    pub ticks_executed: u64,
+    pub pool_final_size: usize,
+    pub quality_history: Vec<Vec<QualityMetrics>>,
+    pub commit_count: usize,
+}
+\end{lstlisting}
+
+
+\section{Acceptance Tests}\label{sec:pmhd:tests}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-P1 & Drill determinism & Run drill twice with same spec and RD;
+  verify identical monolith IDs. \\
+AT-P2 & Opposition effect & Run with opposition\_strength=0 vs.
+  opposition\_strength=0.9; verify robustness scores differ. \\
+AT-P3 & Commit gate & Set all thresholds to 1.0; verify zero
+  monoliths committed. Set to 0.0; verify all committed. \\
+AT-P4 & Quality metrics range & Verify all 6 metrics in $[0,1]$ for
+  every hypothesis at every tick. \\
+AT-P5 & Pattern memory growth & Commit 3 monoliths; verify memory
+  contains 3 patterns. Run again with same spec; verify novelty scores
+  reflect existing patterns. \\
+AT-P6 & Seed strategies & Run with each strategy; verify all produce
+  at least 1 monolith. Verify determinism for each. \\
+AT-P7 & Hypothesis ID determinism & Create hypothesis with same claim
+  and assumptions; verify identical ID. \\
+AT-P8 & Provenance completeness & Verify monolith provenance contains
+  seed, config\_hash, tick range, PoR evidence. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Crate C22: \texttt{isls-artifact-ir}}\label{part:ir}
+
+\section{Purpose}\label{sec:ir:purpose}
+
+The ArtifactIR is the universal, flat, serializable intermediate
+representation that bridges the gap between the abstract monolith
+(the adversarially-tested hypothesis) and the concrete domain-specific
+output. It is domain-agnostic: the same IR structure represents a Rust
+module, an API specification, a workflow definition, a database schema,
+or any other structured artifact.
+
+
+\section{Data Model}\label{sec:ir:model}
+
+\begin{definition}[ArtifactIR]\label{def:artifactir}
+An ArtifactIR $\calA$ is a flat structure:
+\[
+  \calA = \langle \mathtt{header}, \mathtt{components},
+          \mathtt{interfaces}, \mathtt{constraints},
+          \mathtt{metrics}, \mathtt{provenance},
+          \mathtt{deltas}, \mathtt{extra} \rangle
+\]
+\end{definition}
+
+\begin{definition}[ArtifactHeader]\label{def:artheader}
+\begin{lstlisting}
+pub struct ArtifactHeader {
+    pub artifact_id: Hash256,      // content-addressed
+    pub version: String,           // semantic version
+    pub timestamp_tick: u64,       // drill tick of commitment
+    pub layer_index: u32,          // hierarchy depth
+    pub por_decision: Option<String>, // PoR evidence JSON
+    pub source_monolith_id: String,   // link to PmhdMonolith
+    pub domain: String,               // target domain
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Component]\label{def:component}
+A component is an atomic unit of the artifact:
+\begin{lstlisting}
+pub struct Component {
+    pub id: String,
+    pub kind: String,       // "function", "type", "endpoint", etc.
+    pub name: String,       // human-readable name
+    pub content: String,    // canonical JSON of the component body
+    pub dependencies: Vec<String>,  // component IDs this depends on
+    pub signature: FiveDState,      // 5D embedding of this component
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Interface]\label{def:interface}
+An interface defines a contract between components:
+\begin{lstlisting}
+pub struct Interface {
+    pub id: String,
+    pub provider: String,    // component ID that provides
+    pub consumer: String,    // component ID that consumes
+    pub contract: String,    // canonical JSON of the contract
+    pub direction: Direction,
+}
+
+pub enum Direction { Unidirectional, Bidirectional }
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[ArtifactMetrics]\label{def:artmetrics}
+Quality metrics propagated from the monolith plus synthesis metrics:
+\begin{lstlisting}
+pub struct ArtifactMetrics {
+    // From QualityMetrics (monolith)
+    pub coherence: f64,
+    pub diversity: f64,
+    pub novelty: f64,
+    pub stability: f64,
+    pub robustness: f64,
+    pub coverage: f64,
+    // Synthesis-specific
+    pub component_count: usize,
+    pub interface_count: usize,
+    pub constraint_satisfaction: f64,  // fraction of constraints met
+    pub quality_score: f64,            // composite score
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[ArtifactProvenance]\label{def:artprov}
+Full traceability from DecisionSpec to artifact:
+\begin{lstlisting}
+pub struct ArtifactProvenance {
+    pub decision_spec_id: Hash256,
+    pub monolith_id: String,
+    pub seed: u64,
+    pub config_hash: String,
+    pub tick_range: [u64; 2],
+    pub drill_strategy: String,
+    pub por_evidence: Option<String>,
+    pub pattern_memory_size: usize,
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Build from Monolith]\label{def:buildir}
+The IR is constructed deterministically from a monolith:
+\begin{lstlisting}
+impl ArtifactIR {
+    pub fn build_from_monolith(
+        monolith: &PmhdMonolith,
+        spec: &DecisionSpec,
+        layer: u32,
+    ) -> Result<ArtifactIR>;
+}
+\end{lstlisting}
+The construction is deterministic: same monolith and spec produce
+identical ArtifactIR (content-addressed).
+\end{definition}
+
+
+\section{Acceptance Tests}\label{sec:ir:tests}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-IR1 & IR determinism & Build IR from same monolith twice; verify
+  identical artifact\_id. \\
+AT-IR2 & Serde round-trip & Serialize IR to JSON; deserialize; verify
+  equal. \\
+AT-IR3 & Provenance link & Build IR; verify provenance.monolith\_id
+  matches source monolith. \\
+AT-IR4 & Component signature & Build IR; verify every component has a
+  non-zero FiveDState signature. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Crate C23: \texttt{isls-forge}}\label{part:forge}
+
+\section{Purpose}\label{sec:forge:purpose}
+
+The Forge is the synthesis engine that takes an ArtifactIR and produces
+a concrete, domain-specific output --- validated through \ISLS{}'s
+8-gate cascade and archived as a Semantic Crystal.
+
+
+\section{Pipeline}\label{sec:forge:pipeline}
+
+\begin{lstlisting}[title={Forge Pipeline}]
+DecisionSpec
+  |
+  v
+[C21: PMHD Drill] --> PmhdMonolith
+  |
+  v
+[C22: ArtifactIR] --> ArtifactIR
+  |
+  v
+[C23: Matrix Interpret] --> Domain-Specific IR
+  |
+  v
+[C23: Synthesize] --> Raw Output (code, spec, schema...)
+  |
+  v
+[C23: Evaluate] --> Constraint Check + Quality Bounds
+  |
+  v
+[C23: Pattern Memory] --> Store for future runs
+  |
+  v
+[ISLS: 8-Gate Validate] --> Formal validation
+  |
+  v
+[ISLS: Crystal Commit] --> Semantic Crystal containing the artifact
+  |
+  v
+[C23: Emit] --> Domain-specific files on disk / via Gateway
+\end{lstlisting}
+
+
+\section{Domain Matrices (Filaments)}\label{sec:forge:matrix}
+
+\begin{definition}[Matrix]\label{def:matrix}
+A Matrix $\calF$ is a domain-specific interpreter that maps
+ArtifactIR components to concrete output structures:
+\begin{lstlisting}
+pub trait Matrix: Send + Sync {
+    fn name(&self) -> &str;
+    fn domain(&self) -> &str;
+    fn interpret(
+        &self,
+        ir: &ArtifactIR,
+        config: &MatrixConfig,
+    ) -> Result<SynthesisInput>;
+    fn supported_kinds(&self) -> Vec<String>;
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Built-in Matrices]\label{def:builtinmatrix}
+Phase~5 ships with four built-in matrices:
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Matrix} & \textbf{Domain} & \textbf{Output} \\
+\midrule
+RustModuleMatrix & \texttt{rust} & Rust module skeletons with types,
+  traits, impls, tests. Components map to functions/types, interfaces
+  to trait bounds. \\
+HttpApiMatrix & \texttt{api} & OpenAPI 3.0 specifications. Components
+  map to endpoints, interfaces to request/response schemas. \\
+WorkflowMatrix & \texttt{workflow} & YAML workflow definitions
+  (GitHub Actions / generic). Components map to steps, interfaces to
+  data flows between steps. \\
+SchemaMatrix & \texttt{schema} & JSON Schema definitions. Components
+  map to type definitions, interfaces to \texttt{\$ref} relations. \\
+\bottomrule
+\end{tabularx}
+
+Custom matrices are registered at runtime via the Matrix trait.
+\end{definition}
+
+
+\section{Synthesis}\label{sec:forge:synth}
+
+\begin{definition}[Synthesizer]\label{def:synth}
+A synthesizer takes the matrix-interpreted structure and produces
+the raw output string:
+\begin{lstlisting}
+pub trait Synthesizer: Send + Sync {
+    fn synthesize(
+        &self,
+        input: &SynthesisInput,
+        config: &ForgeConfig,
+    ) -> Result<SynthesisOutput>;
+}
+
+pub struct SynthesisOutput {
+    pub content: String,           // the generated artifact text
+    pub format: String,            // "rust", "yaml", "json", etc.
+    pub components_rendered: usize,
+    pub triplet: PerformanceTriplet,
+}
+
+pub struct PerformanceTriplet {
+    pub psi: f64,    // precision
+    pub rho: f64,    // recall / completeness
+    pub omega: f64,  // structural quality
+}
+\end{lstlisting}
+\end{definition}
+
+
+\section{Evaluation}\label{sec:forge:eval}
+
+\begin{definition}[Evaluator Stack]\label{def:evalstack}
+The evaluation stack checks the synthesized output against multiple
+criteria:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item \textbf{Constraint Evaluator}: verifies all hard constraints
+        from the DecisionSpec are satisfied.
+  \item \textbf{Quality Bounds Evaluator}: verifies the
+        PerformanceTriplet meets minimum thresholds.
+  \item \textbf{Homeostasis Bridge}: checks that the synthesis did not
+        degrade quality metrics below the monolith's original scores.
+\end{enumerate}
+\begin{lstlisting}
+pub struct EvaluationResult {
+    pub constraints_met: usize,
+    pub constraints_total: usize,
+    pub quality_passed: bool,
+    pub homeostasis_passed: bool,
+    pub details: Vec<EvalDetail>,
+}
+\end{lstlisting}
+\end{definition}
+
+
+\section{Pattern Memory}\label{sec:forge:memory}
+
+\begin{definition}[PatternMemory]\label{def:patternmem}
+The pattern memory is a persistent, append-only library of committed
+monolith patterns:
+\begin{lstlisting}
+pub struct PatternEntry {
+    pub monolith_id: String,
+    pub domain: String,
+    pub quality: QualityMetrics,
+    pub signature: FiveDState,   // 5D embedding of the pattern
+    pub component_kinds: Vec<String>,
+    pub timestamp: f64,
+}
+
+pub struct PatternMemory {
+    entries: Vec<PatternEntry>,  // loaded from store at startup
+}
+
+impl PatternMemory {
+    pub fn load(store: &IslandStore) -> Result<Self>;
+    pub fn add(&mut self, entry: PatternEntry, store: &IslandStore) -> Result<()>;
+    pub fn find_similar(
+        &self, signature: &FiveDState, k: usize
+    ) -> Vec<&PatternEntry>;
+    pub fn novelty_score(&self, candidate: &FiveDState) -> f64;
+    pub fn len(&self) -> usize;
+}
+\end{lstlisting}
+The memory is persisted in \texttt{isls-store} (C17) as a dedicated
+table. Every \texttt{add} writes to both the in-memory vector and the
+database.
+\end{definition}
+
+
+\section{8-Gate Crystal Validation}\label{sec:forge:validate}
+
+\begin{requirement}[Forge Crystal Validation]\label{req:forgeval}
+Before the forge emits an artifact, the synthesized output
+\textbf{MUST} be packaged as a Semantic Crystal and validated through
+the standard 8-gate cascade (content\_address, dual\_consensus,
+evidence\_chain, free\_energy, gate\_kairos, immutability,
+operator\_versions, por\_trace). The crystal's
+\texttt{constraint\_program} field contains the ArtifactIR serialized
+as a canonical JSON blob. The crystal's \texttt{topology\_signature}
+encodes the component dependency graph.
+\end{requirement}
+
+\begin{theorem}[Forge-Discovery Symmetry]\label{thm:forgesym}
+A crystal produced by the forge and a crystal produced by analytical
+discovery are both valid \ISLS{} crystals that pass the same 8 formal
+checks. They differ only in provenance: the forge crystal's manifest
+has \texttt{program\_id = "forge:<spec\_id>"} while the discovery
+crystal has \texttt{program\_id = "discovery"}.
+\end{theorem}
+
+\begin{proof}
+By construction: the forge crystal is built using the same
+\texttt{build\_crystal\_with\_id} function, the same evidence chain
+builder, the same PoR FSM, and the same 8-check validation harness.
+The crystal format is identical. Only the program\_id metadata
+differs.
+\end{proof}
+
+
+\section{Emitters}\label{sec:forge:emit}
+
+\begin{definition}[Emitter]\label{def:emitter}
+An emitter writes the final artifact to disk, gateway, or external
+system:
+\begin{lstlisting}
+pub trait Emitter: Send + Sync {
+    fn name(&self) -> &str;
+    fn emit(
+        &self,
+        output: &SynthesisOutput,
+        crystal: &SemanticCrystal,
+        config: &EmitConfig,
+    ) -> Result<EmitResult>;
+}
+
+pub struct EmitResult {
+    pub path: Option<String>,
+    pub crystal_id: Hash256,
+    pub bytes_written: usize,
+}
+\end{lstlisting}
+Built-in emitters: FileEmitter (write to disk), GatewayEmitter (POST
+to gateway API), StdoutEmitter (print to console).
+\end{definition}
+
+
+\section{Full Forge API}\label{sec:forge:api}
+
+\begin{lstlisting}
+// isls-forge/src/lib.rs
+
+pub struct ForgeEngine {
+    drill: DrillEngine,
+    matrices: BTreeMap<String, Box<dyn Matrix>>,
+    synthesizers: BTreeMap<String, Box<dyn Synthesizer>>,
+    evaluators: Vec<Box<dyn Evaluator>>,
+    emitters: Vec<Box<dyn Emitter>>,
+    memory: PatternMemory,
+    config: ForgeConfig,
+}
+
+pub struct ForgeConfig {
+    pub pmhd: PmhdConfig,
+    pub matrix: String,          // which matrix to use
+    pub synth: String,           // which synthesizer
+    pub emit: Vec<String>,       // which emitters
+    pub validate: bool,          // run 8-gate validation
+    pub output_dir: String,
+}
+
+pub struct ForgeResult {
+    pub drill_result: DrillResult,
+    pub artifacts: Vec<ForgeArtifact>,
+    pub crystals: Vec<SemanticCrystal>,
+    pub manifest: ExecutionManifest,
+    pub pattern_count: usize,
+}
+
+pub struct ForgeArtifact {
+    pub ir: ArtifactIR,
+    pub synthesis: SynthesisOutput,
+    pub evaluation: EvaluationResult,
+    pub crystal_id: Hash256,
+    pub emit_results: Vec<EmitResult>,
+}
+
+impl ForgeEngine {
+    pub fn new(config: ForgeConfig, store: &IslandStore) -> Self;
+    pub fn register_matrix(&mut self, m: Box<dyn Matrix>);
+    pub fn register_synthesizer(&mut self, s: Box<dyn Synthesizer>);
+    pub fn register_emitter(&mut self, e: Box<dyn Emitter>);
+    pub fn forge(&mut self, spec: DecisionSpec) -> Result<ForgeResult>;
+    pub fn forge_from_crystal(
+        &mut self, crystal: &SemanticCrystal, domain: &str
+    ) -> Result<ForgeResult>;
+}
+\end{lstlisting}
+
+
+\section{CLI Integration}\label{sec:forge:cli}
+
+\begin{lstlisting}
+# Forge from a DecisionSpec
+isls forge --spec intent.json --domain rust --output artifacts/
+
+# Forge from an existing crystal
+isls forge --crystal <crystal_id> --domain api --output artifacts/
+
+# Forge with specific matrix
+isls forge --spec intent.json --matrix workflow --output artifacts/
+
+# List available matrices
+isls forge --list-matrices
+
+# Show pattern memory stats
+isls forge --memory-stats
+\end{lstlisting}
+
+
+\section{Gateway Integration}\label{sec:forge:gateway}
+
+\begin{lstlisting}[title={New Gateway Endpoints (added to C19)}]
+POST /forge          Body: {spec, domain, config}
+                     -> ForgeResult with crystal IDs and artifacts
+
+POST /forge/crystal  Body: {crystal_id, domain}
+                     -> ForgeResult from existing crystal
+
+GET  /forge/matrices List available matrices
+GET  /forge/memory   Pattern memory statistics
+\end{lstlisting}
+
+
+\section{Acceptance Tests}\label{sec:forge:tests}
+
+\begin{longtable}{l l p{6.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-F1 & End-to-end forge & Submit DecisionSpec for Rust module; verify
+  file written and crystal committed. \\
+AT-F2 & Forge determinism & Forge same spec twice; verify identical
+  artifact content and crystal ID. \\
+AT-F3 & Crystal validation & Forge an artifact; run validate formal;
+  verify 8/8 checks pass. \\
+AT-F4 & Forge from crystal & Discover crystal via analytical run; forge
+  it into API spec; verify crystal committed. \\
+AT-F5 & Matrix swap & Forge same spec with Rust matrix and API matrix;
+  verify different output formats, both valid crystals. \\
+AT-F6 & Constraint rejection & Submit spec with impossible constraint;
+  verify evaluation fails and no crystal committed. \\
+AT-F7 & Pattern memory persistence & Forge, restart, forge again;
+  verify novelty score reflects the first run's patterns. \\
+AT-F8 & Emitter file & Forge with FileEmitter; verify file exists at
+  expected path. \\
+AT-F9 & Emitter gateway & Start gateway; forge with GatewayEmitter;
+  verify crystal queryable via GET /crystals. \\
+AT-F10 & Custom matrix & Register custom matrix; forge with it;
+  verify output uses custom interpretation. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{The Complete Loop}\label{part:loop}
+
+\section{Discovery-Forge Cycle}\label{sec:loop}
+
+With Phase~5, the complete \ISLS{} substrate supports:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Observe}: Data flows in via adapters (C20) through the
+        gateway (C19).
+  \item \textbf{Discover}: The analytical engine (C1--C18) finds
+        patterns and crystallizes them.
+  \item \textbf{Forge}: A discovered crystal is fed into the forge
+        (C21--C23) as a seed, combined with a DecisionSpec, and
+        adversarially drilled into a monolith.
+  \item \textbf{Synthesize}: The monolith becomes an ArtifactIR,
+        interpreted through a domain matrix, synthesized into a
+        concrete artifact.
+  \item \textbf{Validate}: The artifact is packaged as a crystal and
+        validated through the 8-gate cascade.
+  \item \textbf{Emit}: The artifact is written to disk, sent to a
+        webhook, or served via the gateway.
+  \item \textbf{Deploy}: The artifact is used in the world.
+  \item \textbf{Observe}: ISLS observes the effects of the deployed
+        artifact.
+  \item \textbf{Re-discover}: New patterns emerge from the changed
+        world.
+  \item \textbf{Re-forge}: The new patterns seed the next forge cycle.
+\end{enumerate}
+
+Every step in this cycle produces crystals. Every crystal is
+content-addressed, evidence-bound, and replay-verifiable. The entire
+history is append-only. The system accumulates structural intelligence
+over time without manual configuration.
+
+
+%%% =====================================================================
+\part{Dependency Graph and Handoff}\label{part:handoff}
+
+\section{Updated Dependency Graph}
+
+\begin{lstlisting}[title={Complete ISLS Dependency Graph after Phase 5}]
+isls-types        <-- (all crates)
+    ^
+isls-registry (C12)
+    ^
+isls-observe  <-- isls-persist <-- isls-topology (C16)
+                       ^                ^
+                       |          isls-extract
+                       |                ^
+                       |          isls-scale (C18)
+                       |
+               isls-consensus <-- isls-carrier
+                       ^
+               isls-archive <-- isls-morph
+                       ^
+               isls-manifest (C13)
+                       ^
+               isls-capsule (C14)
+                       ^
+               isls-scheduler (C15)
+                       ^
+               isls-engine
+                       ^
+               isls-store (C17)
+                       ^
+               isls-pmhd (C21)         <-- NEW: adversarial drill
+                       ^
+               isls-artifact-ir (C22)  <-- NEW: universal IR
+                       ^
+               isls-forge (C23)        <-- NEW: synthesis engine
+                       ^
+               isls-adapters (C20)
+                       ^
+               isls-gateway (C19)      <-- extended with /forge endpoints
+                       ^
+               isls-harness + isls-cli
+\end{lstlisting}
+
+\section{Test Count}
+
+\begin{tabular}{l r r}
+\toprule
+\textbf{Phase} & \textbf{New Tests} & \textbf{Cumulative} \\
+\midrule
+Core (C1--C9) & 130 & 130 \\
+Phase 1 (C10--C15) & 31 & 161 \\
+Phase 2 (C16--C17) & 20 & 181 \\
+Phase 3 (C18) & 15 & 196 \\
+Phase 4 (C19--C20) & 23 & 219 \\
+Phase 5 (C21--C23) & 22 & $\ge$ 241 \\
+\bottomrule
+\end{tabular}
+
+\section{Verification Sequence}
+
+\begin{lstlisting}
+# Build
+cargo build --workspace --release 2>&1 | grep -c warning  -> 0
+
+# Test
+cargo test --workspace -- --test-threads=1  -> >= 241 passed
+
+# Forge from DecisionSpec
+cat > /tmp/spec.json << 'EOF'
+{
+  "intent": "Create a REST API health-check module",
+  "goals": {"coherence": 0.7, "robustness": 0.8},
+  "constraints": ["must return JSON", "must include uptime"],
+  "domain": "rust"
+}
+EOF
+cargo run --bin isls --release -- forge --spec /tmp/spec.json \
+  --domain rust --output /tmp/forge-out/
+
+# Verify the forged artifact is a valid crystal
+cargo run --bin isls --release -- validate formal
+# -> Forge crystal passes 8/8 checks
+
+# Forge from a discovered crystal
+cargo run --bin isls --release -- ingest --adapter synthetic --scenario S-Basic
+cargo run --bin isls --release -- run --mode shadow --ticks 100
+CRYSTAL_ID=$(cargo run --bin isls --release -- crystal list | head -1)
+cargo run --bin isls --release -- forge --crystal $CRYSTAL_ID \
+  --domain api --output /tmp/forge-api/
+\end{lstlisting}
+
+\section{Completion Criteria}
+
+Phase 5 is complete when:
+\begin{enumerate}[nosep]
+  \item PMHD drill produces monoliths deterministically.
+  \item ArtifactIR builds deterministically from monoliths.
+  \item Forge produces artifacts through all 4 built-in matrices.
+  \item Every forged artifact is a valid crystal (8/8 checks).
+  \item Pattern memory persists across runs.
+  \item Forge from discovered crystal works end-to-end.
+  \item Gateway /forge endpoints work.
+  \item Total tests $\ge 241$, zero warnings.
+  \item \textbf{23 Crates. One binary. Two directions. One substrate.}
+\end{enumerate}
+
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} Extension Phase 5 v1.0.0.\\
+The Eye discovers. The Hand forges. The Crystal proves.\\
+Deterministic, append-only, replay-verified.}
+\end{center}
+
+\end{document}
