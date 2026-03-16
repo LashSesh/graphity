@@ -1,0 +1,1263 @@
+%%% =======================================================================
+%%% ISLS Extension Architecture v1.0.0
+%%% Manifest Layer, Registry Infrastructure, Capsule Protocol,
+%%% Spiral Scheduler, and Execute Mode
+%%% Author: Sebastian Klemm
+%%% Date: 16 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{algorithm,algorithmic}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+%%% Theorem environments
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{axiom}{Axiom}[section]
+\newtheorem{requirement}{Requirement}[section]
+\newtheorem{invariant}{Invariant}[section]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{lemma}{Lemma}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+%%% Commands
+\newcommand{\ISLS}{\textsf{ISLS}}
+\newcommand{\RR}{\mathbb{R}}
+\newcommand{\NN}{\mathbb{N}}
+\newcommand{\ZZ}{\mathbb{Z}}
+\newcommand{\Hfive}{H^{5}}
+\newcommand{\calO}{\mathcal{O}}
+\newcommand{\calR}{\mathcal{R}}
+\newcommand{\calM}{\mathcal{M}}
+\newcommand{\calC}{\mathcal{C}}
+\newcommand{\calK}{\mathcal{K}}
+\newcommand{\calP}{\mathcal{P}}
+\newcommand{\calS}{\mathcal{S}}
+\newcommand{\calE}{\mathcal{E}}
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calG}{\mathcal{G}}
+\newcommand{\calA}{\mathcal{A}}
+\newcommand{\OmegaISLS}{\Omega_{\ISLS}}
+\DeclareMathOperator{\Canon}{Canon}
+\DeclareMathOperator{\Dig}{Dig}
+\DeclareMathOperator{\HKDF}{HKDF}
+\DeclareMathOperator{\AEAD}{AEAD}
+\DeclareMathOperator{\Replay}{Replay}
+\DeclareMathOperator{\Commit}{Commit}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+
+%%% Header
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Extension Architecture v1.0.0}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Extension Architecture v1.0.0},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+%%% Title
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+{\Huge\bfseries \ISLS{} Extension Architecture\\[0.3cm]
+v1.0.0}\\[1.5cm]
+{\Large Manifest Layer, Registry Infrastructure,\\
+Capsule Protocol, Spiral Scheduler, and Execute Mode}\\[1cm]
+{\large A Complementary Architecture for the\\
+Intelligent Semantic Ledger Substrate}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 16 March 2026}\\[2cm]
+
+\begin{abstract}
+\noindent
+This document specifies four extension crates and one engine modification
+for the Intelligent Semantic Ledger Substrate (\ISLS{}). Together they
+complete the PSP (Post-Symbolic Programming) substrate by adding:
+(1)~a run-level Execution Manifest binding all artifacts of a complete run
+into a single content-addressed meta-artifact;
+(2)~a formal digest-bound Registry infrastructure for operators, profiles,
+and obligations;
+(3)~a generic evidence-bound Capsule protocol (OLP) enabling
+policy-controlled secret release gated by deterministic run evidence;
+(4)~a Spiral Scheduler providing adaptive tick granularity;
+and (5)~an Execute mode enabling generative program execution alongside
+the existing analytical discovery mode.
+
+All extensions preserve the 20 structural invariants (I1--I20), all 130+
+acceptance tests, deterministic replay, and append-only semantics of the
+\ISLS{} core (C1--C11). The specification is implementation-ready for
+autonomous coding agents.
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Parent:} ISLS v1.0.0 Canonical Master Specification.\\
+\textbf{Target:} Rust workspace under \texttt{isls/crates/}.
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+%%% =====================================================================
+\part{Foundations}\label{part:foundations}
+
+\section{Purpose and Scope}\label{sec:purpose}
+
+\subsection{Purpose}
+
+This specification defines the minimal set of extensions required to
+evolve \ISLS{} from a domain-specific analytical engine into a
+\emph{universal PSP substrate} capable of three operational
+manifestations:
+
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{Analytical} (existing): discover programs latent in
+        observed data and crystallize them.
+  \item \textbf{Generative} (new): accept an operator graph or crystal
+        as input and execute it through the staged closure, producing
+        new artifacts.
+  \item \textbf{Cryptographic} (new): bind secrets to evidence
+        certificates produced by analytical or generative runs, releasing
+        them only upon verified policy satisfaction.
+\end{enumerate}
+
+All three manifestations share: the same state space $\Sigma_0 = \RR^5$,
+the same canonicalization (JCS + SHA-256), the same Run Descriptor, the
+same Evidence Chain, the same Crystal structure, and the same gate
+cascade.
+
+\subsection{Scope}
+
+\begin{itemize}[nosep]
+  \item \textbf{In scope:} Four new crates (\texttt{isls-manifest},
+        \texttt{isls-registry}, \texttt{isls-capsule},
+        \texttt{isls-scheduler}) and two engine extensions (Spiral
+        Scheduler integration, Execute mode).
+  \item \textbf{Out of scope:} Language frontends (Sanskroot or other
+        surface syntaxes), domain-specific operator implementations,
+        cryptographic primitive design, external KMS/HSM integration
+        details.
+\end{itemize}
+
+\subsection{Relationship to Existing Crates}
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Existing} & \textbf{New} & \textbf{Relationship} \\
+\midrule
+\texttt{isls-types} & \texttt{isls-registry} & Registry types extend
+  \texttt{isls-types}; all registry entries use existing
+  \texttt{content\_address}. \\
+\texttt{isls-archive} & \texttt{isls-manifest} & Manifest reads the
+  crystal archive and produces a run-level meta-artifact. \\
+\texttt{isls-consensus} & \texttt{isls-capsule} & Capsule policies
+  reference gate evidence produced by \texttt{isls-consensus}. \\
+\texttt{isls-engine} & \texttt{isls-scheduler} & Scheduler wraps the
+  macro-step loop; engine gains \texttt{execute} mode. \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Invariant Preservation}
+
+\begin{requirement}[Extension Non-Regression]\label{req:nonregression}
+All extensions \textbf{MUST} preserve invariants I1--I20 of the
+\ISLS{} v1.0.0 specification. All existing acceptance tests (AT-01
+through AT-20) and all existing unit/integration tests \textbf{MUST}
+continue to pass without modification.
+\end{requirement}
+
+\subsection{Technical Constraints}
+
+\begin{requirement}[Workspace Discipline]\label{req:workspace}
+All new crates \textbf{MUST} adhere to the established workspace
+discipline:
+\begin{itemize}[nosep]
+  \item No \texttt{unsafe} Rust code.
+  \item No \texttt{rand} dependency; determinism via \texttt{RunDescriptor}.
+  \item \texttt{BTreeMap} for all deterministic-order collections.
+  \item JCS (RFC~8785) canonical serialization via \texttt{serde\_jcs}.
+  \item SHA-256 content addressing via \texttt{sha2}.
+  \item Append-only semantics; no \texttt{delete} methods.
+  \item All operators version-pinned.
+\end{itemize}
+\end{requirement}
+
+
+%%% =====================================================================
+\part{Crate C12: \texttt{isls-registry}}\label{part:registry}
+
+\section{Purpose}\label{sec:reg:purpose}
+
+The registry crate provides a formal, digest-bound catalog system for
+operators, profiles, and obligations. It replaces the flat
+\texttt{operator\_versions: BTreeMap<String, String>} in existing
+crystals with a structured, content-addressed registry infrastructure
+that satisfies the PCR registry requirements.
+
+\section{Data Model}\label{sec:reg:model}
+
+\begin{definition}[Registry Entry]\label{def:regentry}
+A registry entry is a tuple
+\[
+  e = \langle \mathtt{id}, \mathtt{name}, \mathtt{version}, \mathtt{digest},
+      \mathtt{kind}, \mathtt{metadata} \rangle
+\]
+where:
+\begin{itemize}[nosep]
+  \item \texttt{id}: content-address $\Dig(\Canon(e_{\mathrm{core}}))$,
+  \item \texttt{name}: human-readable identifier (e.g., \texttt{"BandOperator"}),
+  \item \texttt{version}: semantic version string (e.g., \texttt{"1.0.0"}),
+  \item \texttt{digest}: SHA-256 of the canonical serialization of the
+        entry's operational content,
+  \item \texttt{kind} $\in \{\texttt{Operator}, \texttt{Profile},
+        \texttt{Obligation}, \texttt{Macro}\}$,
+  \item \texttt{metadata}: \texttt{BTreeMap<String, String>} for
+        extensible key-value annotations.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Registry]\label{def:registry}
+A registry $\calR$ is an append-only, content-addressed collection of
+registry entries:
+\[
+  \calR = \langle \mathtt{registry\_id}, \mathtt{kind}, \mathtt{entries},
+           \mathtt{digest} \rangle
+\]
+where $\mathtt{registry\_id} = \Dig(\Canon(\mathtt{entries}))$ and
+$\mathtt{digest}$ is the SHA-256 of the entire canonical registry
+serialization.
+\end{definition}
+
+\begin{definition}[Registry Set]\label{def:regset}
+A registry set is a tuple of four registries:
+\[
+  \calR_{\mathrm{all}} = (\calR_{\mathrm{op}}, \calR_{\mathrm{prof}},
+  \calR_{\mathrm{obl}}, \calR_{\mathrm{macro}})
+\]
+bound in the Run Descriptor by their respective digests.
+\end{definition}
+
+\section{Operator Registry}\label{sec:reg:operator}
+
+\begin{definition}[Operator Registration]\label{def:opreg}
+Each operator in $\OmegaISLS$ \textbf{MUST} be registered with:
+\begin{itemize}[nosep]
+  \item \texttt{name}: canonical operator name,
+  \item \texttt{version}: semantic version,
+  \item \texttt{type\_signature}: input type $\to$ output type,
+  \item \texttt{role}: one of $\{\texttt{ingest}, \texttt{canon},
+        \texttt{measure}, \texttt{solve}, \texttt{morph}, \texttt{gate},
+        \texttt{select}, \texttt{merge}, \texttt{emit}\}$ (PSP kernel
+        roles),
+  \item \texttt{determinism\_certificate}: boolean assertion that the
+        operator is deterministic under fixed $(\Sigma, \mathrm{RD})$,
+  \item \texttt{digest}: SHA-256 of the canonical serialization of the
+        above fields.
+\end{itemize}
+\end{definition}
+
+\begin{requirement}[Registry Binding in RD]\label{req:rdbinding}
+The Run Descriptor \textbf{MUST} contain the digests of all four
+registries. Any operator, profile, obligation, or macro used during a
+run \textbf{MUST} be resolvable from the registry referenced in the RD.
+An operator not present in the registry \textbf{MUST NOT} be executed.
+\end{requirement}
+
+\begin{requirement}[Drift Detection]\label{req:drift}
+If an operator's implementation digest does not match its registry entry
+digest, the system \textbf{MUST} raise an operator-drift fault
+(Invariant~I20). This check \textbf{MUST} occur before operator
+execution, not after.
+\end{requirement}
+
+\section{Profile Registry}\label{sec:reg:profile}
+
+\begin{definition}[Profile Entry]\label{def:profentry}
+A profile entry binds a named configuration to a specific parameter set:
+\begin{itemize}[nosep]
+  \item \texttt{name}: one of $\{\texttt{Minimal}, \texttt{Standard},
+        \texttt{HighRigor}\}$ or custom,
+  \item \texttt{thresholds}: all gate threshold values,
+  \item \texttt{normalization}: all normalization parameters
+        ($\mu_D, \mu_Q, \lambda, \mu_r, \ldots$),
+  \item \texttt{carrier}: carrier geometry configuration,
+  \item \texttt{consensus}: dual consensus parameters,
+  \item \texttt{digest}: SHA-256 of canonical serialization.
+\end{itemize}
+\end{definition}
+
+\section{Obligation Registry}\label{sec:reg:obligation}
+
+\begin{definition}[Obligation Entry]\label{def:oblentry}
+An obligation entry defines a proof requirement:
+\begin{itemize}[nosep]
+  \item \texttt{name}: obligation identifier (e.g.,
+        \texttt{"evidence\_chain\_complete"}),
+  \item \texttt{gate\_ids}: which gates must produce evidence,
+  \item \texttt{evidence\_schema}: canonical JSON schema of required
+        evidence fields,
+  \item \texttt{verification\_procedure}: reference to verifier function
+        name and version,
+  \item \texttt{digest}: SHA-256 of canonical serialization.
+\end{itemize}
+\end{definition}
+
+\section{Rust API}\label{sec:reg:api}
+
+\begin{verbatim}
+// isls-registry/src/lib.rs
+
+pub struct RegistryEntry {
+    pub id: Hash256,
+    pub name: String,
+    pub version: String,
+    pub digest: Hash256,
+    pub kind: RegistryKind,
+    pub metadata: BTreeMap<String, String>,
+}
+
+pub enum RegistryKind { Operator, Profile, Obligation, Macro }
+
+pub struct Registry {
+    pub registry_id: Hash256,
+    pub kind: RegistryKind,
+    pub entries: BTreeMap<String, RegistryEntry>,  // name -> entry
+    pub digest: Hash256,
+}
+
+pub struct RegistrySet {
+    pub operators: Registry,
+    pub profiles: Registry,
+    pub obligations: Registry,
+    pub macros: Registry,
+}
+
+impl Registry {
+    pub fn new(kind: RegistryKind) -> Self;
+    pub fn register(&mut self, entry: RegistryEntry) -> Result<()>;
+    pub fn resolve(&self, name: &str) -> Option<&RegistryEntry>;
+    pub fn verify_digest(&self, name: &str, expected: &Hash256) -> bool;
+    pub fn compute_digest(&self) -> Hash256;
+}
+
+impl RegistrySet {
+    pub fn from_config(config: &Config) -> Self;
+    pub fn digests(&self) -> BTreeMap<String, Hash256>;
+    pub fn verify_operator(&self, name: &str, digest: &Hash256) -> bool;
+}
+\end{verbatim}
+
+\section{Acceptance Tests}\label{sec:reg:tests}
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+AT-R1 & Registry content address & Register an operator; verify
+  \texttt{id} = SHA-256(JCS(core fields)). \\
+AT-R2 & Drift detection & Modify operator implementation; verify drift
+  fault raised before execution. \\
+AT-R3 & RD binding & Create RD with registry digests; verify run rejects
+  unregistered operator. \\
+AT-R4 & Append-only & Attempt to remove registry entry; verify
+  rejection. \\
+AT-R5 & Deterministic digest & Register same entries in different order;
+  verify identical registry digest (BTreeMap ordering). \\
+\bottomrule
+\end{tabularx}
+
+
+%%% =====================================================================
+\part{Crate C13: \texttt{isls-manifest}}\label{part:manifest}
+
+\section{Purpose}\label{sec:man:purpose}
+
+The manifest crate produces a single content-addressed meta-artifact that
+binds an entire run---all crystals, all traces, all evidence, all
+registry references---into one verifiable object. This satisfies the PCR
+Execution Manifest requirement and enables offline replay without
+external queries.
+
+\section{Data Model}\label{sec:man:model}
+
+\begin{definition}[Execution Manifest]\label{def:manifest}
+An execution manifest is a tuple
+\[
+  M = \langle \mathtt{run\_id}, \mathtt{rd\_digest}, \mathtt{program\_id},
+      \mathtt{input\_digest}, \mathtt{crystal\_digests},
+      \mathtt{trace\_digests}, \mathtt{registry\_digests},
+      \mathtt{mef\_head}, \mathtt{timestamp} \rangle
+\]
+where:
+\begin{itemize}[nosep]
+  \item $\mathtt{run\_id} = \Dig(\Canon(M_{\mathrm{core}}))$: content
+        address of the manifest,
+  \item $\mathtt{rd\_digest}$: SHA-256 of the canonical Run Descriptor,
+  \item $\mathtt{program\_id}$: identifier of the program executed
+        (crystal ID for execute mode, \texttt{"discovery"} for
+        analytical mode),
+  \item $\mathtt{input\_digest}$: SHA-256 of the canonical observation
+        log or input program,
+  \item $\mathtt{crystal\_digests}$: ordered list of all crystal IDs
+        produced during the run,
+  \item $\mathtt{trace\_digests}$: ordered list of per-tick trace
+        digests,
+  \item $\mathtt{registry\_digests}$: map of registry kind $\to$ digest,
+  \item $\mathtt{mef\_head}$: head digest of the MEF evidence chain
+        (optional),
+  \item $\mathtt{timestamp}$: extrinsic time of manifest creation.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Trace Entry]\label{def:trace}
+A trace entry records one macro-step:
+\[
+  T_k = \langle k, \mathtt{input\_digest}_k,
+        \mathtt{state\_digest}_k, \mathtt{crystal\_id}_k,
+        \mathtt{gate\_snapshot}_k, \mathtt{metrics\_digest}_k \rangle
+\]
+where $\mathtt{crystal\_id}_k$ is \texttt{None} if no crystal was
+committed at step $k$.
+\end{definition}
+
+\begin{definition}[Replay Pack]\label{def:replaypack}
+A replay pack is a self-contained bundle sufficient for offline replay:
+\[
+  \mathrm{RP} = \langle M, \mathrm{RD}, \mathtt{observation\_log},
+  \calR_{\mathrm{all}}, \mathtt{boundary\_evidence} \rangle
+\]
+A replay pack \textbf{MUST} enable deterministic reproduction of the run
+without any external queries.
+\end{definition}
+
+\section{Construction Algorithm}\label{sec:man:algo}
+
+\begin{algorithm}[H]
+\caption{\textsc{BuildManifest}: Construct execution manifest post-run}
+\label{alg:buildmanifest}
+\begin{algorithmic}[1]
+\REQUIRE Completed run state $S_K$, Run Descriptor $\mathrm{RD}$,
+  trace entries $\{T_0, \ldots, T_{K-1}\}$, archive $A$,
+  registry set $\calR_{\mathrm{all}}$
+\ENSURE Execution manifest $M$
+\STATE $\mathtt{rd\_digest} \gets \Dig(\Canon(\mathrm{RD}))$
+\STATE $\mathtt{input\_digest} \gets \Dig(\Canon(\mathtt{observation\_log}))$
+\STATE $\mathtt{crystal\_digests} \gets [c.\mathtt{crystal\_id} \mid c \in A.\mathtt{crystals}]$
+\STATE $\mathtt{trace\_digests} \gets [\Dig(\Canon(T_k)) \mid k = 0, \ldots, K-1]$
+\STATE $\mathtt{registry\_digests} \gets \calR_{\mathrm{all}}.\mathtt{digests}()$
+\STATE $\mathtt{mef\_head} \gets A.\mathtt{evidence\_chain\_head}()$
+\STATE $M_{\mathrm{core}} \gets (\mathtt{rd\_digest}, \mathtt{input\_digest},
+  \mathtt{crystal\_digests}, \mathtt{trace\_digests},
+  \mathtt{registry\_digests}, \mathtt{mef\_head})$
+\STATE $\mathtt{run\_id} \gets \Dig(\Canon(M_{\mathrm{core}}))$
+\STATE $M \gets (\mathtt{run\_id}, M_{\mathrm{core}}, \mathtt{timestamp})$
+\RETURN $M$
+\end{algorithmic}
+\end{algorithm}
+
+\section{Verification}\label{sec:man:verify}
+
+\begin{definition}[Manifest Verification]\label{def:manverify}
+A manifest verifier \textbf{MUST} check, in order:
+\begin{enumerate}[nosep,label=(MV\arabic*)]
+  \item \texttt{run\_id} equals $\Dig(\Canon(M_{\mathrm{core}}))$.
+  \item \texttt{rd\_digest} matches the provided RD.
+  \item Every entry in \texttt{crystal\_digests} resolves in the archive.
+  \item Every trace digest is recomputable from the corresponding trace
+        entry.
+  \item Registry digests match the provided registries.
+  \item If \texttt{mef\_head} is present, the evidence chain is
+        verifiable from head to genesis.
+\end{enumerate}
+On first divergence, the verifier \textbf{MUST} report which check
+failed and at which index.
+\end{definition}
+
+\section{Rust API}\label{sec:man:api}
+
+\begin{verbatim}
+// isls-manifest/src/lib.rs
+
+pub struct ExecutionManifest {
+    pub run_id: Hash256,
+    pub rd_digest: Hash256,
+    pub program_id: String,
+    pub input_digest: Hash256,
+    pub crystal_digests: Vec<Hash256>,
+    pub trace_digests: Vec<Hash256>,
+    pub registry_digests: BTreeMap<String, Hash256>,
+    pub mef_head: Option<Hash256>,
+    pub timestamp: f64,
+}
+
+pub struct TraceEntry {
+    pub tick: u64,
+    pub input_digest: Hash256,
+    pub state_digest: Hash256,
+    pub crystal_id: Option<Hash256>,
+    pub gate_snapshot: GateSnapshot,
+    pub metrics_digest: Hash256,
+}
+
+pub struct ReplayPack {
+    pub manifest: ExecutionManifest,
+    pub rd: RunDescriptor,
+    pub observation_log: Vec<Vec<Vec<u8>>>,
+    pub registries: RegistrySet,
+    pub boundary_evidence: Vec<EvidenceEntry>,
+}
+
+pub fn build_manifest(
+    rd: &RunDescriptor,
+    traces: &[TraceEntry],
+    archive: &Archive,
+    registries: &RegistrySet,
+    program_id: &str,
+    observation_log: &[Vec<Vec<u8>>],
+) -> ExecutionManifest;
+
+pub fn verify_manifest(
+    manifest: &ExecutionManifest,
+    rd: &RunDescriptor,
+    archive: &Archive,
+    traces: &[TraceEntry],
+    registries: &RegistrySet,
+) -> Result<(), ManifestError>;
+
+pub fn build_replay_pack(
+    manifest: ExecutionManifest,
+    rd: RunDescriptor,
+    observation_log: Vec<Vec<Vec<u8>>>,
+    registries: RegistrySet,
+    boundary_evidence: Vec<EvidenceEntry>,
+) -> ReplayPack;
+\end{verbatim}
+
+\section{Acceptance Tests}\label{sec:man:tests}
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+AT-M1 & Manifest content address & Build manifest; verify
+  \texttt{run\_id} = SHA-256(JCS(core)). \\
+AT-M2 & Manifest verification & Build and verify manifest; all MV1--MV6
+  pass. \\
+AT-M3 & Tamper detection & Alter one crystal digest; verify
+  verification fails at MV3. \\
+AT-M4 & Replay pack sufficiency & Build replay pack; replay from pack
+  alone; verify identical crystals. \\
+AT-M5 & Trace determinism & Run twice with same RD; verify identical
+  trace digests. \\
+\bottomrule
+\end{tabularx}
+
+
+%%% =====================================================================
+\part{Crate C14: \texttt{isls-capsule}}\label{part:capsule}
+
+\section{Purpose}\label{sec:cap:purpose}
+
+The capsule crate implements the Operator Lock Protocol (OLP): a generic
+evidence-bound access control mechanism in which secrets are released
+only upon verified satisfaction of a deterministic program's gate
+obligations. The capsule is domain-agnostic; any \ISLS{} program
+(analytical or generative) can serve as a lock.
+
+\section{Threat Model}\label{sec:cap:threat}
+
+\begin{definition}[Adversary Capabilities]\label{def:adversary}
+An adversary may:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item read the lock program $P_L$, capsule headers, policies, and
+        manifests,
+  \item copy, replay, and attempt to tamper with bundles and capsules,
+  \item run the verifier and the lock program arbitrarily often,
+  \item attempt offline attacks on ciphertexts.
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[Security Objectives]\label{def:secobjectives}
+OLP provides:
+\begin{enumerate}[nosep,label=(\roman*)]
+  \item \textbf{Confidentiality}: secrets remain confidential without
+        access to cryptographic key material.
+  \item \textbf{Policy-bound release}: \texttt{open} succeeds only if
+        lock obligations pass and evidence verifies.
+  \item \textbf{Tamper evidence}: any modification to capsule, bundle,
+        or manifest is detected.
+  \item \textbf{Replay stability}: verification results are invariant
+        under replay (deterministic).
+\end{enumerate}
+\end{definition}
+
+\section{Core Objects}\label{sec:cap:objects}
+
+\begin{definition}[Lock]\label{def:lock}
+A lock is a tuple
+\[
+  L = (P_L, \Gamma, \mathrm{RD}_L)
+\]
+where $P_L$ is a public operator program (constraint program or HDAG),
+$\Gamma$ is the set of gate obligations and thresholds, and
+$\mathrm{RD}_L$ is the RD profile binding canonicalization, hash
+algorithms, tie-break rules, and registry digests.
+\end{definition}
+
+\begin{definition}[Capsule]\label{def:capsule}
+A capsule is an encrypted artifact:
+\[
+  C = \langle \mathtt{schema\_version}, \mathtt{alg}, \mathtt{nonce},
+      \mathtt{ciphertext}, \mathtt{aad}, \mathtt{policy},
+      \mathtt{bind} \rangle
+\]
+where:
+\begin{itemize}[nosep]
+  \item \texttt{alg}: AEAD algorithm identifier (default:
+        \texttt{AES-256-GCM}),
+  \item \texttt{nonce}: unique per capsule,
+  \item \texttt{ciphertext}: $\AEAD.\mathrm{Enc}(K_S, \mathtt{nonce},
+        \mathtt{plaintext}, \mathtt{aad})$,
+  \item \texttt{aad}: canonical JSON of policy and bind fields
+        (authenticated but not encrypted),
+  \item \texttt{policy}: capsule policy $\Pi_C$,
+  \item \texttt{bind}: digests binding the capsule to PSP objects.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Capsule Policy]\label{def:policy}
+A capsule policy $\Pi_C$ constrains admissible opening contexts:
+\begin{itemize}[nosep]
+  \item \texttt{require\_lock\_program\_id}: digest of $P_L$,
+  \item \texttt{require\_rd\_digest}: digest of $\mathrm{RD}_L$,
+  \item \texttt{require\_gate\_proofs}: list of required gate evidence
+        item digests,
+  \item \texttt{require\_manifest\_id}: optional; digest of required
+        execution manifest,
+  \item \texttt{expires\_at}: optional; UTC timestamp after which opening
+        is forbidden,
+  \item \texttt{max\_uses}: optional; maximum number of successful opens.
+\end{itemize}
+\end{definition}
+
+\section{Key Schedule}\label{sec:cap:keys}
+
+\begin{definition}[Session Key Derivation]\label{def:keysched}
+Given a master key $K_M$ (external, e.g., KMS/HSM/local keychain), define
+the binding string:
+\[
+  B = \Dig(\mathrm{RD}_L) \;\|\; \mathtt{run\_id} \;\|\;
+      P_L^{\mathrm{id}} \;\|\; T^{\mathrm{dig}} \;\|\;
+      \mathrm{RP}^{\mathrm{dig}}
+\]
+where values are taken from the execution manifest. Then derive:
+\[
+  K_S = \HKDF(K_M, \; \mathrm{salt} = \Dig(\Canon(\Sigma_0)), \;
+        \mathrm{info} = B)
+\]
+\end{definition}
+
+\begin{requirement}[Binding Minimality]\label{req:bindmin}
+$B$ \textbf{MUST} include at least $\Dig(\mathrm{RD}_L)$ and
+$\mathtt{run\_id}$. If boundary operators are used, the replay pack
+digest \textbf{MUST} be included to prevent opening under missing
+boundary evidence.
+\end{requirement}
+
+\section{Protocol Procedures}\label{sec:cap:procedures}
+
+\subsection{Seal}
+
+\begin{algorithm}[H]
+\caption{\textsc{Seal}: Encrypt secret under evidence-bound policy}
+\label{alg:seal}
+\begin{algorithmic}[1]
+\REQUIRE Secret $S$, lock $L = (P_L, \Gamma, \mathrm{RD}_L)$, master key $K_M$
+\ENSURE Capsule $C$
+\STATE Execute $P_L$ on $\Sigma_0$ under $\mathrm{RD}_L$, producing
+  manifest $M$, trace $T$, evidence, and replay pack $\mathrm{RP}$
+\STATE Verify all gate obligations $\Gamma$ pass with evidence
+\STATE Derive $K_S$ from $K_M$ and bindings $B$ (\cref{def:keysched})
+\STATE $\mathtt{nonce} \gets$ deterministic nonce from
+  $\Dig(\mathtt{run\_id} \| \mathtt{seal\_counter})$
+\STATE $\mathtt{aad} \gets \Canon(\Pi_C \| \mathtt{bind})$
+\STATE $\mathtt{ciphertext} \gets \AEAD.\mathrm{Enc}(K_S, \mathtt{nonce}, S, \mathtt{aad})$
+\STATE $C \gets (\mathtt{schema\_version}, \mathtt{alg}, \mathtt{nonce},
+  \mathtt{ciphertext}, \mathtt{aad}, \Pi_C, \mathtt{bind})$
+\RETURN $C$
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Open}
+
+\begin{algorithm}[H]
+\caption{\textsc{Open}: Decrypt secret under verified evidence}
+\label{alg:open}
+\begin{algorithmic}[1]
+\REQUIRE Capsule $C$, lock $L$, manifest $M$, master key $K_M$
+\ENSURE Secret $S$ or $\bot$
+\STATE Verify manifest $M$ via MV1--MV6 (\cref{def:manverify})
+\STATE Check policy $\Pi_C$: program ID, RD digest, gate proofs
+\STATE If \texttt{expires\_at} set and current time exceeds it:
+  \RETURN $\bot$
+\STATE If \texttt{max\_uses} set and exceeded: \RETURN $\bot$
+\STATE Verify boundary replay sufficiency if boundary IO was used
+\STATE Derive $K_S$ using same derivation rule (\cref{def:keysched})
+\STATE $S \gets \AEAD.\mathrm{Dec}(K_S, \mathtt{nonce}, \mathtt{ciphertext}, \mathtt{aad})$
+\STATE If decryption fails: \RETURN $\bot$
+\RETURN $S$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{invariant}[Capsule Integrity]\label{inv:capsule}
+Any modification to the capsule's \texttt{aad}, \texttt{policy}, or
+\texttt{bind} fields \textbf{MUST} cause $\AEAD.\mathrm{Dec}$ to fail,
+because these fields are authenticated as associated data.
+\end{invariant}
+
+\section{Rust API}\label{sec:cap:api}
+
+\begin{verbatim}
+// isls-capsule/src/lib.rs
+
+pub struct Lock {
+    pub program: ConstraintProgram,  // or HDAG
+    pub obligations: Vec<String>,    // obligation registry names
+    pub rd: RunDescriptor,
+}
+
+pub struct CapsulePolicy {
+    pub require_lock_program_id: Hash256,
+    pub require_rd_digest: Hash256,
+    pub require_gate_proofs: Vec<Hash256>,
+    pub require_manifest_id: Option<Hash256>,
+    pub expires_at: Option<f64>,
+    pub max_uses: Option<u64>,
+}
+
+pub struct Capsule {
+    pub schema_version: String,
+    pub alg: String,
+    pub nonce: Vec<u8>,
+    pub ciphertext: Vec<u8>,
+    pub aad: Vec<u8>,
+    pub policy: CapsulePolicy,
+    pub bind: BTreeMap<String, Hash256>,
+}
+
+pub fn seal(
+    secret: &[u8],
+    lock: &Lock,
+    master_key: &[u8; 32],
+    manifest: &ExecutionManifest,
+) -> Result<Capsule, CapsuleError>;
+
+pub fn open(
+    capsule: &Capsule,
+    lock: &Lock,
+    master_key: &[u8; 32],
+    manifest: &ExecutionManifest,
+) -> Result<Vec<u8>, CapsuleError>;
+
+pub fn verify_policy(
+    capsule: &Capsule,
+    manifest: &ExecutionManifest,
+) -> Result<(), PolicyError>;
+\end{verbatim}
+
+\section{Acceptance Tests}\label{sec:cap:tests}
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+AT-C1 & Seal-open round-trip & Seal a secret; open with valid manifest;
+  verify identical plaintext. \\
+AT-C2 & Policy rejection & Open with manifest missing a required gate
+  proof; verify rejection. \\
+AT-C3 & Tamper detection & Alter capsule AAD; verify AEAD decryption
+  fails. \\
+AT-C4 & Expiry enforcement & Set \texttt{expires\_at} in the past; verify
+  open returns $\bot$. \\
+AT-C5 & Replay stability & Seal and open twice with same inputs; verify
+  identical results. \\
+AT-C6 & Wrong manifest & Open with manifest from a different run; verify
+  rejection. \\
+\bottomrule
+\end{tabularx}
+
+
+%%% =====================================================================
+\part{Crate C15: \texttt{isls-scheduler}}\label{part:scheduler}
+
+\section{Purpose}\label{sec:sched:purpose}
+
+The scheduler crate provides adaptive tick granularity based on system
+dynamics. Instead of flat ticks of uniform duration, the Spiral Scheduler
+observes metric behavior and adjusts tick frequency: finer granularity
+during high deformation/friction (turbulence), coarser during stability.
+
+\section{Formal Model}\label{sec:sched:model}
+
+\begin{definition}[Spiral Segmentation]\label{def:spiralseg}
+A spiral segmentation maps macro-step index $k$ to an effective tick
+count $n_k \in \NN_{>0}$ through a scheduling function:
+\[
+  n_k = \sigma(d_k, F^*_k, S^*_k, \theta_{\mathrm{sched}})
+\]
+where $d_k$ is the deformation metric, $F^*_k$ is friction, $S^*_k$ is
+shock, and $\theta_{\mathrm{sched}}$ collects scheduling parameters.
+\end{definition}
+
+\begin{definition}[Scheduling Function]\label{def:schedfunc}
+The canonical scheduling function is:
+\[
+  \sigma(d, F, S, \theta) = \mathrm{clamp}\!\left(
+    \left\lfloor n_{\min} + (n_{\max} - n_{\min}) \cdot
+    \max(d, F, S) \right\rfloor,\;
+    n_{\min},\; n_{\max}
+  \right)
+\]
+where $n_{\min} \ge 1$ is the minimum sub-steps per macro-step and
+$n_{\max}$ is the maximum.
+\end{definition}
+
+\begin{definition}[Sub-Step]\label{def:substep}
+A sub-step executes the intrinsic dynamics
+$\frac{dH}{dt_2} = \Phi(H)$
+with effective $\Delta t_2' = \Delta t_2 / n_k$, updating carrier phase,
+embeddings, and resonance state $n_k$ times before the extrinsic
+commit decision is evaluated.
+\end{definition}
+
+\begin{invariant}[Extrinsic Discreteness]\label{inv:extrinsic}
+The extrinsic commit index $k$ increments exactly once per macro-step
+regardless of $n_k$. Sub-steps are intrinsic-time refinements only.
+They \textbf{MUST NOT} produce commits, crystals, or append to the
+archive. Only the final composite state after all $n_k$ sub-steps enters
+the extrinsic decision pipeline (extraction $\to$ consensus $\to$
+commit).
+\end{invariant}
+
+\begin{invariant}[Deterministic Scheduling]\label{inv:detsched}
+The scheduling function $\sigma$ \textbf{MUST} be deterministic under
+fixed $(\Sigma, \mathrm{RD})$. The scheduling parameters
+$\theta_{\mathrm{sched}}$ \textbf{MUST} be part of the Run Descriptor.
+\end{invariant}
+
+\section{Configuration}\label{sec:sched:config}
+
+\begin{verbatim}
+scheduler:
+  enabled: true
+  n_min: 1
+  n_max: 10
+  strategy: "max_pressure"  # or "weighted", "fixed"
+\end{verbatim}
+
+When \texttt{enabled: false}, the scheduler degenerates to
+$n_k = 1$ for all $k$ (flat ticks, backward-compatible).
+
+\section{Rust API}\label{sec:sched:api}
+
+\begin{verbatim}
+// isls-scheduler/src/lib.rs
+
+pub struct SchedulerConfig {
+    pub enabled: bool,
+    pub n_min: u32,
+    pub n_max: u32,
+    pub strategy: ScheduleStrategy,
+}
+
+pub enum ScheduleStrategy {
+    MaxPressure,   // n_k = clamp(n_min + (n_max-n_min)*max(d,F,S))
+    Weighted { w_d: f64, w_f: f64, w_s: f64 },
+    Fixed(u32),    // constant sub-steps
+}
+
+pub fn compute_substeps(
+    d: f64, f_friction: f64, s_shock: f64,
+    config: &SchedulerConfig,
+) -> u32;
+
+pub fn run_substeps(
+    state: &mut GlobalState,
+    n_substeps: u32,
+    config: &Config,
+);
+\end{verbatim}
+
+\section{Acceptance Tests}\label{sec:sched:tests}
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+AT-S1 & Disabled passthrough & Set \texttt{enabled: false}; verify
+  $n_k = 1$ for all $k$. \\
+AT-S2 & Adaptive scaling & Inject high-deformation data; verify
+  $n_k > 1$. Inject low-deformation; verify $n_k = n_{\min}$. \\
+AT-S3 & Determinism & Run twice with same RD; verify identical $n_k$
+  sequences. \\
+AT-S4 & Extrinsic invariance & Verify commit index increments exactly
+  once per macro-step regardless of $n_k$. \\
+AT-S5 & Backward compatibility & Run full S-Basic scenario with
+  scheduler disabled; verify identical results to current behavior. \\
+\bottomrule
+\end{tabularx}
+
+
+%%% =====================================================================
+\part{Engine Extension: Execute Mode}\label{part:execute}
+
+\section{Purpose}\label{sec:exec:purpose}
+
+The execute mode adds a generative operational manifestation to \ISLS{}.
+In the existing analytical mode, the engine ingests data and discovers
+programs. In execute mode, the engine accepts a program (crystal,
+constraint program, or HDAG) as input and executes it through the staged
+closure, producing new artifacts.
+
+\section{Formal Model}\label{sec:exec:model}
+
+\begin{definition}[Execute Input]\label{def:execinput}
+An execute input is one of:
+\begin{enumerate}[nosep,label=(\alph*)]
+  \item A \texttt{SemanticCrystal} (the \texttt{constraint\_program}
+        field is executed),
+  \item A \texttt{ConstraintProgram} (directly),
+  \item An HDAG (a \texttt{PersistentGraph} with operator-typed edges).
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[Execute Semantics]\label{def:execsem}
+Given execute input $P$ and initial state $\Sigma_0$ (which may be
+empty or pre-populated), the execute mode runs the staged closure:
+\[
+  \Sigma_K = P(\Sigma_0) \quad \text{under RD}
+\]
+producing: a final state $\Sigma_K$, zero or more new crystals, a
+complete trace, and an execution manifest.
+\end{definition}
+
+\begin{definition}[Staged Closure for Execute Mode]\label{def:execstages}
+The staged closure in execute mode follows the PCR stages:
+\begin{enumerate}[nosep,label=(S\arabic*)]
+  \item \textbf{Ingest}: Canonicalize input program $P$.
+  \item \textbf{Canon}: Canonicalize initial state $\Sigma_0$.
+  \item \textbf{Expand}: Apply macro expansions from the macro registry
+        (if $P$ contains macro references).
+  \item \textbf{Measure/Embed}: Compute 5D embeddings of the resulting
+        graph structure.
+  \item \textbf{Solve}: Execute operators in topological order.
+  \item \textbf{Gate}: Evaluate all gate obligations (Kairos cascade).
+  \item \textbf{Coagula/Select}: If gates pass, crystallize.
+  \item \textbf{Emit}: Emit crystals, trace, and manifest.
+\end{enumerate}
+\end{definition}
+
+\begin{requirement}[Execute-Discover Symmetry]\label{req:symmetry}
+The execute mode and the discovery mode \textbf{MUST} share:
+\begin{itemize}[nosep]
+  \item the same crystal format,
+  \item the same evidence chain structure,
+  \item the same manifest format,
+  \item the same gate cascade,
+  \item the same determinism contract.
+\end{itemize}
+A crystal produced by execute mode \textbf{MUST} be indistinguishable
+in format from a crystal produced by discovery mode. The
+\texttt{program\_id} field in the manifest distinguishes the provenance.
+\end{requirement}
+
+\section{CLI Integration}\label{sec:exec:cli}
+
+\begin{verbatim}
+# Execute a constraint program from a crystal file
+isls execute --input crystal.json --ticks 50
+
+# Execute an HDAG from a graph file
+isls execute --input program.hdag.json --ticks 100 --output results/
+
+# Execute and seal result as a capsule
+isls execute --input crystal.json --seal --lock-policy policy.json
+\end{verbatim}
+
+\section{Rust API}\label{sec:exec:api}
+
+\begin{verbatim}
+// In isls-engine/src/lib.rs (extension)
+
+pub enum ExecuteInput {
+    Crystal(SemanticCrystal),
+    Program(ConstraintProgram),
+    Hdag(PersistentGraph),
+}
+
+pub fn execute(
+    input: ExecuteInput,
+    initial_state: Option<GlobalState>,
+    config: &Config,
+    registries: &RegistrySet,
+    ticks: usize,
+) -> Result<(Vec<Option<SemanticCrystal>>, ExecutionManifest)>;
+\end{verbatim}
+
+\section{The Discovery-Execute Loop}\label{sec:exec:loop}
+
+The complete PSP substrate enables a self-reinforcing cycle:
+
+\begin{enumerate}[nosep]
+  \item \textbf{Discover}: Ingest data, run analytical mode, produce
+        crystals encoding discovered programs.
+  \item \textbf{Execute}: Take a discovered crystal, run it in execute
+        mode on new data, produce new artifacts.
+  \item \textbf{Observe}: Ingest the execution artifacts as new
+        observations.
+  \item \textbf{Re-discover}: Find higher-order patterns in execution
+        results.
+  \item \textbf{Crystallize}: Produce meta-crystals encoding patterns
+        of patterns.
+\end{enumerate}
+
+Each cycle produces manifests and evidence chains that are independently
+verifiable. The entire history is append-only, content-addressed, and
+deterministically replayable.
+
+\begin{theorem}[Loop Determinism]\label{thm:loopdeterminism}
+If each iteration of the discovery-execute loop uses a fixed
+$\mathrm{RD}$ with fixed registry digests, and all inputs are canonical,
+then the entire multi-iteration loop is deterministic: identical initial
+observations produce identical meta-crystals at every nesting depth.
+\end{theorem}
+
+\begin{proof}
+By induction. Each individual run (discover or execute) is deterministic
+by Theorem~23.1 of the \ISLS{} v1.0.0 specification. The output of one
+run is canonicalized before serving as input to the next. Since
+canonicalization is idempotent and all operators are deterministic, the
+composition is deterministic at every depth.
+\end{proof}
+
+
+%%% =====================================================================
+\part{Dependency Graph and Build Order}\label{part:deps}
+
+\section{Complete Dependency Graph}\label{sec:depgraph}
+
+\begin{verbatim}
+isls-types       <-- (all crates)
+    ^
+isls-registry    <-- (all crates that use operators)
+    ^
+isls-observe <-- isls-persist <-- isls-extract
+                      ^                ^
+              isls-consensus <-- isls-carrier
+                      ^
+              isls-archive <-- isls-morph
+                      ^
+              isls-manifest  (C13: reads archive + traces)
+                      ^
+              isls-capsule   (C14: uses manifest + archive + AEAD)
+                      ^
+              isls-scheduler (C15: wraps engine loop)
+                      ^
+              isls-engine     (extended: execute mode + scheduler)
+                      ^
+              isls-harness    (extended: manifest/capsule tests)
+                      ^
+              isls-cli        (extended: execute + seal/open commands)
+\end{verbatim}
+
+\section{Build Order}\label{sec:buildorder}
+
+\begin{enumerate}[nosep]
+  \item \texttt{isls-registry} (C12): no new dependencies beyond
+        \texttt{isls-types}.
+  \item \texttt{isls-manifest} (C13): depends on \texttt{isls-types},
+        \texttt{isls-archive}, \texttt{isls-registry}.
+  \item \texttt{isls-capsule} (C14): depends on \texttt{isls-types},
+        \texttt{isls-manifest}, \texttt{isls-registry}. New external
+        dependency: \texttt{aes-gcm} crate for AEAD.
+  \item \texttt{isls-scheduler} (C15): depends on \texttt{isls-types},
+        \texttt{isls-engine} (or shared types from it).
+  \item Engine extensions: modify \texttt{isls-engine} to integrate
+        scheduler and execute mode.
+  \item CLI extensions: add \texttt{execute}, \texttt{seal},
+        \texttt{open} subcommands.
+  \item Harness extensions: add tests for C12--C15.
+\end{enumerate}
+
+\section{External Dependencies}\label{sec:extdeps}
+
+\begin{tabular}{l l l}
+\toprule
+\textbf{Crate} & \textbf{Version} & \textbf{Purpose} \\
+\midrule
+\texttt{aes-gcm} & 0.10 & AEAD encryption for capsules \\
+\texttt{hkdf} & 0.12 & Key derivation for capsule session keys \\
+\bottomrule
+\end{tabular}
+
+All other dependencies are already present in the \ISLS{} workspace.
+
+
+%%% =====================================================================
+\part{Implementation Handoff}\label{part:handoff}
+
+\section{Normative Data Types}\label{sec:handoff:types}
+
+\begin{verbatim}
+// New types to add to isls-types/src/lib.rs
+
+pub type Hash256 = [u8; 32];
+
+pub struct SchedulerConfig {
+    pub enabled: bool,
+    pub n_min: u32,     // >= 1
+    pub n_max: u32,     // >= n_min
+    pub strategy: String, // "max_pressure" | "weighted" | "fixed"
+    pub w_d: f64,       // weight for deformation (if weighted)
+    pub w_f: f64,       // weight for friction
+    pub w_s: f64,       // weight for shock
+}
+
+// Extend RunDescriptor:
+pub struct RunDescriptor {
+    pub config: Config,
+    pub operator_versions: BTreeMap<String, String>,
+    pub initial_state_digest: Hash256,
+    pub seed: Option<u64>,
+    // NEW:
+    pub registry_digests: BTreeMap<String, Hash256>,
+    pub scheduler: SchedulerConfig,
+}
+\end{verbatim}
+
+\section{Test Obligations}\label{sec:handoff:tests}
+
+Total new acceptance tests: 21 (AT-R1 through AT-R5, AT-M1 through
+AT-M5, AT-C1 through AT-C6, AT-S1 through AT-S5).
+
+All existing 130+ tests \textbf{MUST} continue to pass. The final test
+count after extension should be $\ge 151$.
+
+\section{Verification Sequence}\label{sec:handoff:verify}
+
+\begin{verbatim}
+# Build
+cargo build --workspace --release 2>&1 | grep -c warning
+# MUST output: 0
+
+# Test
+cargo test --workspace -- --test-threads=1
+# MUST output: >= 151 passed, 0 failed
+
+# S-Basic with manifest
+rm -rf ~/.isls
+cargo run --bin isls --release -- ingest --adapter synthetic --scenario S-Basic
+cargo run --bin isls --release -- run --mode shadow --ticks 100
+cargo run --bin isls --release -- validate formal
+# MUST output: >= 40 crystals, 100% pass rate
+
+# Execute mode
+cargo run --bin isls --release -- execute --input ~/.isls/archive/latest.json --ticks 10
+# MUST produce crystals and a manifest
+
+# Capsule round-trip
+cargo run --bin isls --release -- seal --secret "test" --lock-manifest latest
+cargo run --bin isls --release -- open --capsule ~/.isls/capsules/latest.json
+# MUST output: "test"
+\end{verbatim}
+
+\section{Completion Criteria}\label{sec:handoff:done}
+
+The extension is complete when:
+\begin{enumerate}[nosep]
+  \item All four crates compile with zero warnings.
+  \item All 151+ tests pass.
+  \item S-Basic produces crystals with manifests.
+  \item Execute mode runs a discovered crystal and produces new crystals.
+  \item Seal/open round-trip succeeds.
+  \item Scheduler disabled produces identical results to pre-extension
+        behavior.
+  \item Full HTML report includes manifest and capsule sections.
+\end{enumerate}
+
+
+%%% =====================================================================
+\appendix
+
+\section{Invariant Cross-Reference}\label{app:invariants}
+
+\begin{longtable}{l l l}
+\toprule
+\textbf{New Invariant} & \textbf{Source} & \textbf{ISLS Base Invariant} \\
+\midrule
+Registry content-addressing & PCR \S5.4 & I2 (Canonical Serialization) \\
+Registry drift detection & PCR \S5.4 & I20 (Operator Version Pinning) \\
+Manifest content-addressing & PCR \S8.1 & I2 \\
+Manifest tamper-evidence & PCR \S8.3 & I3 (Provenance Completeness) \\
+Replay pack sufficiency & PCR \S8.2 & I4 (Deterministic Replay) \\
+Capsule confidentiality & OLP \S5.2 & new \\
+Capsule policy-bound release & OLP \S5.2 & I9 (Threshold-Governed) \\
+Capsule tamper-evidence & OLP \S5.2 & I8 (Storage Integrity) \\
+Scheduler determinism & NCTE Axiom~3 & I4 \\
+Extrinsic discreteness & NCTE Axiom~9 & I10 (Commit Immutability) \\
+Execute-discover symmetry & PSP \S I.2 & I2, I4 \\
+\bottomrule
+\end{longtable}
+
+\section{Symbol Additions}\label{app:symbols}
+
+\begin{tabular}{l l l}
+\toprule
+\textbf{Symbol} & \textbf{Type} & \textbf{Meaning} \\
+\midrule
+$\calR$ & Registry & Content-addressed operator/profile/obligation catalog \\
+$M$ & Manifest & Execution manifest binding a complete run \\
+$T_k$ & TraceEntry & Per-tick trace record \\
+$\mathrm{RP}$ & ReplayPack & Self-contained replay bundle \\
+$L$ & Lock & $(P_L, \Gamma, \mathrm{RD}_L)$ lock specification \\
+$C$ & Capsule & Encrypted evidence-bound artifact \\
+$\Pi_C$ & Policy & Capsule release policy \\
+$K_M$ & bytes & Master key (external) \\
+$K_S$ & bytes & Derived session key \\
+$B$ & bytes & Binding string for key derivation \\
+$\sigma(\cdot)$ & function & Spiral scheduling function \\
+$n_k$ & $\NN_{>0}$ & Sub-step count at macro-step $k$ \\
+\bottomrule
+\end{tabular}
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} v1.0.0 Extension Architecture.\\
+Deterministic, append-only, replay-verified.}
+\end{center}
+
+\end{document}
