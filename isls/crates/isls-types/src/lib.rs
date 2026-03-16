@@ -288,6 +288,15 @@ pub struct SemanticCrystal {
     pub created_at: CommitIndex,
     pub free_energy: f64,
     pub carrier_instance_idx: usize,
+    // C18 scale provenance fields
+    #[serde(default)]
+    pub scale_tag: String,
+    #[serde(default)]
+    pub universe_id: String,
+    #[serde(default)]
+    pub sub_crystal_ids: Vec<String>,
+    #[serde(default)]
+    pub parent_crystal_ids: Vec<String>,
 }
 
 /// Scheduler configuration for the Spiral Scheduler (C15)

@@ -1,0 +1,13 @@
+[package]
+name = "isls-scale"
+version = "1.0.0"
+edition = "2021"
+description = "ISLS Hierarchical Multi-Scale Observation Layer (C18): Hypercube Universes, Bridges, Ladders"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-persist = { path = "../isls-persist" }
+isls-topology = { path = "../isls-topology" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

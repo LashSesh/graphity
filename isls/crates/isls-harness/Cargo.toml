@@ -18,6 +18,7 @@ isls-capsule = { path = "../isls-capsule" }
 isls-scheduler = { path = "../isls-scheduler" }
 isls-topology = { path = "../isls-topology" }
 isls-store = { path = "../isls-store" }
+isls-scale = { path = "../isls-scale" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
