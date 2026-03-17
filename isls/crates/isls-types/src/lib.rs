@@ -200,6 +200,45 @@ pub struct ConstraintCandidate {
 /// Constraint program = ordered sequence of candidates
 pub type ConstraintProgram = Vec<ConstraintCandidate>;
 
+// ─── Constitutional Types (Genesis Crystal) ───────────────────────────────────
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ConstraintSeverity { Mandatory, Recommended }
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ConformanceClass { C0, C1, C2, C3, C4 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConstitutionalConstraint {
+    pub id: String,
+    pub axiom_ref: String,
+    pub description: String,
+    pub severity: ConstraintSeverity,
+    pub satisfied: bool,
+    pub evidence: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SystemFingerprint {
+    pub isls_version: String,
+    pub crate_count: usize,
+    pub test_count: usize,
+    pub registry_digest: Hash256,
+    pub config_digest: Hash256,
+    pub platform: String,
+    pub rust_version: String,
+    pub git_commit: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GenesisMetadata {
+    pub adamant_version: String,
+    pub conformance_class: ConformanceClass,
+    pub system_fingerprint: SystemFingerprint,
+    pub constitutional_digest: Hash256,
+    pub constraints: Vec<ConstitutionalConstraint>,
+}
+
 // ─── Evidence, Proof, Gate Types ──────────────────────────────────────────────
 
 /// Evidence entry in an evidence chain
@@ -297,6 +336,9 @@ pub struct SemanticCrystal {
     pub sub_crystal_ids: Vec<String>,
     #[serde(default)]
     pub parent_crystal_ids: Vec<String>,
+    // Genesis Crystal metadata (only set on the first crystal in the archive)
+    #[serde(default)]
+    pub genesis_metadata: Option<GenesisMetadata>,
 }
 
 /// Scheduler configuration for the Spiral Scheduler (C15)
