@@ -35,6 +35,10 @@ echo.
 
 set ISLS="%BINARY%"
 
+echo [INIT] Establishing system constitution (Genesis Crystal)...
+%ISLS% init 2>nul
+echo.
+
 :: ── Scenario arrays ───────────────────────────────────────────────────────────
 set SCENARIOS[0]=S-Basic
 set SCENARIOS[1]=S-Regime
@@ -86,6 +90,31 @@ for /L %%i in (0,1,4) do (
         copy /y "%ISLS_HOME%\reports\latest-formal.json" "%RESULTS_DIR%\!S!-formal.json" >nul
     )
 
+    :: ── Extension: capsule seal/open ─────────────────────────────────────────
+    :: Run BEFORE execute so the manifest is definitively the one from `isls run`.
+    :: If execute were to overwrite latest.json with a different run_id, seal and
+    :: open would disagree, causing a false FAIL.
+    echo [!N!/5] !S!: capsule seal/open test...
+    set CAPSULE_OK=SKIP (no manifest)
+    if exist "%ISLS_HOME%\manifests\latest.json" (
+        %ISLS% seal --secret "isls-test-secret-!S!" --lock-manifest latest 2>nul
+        if exist "%ISLS_HOME%\capsules\latest.json" (
+            set OPENED_SECRET=
+            for /f "delims=" %%o in ('%ISLS% open --capsule "%ISLS_HOME%\capsules\latest.json" 2^>nul') do set OPENED_SECRET=%%o
+            if "!OPENED_SECRET!"=="isls-test-secret-!S!" (
+                set CAPSULE_OK=PASS
+                copy /y "%ISLS_HOME%\capsules\latest.json" "%RESULTS_DIR%\!S!-capsule.json" >nul
+            ) else if "!OPENED_SECRET!"=="" (
+                set CAPSULE_OK=FAIL (open produced no output)
+            ) else (
+                set CAPSULE_OK=FAIL (open returned: !OPENED_SECRET!)
+            )
+        ) else (
+            set CAPSULE_OK=SKIP (seal produced no capsule)
+        )
+    )
+    echo   capsule: !CAPSULE_OK!
+
     :: ── Extension: execute mode + manifest ───────────────────────────────────
     echo [!N!/5] !S!: execute mode + manifest...
     set MANIFEST_ID=N/A
@@ -98,24 +127,6 @@ for /L %%i in (0,1,4) do (
         )
     )
     echo   manifest_id: !MANIFEST_ID!
-
-    :: ── Extension: capsule seal/open ─────────────────────────────────────────
-    echo [!N!/5] !S!: capsule seal/open test...
-    set CAPSULE_OK=SKIP
-    if exist "%ISLS_HOME%\manifests\latest.json" (
-        %ISLS% seal --secret "isls-test-secret-!S!" --lock-manifest latest 2>nul
-        if exist "%ISLS_HOME%\capsules\latest.json" (
-            set OPENED_SECRET=FAIL
-            for /f "delims=" %%o in ('%ISLS% open --capsule "%ISLS_HOME%\capsules\latest.json" 2^>nul') do set OPENED_SECRET=%%o
-            if "!OPENED_SECRET!"=="isls-test-secret-!S!" (
-                set CAPSULE_OK=PASS
-                copy /y "%ISLS_HOME%\capsules\latest.json" "%RESULTS_DIR%\!S!-capsule.json" >nul
-            ) else (
-                set CAPSULE_OK=FAIL
-            )
-        )
-    )
-    echo   capsule: !CAPSULE_OK!
 
     :: Combine validate + manifest info + metrics into results.txt
     type "%RESULTS_DIR%\!S!-validate.txt"  > "%RESULTS_DIR%\!S!-results.txt"
@@ -140,30 +151,35 @@ if exist "%ISLS_HOME%\config.json" del /q "%ISLS_HOME%\config.json"
 %ISLS% ingest --adapter synthetic --scenario S-Basic 2>nul
 %ISLS% run --mode shadow --ticks 100 2>nul
 
+:: ── Capsule integration test ──────────────────────────────────────────────────
+:: Run BEFORE execute so the manifest is definitively the one from `isls run`.
+echo [CAPSULE] Running capsule integration test...
+set CAPSULE_RESULT=SKIP (no manifest)
+if exist "%ISLS_HOME%\manifests\latest.json" (
+    %ISLS% seal --secret "isls-test-secret" --lock-manifest latest 2>nul
+    if exist "%ISLS_HOME%\capsules\latest.json" (
+        set OPENED_FINAL=
+        for /f "delims=" %%o in ('%ISLS% open --capsule "%ISLS_HOME%\capsules\latest.json" 2^>nul') do set OPENED_FINAL=%%o
+        if "!OPENED_FINAL!"=="isls-test-secret" (
+            set CAPSULE_RESULT=PASS
+        ) else if "!OPENED_FINAL!"=="" (
+            set CAPSULE_RESULT=FAIL (open produced no output)
+        ) else (
+            set CAPSULE_RESULT=FAIL (open returned: !OPENED_FINAL!)
+        )
+    ) else (
+        set CAPSULE_RESULT=SKIP (seal produced no capsule)
+    )
+)
+echo   capsule: %CAPSULE_RESULT%
+echo CAPSULE_INTEGRATION: %CAPSULE_RESULT% > "%RESULTS_DIR%\capsule-integration.txt"
+
 set ARCHIVE_PATH=%ISLS_HOME%\data\crystals\archive.jsonl
 if exist "%ARCHIVE_PATH%" (
     %ISLS% execute --input "%ARCHIVE_PATH%" --ticks 10 2>nul > "%RESULTS_DIR%\execute-integration.txt"
     %ISLS% validate --formal 2>nul >> "%RESULTS_DIR%\execute-integration.txt"
 )
 echo   execute-mode integration: done
-
-:: ── Capsule integration test ──────────────────────────────────────────────────
-echo [CAPSULE] Running capsule integration test...
-set CAPSULE_RESULT=SKIP
-if exist "%ISLS_HOME%\manifests\latest.json" (
-    %ISLS% seal --secret "isls-test-secret" --lock-manifest latest 2>nul
-    if exist "%ISLS_HOME%\capsules\latest.json" (
-        set OPENED_FINAL=FAIL
-        for /f "delims=" %%o in ('%ISLS% open --capsule "%ISLS_HOME%\capsules\latest.json" 2^>nul') do set OPENED_FINAL=%%o
-        if "!OPENED_FINAL!"=="isls-test-secret" (
-            set CAPSULE_RESULT=PASS
-        ) else (
-            set CAPSULE_RESULT=FAIL
-        )
-    )
-)
-echo   capsule: %CAPSULE_RESULT%
-echo CAPSULE_INTEGRATION: %CAPSULE_RESULT% > "%RESULTS_DIR%\capsule-integration.txt"
 
 echo.
 

@@ -71,6 +71,33 @@ for i in "${!SCENARIO_NAMES[@]}"; do
         cp "${ISLS_HOME}/reports/latest-formal.json" "${RESULTS_DIR}/${S}-formal.json"
     fi
 
+    # ── Extension: capsule seal/open round-trip ───────────────────────────────
+    # Run BEFORE execute so the manifest is definitively the one from `isls run`.
+    # If execute were to overwrite latest.json with a different run_id, seal and
+    # open would disagree → FAIL.  Running here avoids that race.
+    printf "[%d/5] %s: capsule seal/open test..." "${N}" "${S}"
+    CAPSULE_OK="SKIP (no manifest)"
+    MANIFEST_PATH="${ISLS_HOME}/manifests/latest.json"
+    if [ -f "${MANIFEST_PATH}" ]; then
+        isls seal --secret "isls-test-secret-${S}" \
+            --lock-manifest latest 2>/dev/null || true
+        if [ -f "${ISLS_HOME}/capsules/latest.json" ]; then
+            OPENED=$(isls open \
+                --capsule "${ISLS_HOME}/capsules/latest.json" 2>/dev/null \
+                || true)
+            if [ "${OPENED}" = "isls-test-secret-${S}" ]; then
+                CAPSULE_OK="PASS"
+                cp "${ISLS_HOME}/capsules/latest.json" \
+                   "${RESULTS_DIR}/${S}-capsule.json" 2>/dev/null || true
+            else
+                CAPSULE_OK="FAIL (open returned: '${OPENED}')"
+            fi
+        else
+            CAPSULE_OK="SKIP (seal produced no capsule)"
+        fi
+    fi
+    printf " %s\n" "${CAPSULE_OK}"
+
     # ── Extension: build + verify execution manifest ──────────────────────────
     printf "[%d/5] %s: building execution manifest...\n" "${N}" "${S}"
     ARCHIVE_PATH="${ISLS_HOME}/data/crystals/archive.jsonl"
@@ -93,26 +120,6 @@ for i in "${!SCENARIO_NAMES[@]}"; do
     fi
     printf "  manifest_id: %s\n" "${MANIFEST_ID}"
 
-    # ── Extension: capsule seal/open round-trip ───────────────────────────────
-    printf "[%d/5] %s: capsule seal/open test..." "${N}" "${S}"
-    CAPSULE_OK="SKIP (no manifest)"
-    if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
-        isls seal --secret "isls-test-secret-${S}" \
-            --lock-manifest latest 2>/dev/null || true
-        if [ -f "${ISLS_HOME}/capsules/latest.json" ]; then
-            OPENED=$(isls open \
-                --capsule "${ISLS_HOME}/capsules/latest.json" 2>/dev/null || echo "FAIL")
-            if [ "${OPENED}" = "isls-test-secret-${S}" ]; then
-                CAPSULE_OK="PASS"
-                cp "${ISLS_HOME}/capsules/latest.json" \
-                   "${RESULTS_DIR}/${S}-capsule.json" 2>/dev/null || true
-            else
-                CAPSULE_OK="FAIL"
-            fi
-        fi
-    fi
-    printf " %s\n" "${CAPSULE_OK}"
-
     # Combine validate text + manifest + metrics JSON into results.txt
     {
         cat "${RESULTS_DIR}/${S}-validate.txt"
@@ -131,6 +138,30 @@ echo "[EXECUTE] Running execute-mode integration test (S-Basic crystal)..."
 clean_scenario_state
 isls ingest --adapter synthetic --scenario S-Basic
 isls run --mode shadow --ticks 100
+
+# ── Capsule integration test ─────────────────────────────────────────────────
+# Run BEFORE `isls execute` to use the manifest from `isls run`.
+# If execute were to overwrite latest.json, seal and open would disagree.
+echo "[CAPSULE] Running capsule integration test..."
+CAPSULE_RESULT="SKIP (no manifest)"
+if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
+    isls seal --secret "isls-test-secret" --lock-manifest latest 2>/dev/null || true
+    if [ -f "${ISLS_HOME}/capsules/latest.json" ]; then
+        OPENED=$(isls open \
+            --capsule "${ISLS_HOME}/capsules/latest.json" 2>/dev/null \
+            || true)
+        if [ "${OPENED}" = "isls-test-secret" ]; then
+            CAPSULE_RESULT="PASS"
+        else
+            CAPSULE_RESULT="FAIL (open returned: '${OPENED}')"
+        fi
+    else
+        CAPSULE_RESULT="SKIP (seal produced no capsule)"
+    fi
+fi
+echo "  capsule: ${CAPSULE_RESULT}"
+echo "CAPSULE_INTEGRATION: ${CAPSULE_RESULT}" > "${RESULTS_DIR}/capsule-integration.txt"
+
 EXECUTE_CRYSTALS=0
 EXECUTE_PASS="SKIP"
 ARCHIVE_PATH="${ISLS_HOME}/data/crystals/archive.jsonl"
@@ -144,24 +175,6 @@ if [ -f "${ARCHIVE_PATH}" ]; then
                    | tail -1 | awk '{print $3}' || echo "N/A")
 fi
 printf "  execute-mode crystals: %s, pass: %s\n" "${EXECUTE_CRYSTALS}" "${EXECUTE_PASS}"
-
-# ── Capsule integration test ──────────────────────────────────────────────────
-echo "[CAPSULE] Running capsule integration test..."
-CAPSULE_RESULT="SKIP (no manifest)"
-if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
-    isls seal --secret "isls-test-secret" --lock-manifest latest 2>/dev/null || true
-    if [ -f "${ISLS_HOME}/capsules/latest.json" ]; then
-        OPENED=$(isls open \
-            --capsule "${ISLS_HOME}/capsules/latest.json" 2>/dev/null || echo "FAIL")
-        if [ "${OPENED}" = "isls-test-secret" ]; then
-            CAPSULE_RESULT="PASS"
-        else
-            CAPSULE_RESULT="FAIL (got: ${OPENED})"
-        fi
-    fi
-fi
-echo "  capsule: ${CAPSULE_RESULT}"
-echo "CAPSULE_INTEGRATION: ${CAPSULE_RESULT}" > "${RESULTS_DIR}/capsule-integration.txt"
 
 echo ""
 
