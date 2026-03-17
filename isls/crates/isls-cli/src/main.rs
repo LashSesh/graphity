@@ -687,10 +687,20 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&
     // Pre-populate state.archive with persisted crystals so that the genesis
     // crystal (written by `isls init`) and any prior-run crystals are preserved
     // when save_archive() overwrites the file at the end of this run.
+    // If no genesis crystal exists yet (e.g. user skipped `isls init` or
+    // clean_scenario_state wiped the archive), auto-create one now so that
+    // `report full-html` always has a Section 0 to render.
     {
         let persisted = load_archive();
+        let has_genesis = persisted.crystals().iter().any(|c| c.created_at == 0);
         for crystal in persisted.crystals() {
             state.archive.append(crystal.clone());
+        }
+        if !has_genesis {
+            let registries = RegistrySet::new();
+            if let Ok(gc) = build_genesis_crystal(&config, &registries) {
+                state.archive.append(gc);
+            }
         }
     }
     let adapter = JsonEntityAdapter::new("isls-run");

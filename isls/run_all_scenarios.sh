@@ -33,6 +33,10 @@ cargo build --bin isls --release 2>/dev/null
 echo "[BUILD] Done."
 echo ""
 
+echo "[INIT] Establishing system constitution (Genesis Crystal)..."
+isls init
+echo ""
+
 # ── Scenario table: name  ticks ───────────────────────────────────────────────
 declare -a SCENARIO_NAMES=("S-Basic" "S-Regime" "S-Causal" "S-Break" "S-Scale")
 declare -a SCENARIO_TICKS=(100       200        200        600       200)
