@@ -22,6 +22,9 @@ isls-scheduler = { path = "../isls-scheduler" }
 isls-store = { path = "../isls-store" }
 isls-topology = { path = "../isls-topology" }
 isls-scale = { path = "../isls-scale" }
+isls-oracle = { path = "../isls-oracle" }
+isls-artifact-ir = { path = "../isls-artifact-ir" }
+isls-forge = { path = "../isls-forge" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

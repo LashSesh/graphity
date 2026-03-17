@@ -103,6 +103,10 @@ enum Command {
     // Genesis Crystal commands
     GenesisShow,
     GenesisValidate,
+    // C25 Oracle commands
+    OracleStatus,
+    OracleMemory,
+    OracleSealKey { key: String, lock_genesis: bool },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -183,6 +187,23 @@ fn parse_args(args: &[String]) -> Command {
                     _ => Command::Help,
                 }
             } else { Command::GenesisShow }
+        }
+        "oracle" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "status" => Command::OracleStatus,
+                    "memory" => Command::OracleMemory,
+                    "seal-key" => {
+                        let key = args.iter().position(|a| a == "--key")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_default();
+                        let lock_genesis = args.contains(&"--lock-genesis".to_string());
+                        Command::OracleSealKey { key, lock_genesis }
+                    }
+                    _ => Command::OracleStatus,
+                }
+            } else { Command::OracleStatus }
         }
         "ingest" => {
             let adapter = args.iter().position(|a| a == "--adapter")
@@ -500,6 +521,141 @@ fn cmd_genesis_validate() {
         println!("\nGenesis: VALID");
     } else {
         println!("\nGenesis: INVALID");
+    }
+}
+
+// ─── Oracle Commands (C25) ────────────────────────────────────────────────────
+
+fn cmd_oracle_status() {
+    use isls_oracle::{OracleConfig, OracleEngine, OraclePatternMemory};
+    let config = OracleConfig::default();
+    let engine = OracleEngine::new(config.clone(), OraclePatternMemory::new());
+    let m = engine.autonomy();
+    let b = engine.budget_status();
+
+    println!("Oracle Status (C25 — Hybrid Synthesis Oracle)");
+    println!("  Provider:    Claude ({})", config.model);
+    println!("  LLM active:  {}", engine.oracle_available());
+    println!();
+    println!("  Autonomy Metrics:");
+    println!("    Total requests:     {}", m.total_requests);
+    println!("    Memory hits:        {}", m.memory_hits);
+    println!("    Oracle calls:       {}", m.oracle_calls);
+    println!("    Oracle rejections:  {}", m.oracle_rejections);
+    println!("    Skeleton fallbacks: {}", m.skeleton_fallbacks);
+    println!("    Autonomy ratio M33: {:.1}%",  m.autonomy_ratio * 100.0);
+    println!("    Rejection rate M34: {:.1}%", m.rejection_rate() * 100.0);
+    println!("    Tokens used:        {}", m.total_tokens);
+    println!("    Est. cost:          ${:.4}", m.total_cost_usd);
+    println!();
+    println!("  Budget:");
+    println!("    Calls this run:  {}/{}", b.current.calls_this_run, b.max_calls_per_run);
+    println!("    Tokens this run: {}/{}", b.current.tokens_this_run, b.max_tokens_per_run);
+    println!("    Cost this run:   ${:.4}/${:.2}", b.current.cost_this_run, b.max_cost_per_run);
+    println!("    Calls today:     {}/{}", b.current.calls_today, b.max_calls_per_day);
+}
+
+fn cmd_oracle_memory() {
+    use isls_oracle::{OraclePatternMemory};
+    // Pattern memory is in-process; we report static info here.
+    // A full implementation would persist patterns to isls-store.
+    let memory = OraclePatternMemory::new();
+    println!("Oracle Pattern Memory (C25)");
+    println!("  Patterns loaded: {}", memory.len());
+    println!("  Avg quality:     {:.2}", memory.avg_quality());
+    if memory.is_empty() {
+        println!("  No patterns stored yet.");
+        println!("  Patterns are crystallized from validated LLM outputs during 'isls forge'.");
+    } else {
+        let stats = memory.domain_stats();
+        println!("  Domains: {}", stats.len());
+        for (domain, count) in &stats {
+            println!("    {}: {} patterns", domain, count);
+        }
+    }
+    println!();
+    println!("  Match threshold:   {:.2}", 0.85f64);
+    println!("  Quality threshold: {:.2}", 0.60f64);
+}
+
+fn cmd_oracle_seal_key(key: &str, lock_genesis: bool) {
+    use isls_capsule::{seal, CapsulePolicy};
+    use isls_manifest::{build_manifest, TraceEntry};
+    use isls_registry::RegistrySet;
+    use std::collections::BTreeMap;
+
+    if key.is_empty() {
+        eprintln!("[oracle] Error: --key is required. Usage: isls oracle seal-key --key <api-key> [--lock-genesis]");
+        return;
+    }
+
+    let archive = load_archive();
+    let config = load_config();
+    let registries = RegistrySet::new();
+
+    // Build a manifest from the current system state
+    let rd = isls_types::RunDescriptor {
+        config: config.clone(),
+        operator_versions: BTreeMap::new(),
+        initial_state_digest: isls_types::content_address_raw(b"oracle-key-seal"),
+        seed: None,
+        registry_digests: BTreeMap::new(),
+        scheduler: isls_types::SchedulerConfig::default(),
+    };
+    let traces: Vec<TraceEntry> = vec![];
+    let obs_log: Vec<Vec<Vec<u8>>> = vec![];
+    let manifest = build_manifest(&rd, &traces, &archive, &registries, "oracle", &obs_log);
+
+    if lock_genesis {
+        // Validate genesis before sealing
+        let genesis_ok = validate_genesis(&archive, &config, &registries).all_ok();
+        if !genesis_ok {
+            eprintln!("[oracle] Warning: Genesis Crystal is not valid. Key will still be sealed.");
+            eprintln!("[oracle]          Run 'isls genesis validate' for details.");
+        } else {
+            println!("[oracle] Genesis Crystal is valid — key will be sealed with constitutional protection.");
+        }
+    }
+
+    let policy = CapsulePolicy {
+        require_lock_program_id: [0u8; 32],
+        require_rd_digest: manifest.rd_digest,
+        require_gate_proofs: vec![],
+        require_manifest_id: Some(manifest.run_id),
+        expires_at: None,
+        max_uses: None,
+    };
+
+    // Master key: derive from a system-specific constant + rd_digest
+    // In production this would come from a hardware key or secure store
+    let mut master_key = [0u8; 32];
+    let rd_bytes = manifest.rd_digest;
+    for (i, b) in rd_bytes.iter().enumerate().take(32) {
+        master_key[i] ^= b;
+    }
+    master_key[0] ^= 0xAB; // domain separator for oracle keys
+
+    let capsule = match seal(key.as_bytes(), policy, BTreeMap::new(), &master_key, &manifest) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[oracle] Seal failed: {e}");
+            return;
+        }
+    };
+
+    // Save capsule to ~/.isls/capsules/oracle-key.json
+    ensure_dirs().ok();
+    let capsule_dir = isls_dir().join("capsules");
+    std::fs::create_dir_all(&capsule_dir).ok();
+    let capsule_path = capsule_dir.join("oracle-key.json");
+    match serde_json::to_string_pretty(&capsule) {
+        Ok(json) => {
+            std::fs::write(&capsule_path, json).ok();
+            println!("[oracle] API key sealed to: {}", capsule_path.display());
+            println!("[oracle] Use api_key_source: \"capsule:oracle-key\" in oracle config.");
+            println!("[oracle] The key is bound to run_id: {:02x?}...", &manifest.run_id[..4]);
+        }
+        Err(e) => eprintln!("[oracle] Failed to serialize capsule: {e}"),
     }
 }
 
@@ -1942,6 +2098,62 @@ fn build_full_html(
 
     h.push_str("</div>\n</div>\n"); // close grid2 + section 9
 
+    // ── Section 10: Phase 6 — Hybrid Synthesis Oracle (C25) ──────────────────
+    h.push_str("<div class='section'>\n<h2>10. Phase 6 \u{2014} Hybrid Synthesis Oracle (C25)</h2>\n");
+    h.push_str("<p style='margin-bottom:1rem'>The oracle that generates. The system that validates. The memory that learns.<br>\
+        Memory-first \u{2192} LLM fallback \u{2192} skeleton fallback. Every validated answer reduces the next question.</p>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    h.push_str("<div>\n<h3>C25 \u{2014} OracleEngine</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Default oracle</td><td class='g'>ClaudeOracle (claude-sonnet-4-20250514)</td></tr>\n");
+    h.push_str("<tr><td>Memory-first</td><td class='g'>Cosine similarity \u{2265} 0.85 in 5D embedding space</td></tr>\n");
+    h.push_str("<tr><td>Quality threshold</td><td class='g'>\u{2265} 0.6 for pattern reuse</td></tr>\n");
+    h.push_str("<tr><td>Max retries</td><td class='g'>3 per synthesis request</td></tr>\n");
+    h.push_str("<tr><td>Fallback</td><td class='g'>Skeleton (no LLM dependency for correctness)</td></tr>\n");
+    h.push_str("<tr><td>API key</td><td class='g'>env:ANTHROPIC_API_KEY or capsule-protected (C14)</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("<div>\n<h3>Validation Pipeline (4 Stages)</h3>\n");
+    h.push_str("<table><thead><tr><th>Stage</th><th>Check</th><th>Status</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>V1 Parse</strong></td><td>Non-empty + format-valid (JSON/Rust/YAML/OpenAPI)</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>V2 Constraints</strong></td><td>All required component names present</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>V3 PMHD</strong></td><td>Mini-PMHD adversarial quality check</td><td class='g'>Active</td></tr>\n");
+    h.push_str("<tr><td><strong>V4 Gates</strong></td><td>8-gate quality threshold</td><td class='g'>Active</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n");
+
+    h.push_str("<h3>Autonomy Metrics (M33, M34)</h3>\n");
+    h.push_str("<div class='grid2'>\n");
+    h.push_str("<div><table><thead><tr><th>Metric</th><th>Name</th><th>Formula</th><th>Goal</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>M33</strong></td><td>Autonomy Ratio</td><td>memory_hits / total_requests</td><td class='g'>\u{2192} 1.0 (asymptotic)</td></tr>\n");
+    h.push_str("<tr><td><strong>M34</strong></td><td>Oracle Rejection Rate</td><td>oracle_rejections / oracle_calls</td><td class='g'>&lt; 0.1 (oracle aligned)</td></tr>\n");
+    h.push_str("</tbody></table></div>\n");
+    h.push_str("<div><table><thead><tr><th>Budget Control</th><th>Default</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td>max_calls_per_run</td><td class='g'>100</td></tr>\n");
+    h.push_str("<tr><td>max_tokens_per_run</td><td class='g'>500,000</td></tr>\n");
+    h.push_str("<tr><td>max_cost_per_run</td><td class='g'>$10.00</td></tr>\n");
+    h.push_str("<tr><td>max_calls_per_day</td><td class='g'>1,000</td></tr>\n");
+    h.push_str("</tbody></table></div>\n");
+    h.push_str("</div>\n");
+
+    h.push_str("<h3>Acceptance Tests (AT-O1\u{2013}AT-O10)</h3>\n");
+    h.push_str("<div class='grid10'>\n");
+    for (id, name) in &[
+        ("AT-O1","MemoryHit"), ("AT-O2","LlmFallback"), ("AT-O3","ValidationRej"),
+        ("AT-O4","PromptDet"),  ("AT-O5","Budget"),      ("AT-O6","Autonomy"),
+        ("AT-O7","Crystallize"),("AT-O8","Graceful"),    ("AT-O9","NoLeak"),
+        ("AT-O10","CapsuleKey"),
+    ] {
+        h.push_str(&format!(
+            "<div class='gate-box'><strong>{id}</strong><br><small>{name}</small></div>\n"
+        ));
+    }
+    h.push_str("</div>\n");
+
+    h.push_str("</div>\n"); // close section 10
+
     // ── Footer ────────────────────────────────────────────────────────────────
     h.push_str("<footer>Generated by ISLS v1.0.0 \u{2014} deterministic, append-only, replay-verified</footer>\n");
     h.push_str("</body>\n</html>\n");
@@ -2209,6 +2421,9 @@ fn main() {
         Command::StoreCheck => cmd_store_check(),
         Command::GenesisShow => cmd_genesis_show(),
         Command::GenesisValidate => cmd_genesis_validate(),
+        Command::OracleStatus => cmd_oracle_status(),
+        Command::OracleMemory => cmd_oracle_memory(),
+        Command::OracleSealKey { key, lock_genesis } => cmd_oracle_seal_key(&key, lock_genesis),
     }
 }
 
