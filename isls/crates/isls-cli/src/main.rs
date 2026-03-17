@@ -684,6 +684,15 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&
     println!("(Press Ctrl+C to stop)");
 
     let mut state = GlobalState::new(&config);
+    // Pre-populate state.archive with persisted crystals so that the genesis
+    // crystal (written by `isls init`) and any prior-run crystals are preserved
+    // when save_archive() overwrites the file at the end of this run.
+    {
+        let persisted = load_archive();
+        for crystal in persisted.crystals() {
+            state.archive.append(crystal.clone());
+        }
+    }
     let adapter = JsonEntityAdapter::new("isls-run");
     let mut collector = MetricCollector::new();
     let metrics_path = isls_dir().join("metrics/metrics.jsonl");
