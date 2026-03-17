@@ -961,6 +961,7 @@ fn build_scale_crystal(
         parent_crystal_ids: parent_crystal_ids.iter()
             .map(|id| id.iter().map(|b| format!("{:02x}", b)).collect())
             .collect(),
+        genesis_metadata: None,
     };
 
     // Content-address the crystal

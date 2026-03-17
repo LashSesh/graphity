@@ -543,6 +543,7 @@ fn build_molecule_crystal(
         universe_id: format!("mol:{}", hex_encode(&crystal_id)[..8].to_string()),
         sub_crystal_ids: atom_crystal_ids.iter().map(|id| hex_encode(id)).collect(),
         parent_crystal_ids: Vec::new(),
+        genesis_metadata: None,
     }
 }
 
@@ -626,6 +627,7 @@ fn build_system_crystal(
         universe_id: format!("sys:{}", hex_encode(&spec.id)[..8].to_string()),
         sub_crystal_ids: molecule_crystal_ids.iter().map(|id| hex_encode(id)).collect(),
         parent_crystal_ids: Vec::new(),
+        genesis_metadata: None,
     }
 }
 

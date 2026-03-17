@@ -17,6 +17,7 @@ use isls_harness::{
     BenchSuite, FormalReport, FormalValidator, FullReport, MetricCollector, MetricSnapshot,
     ReportGenerator, RetroValidator, ScenarioKind, SyntheticGenerator, SystemOverview,
     generate_iteration_guidance,
+    build_genesis_crystal, validate_genesis,
 };
 
 // ─── JSON Entity Adapter ──────────────────────────────────────────────────────
@@ -99,6 +100,9 @@ enum Command {
     Export { run_id: String, output: String },
     StoreVacuum,
     StoreCheck,
+    // Genesis Crystal commands
+    GenesisShow,
+    GenesisValidate,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -170,6 +174,15 @@ fn parse_args(args: &[String]) -> Command {
                     _ => Command::Help,
                 }
             } else { Command::Help }
+        }
+        "genesis" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "show"     => Command::GenesisShow,
+                    "validate" => Command::GenesisValidate,
+                    _ => Command::Help,
+                }
+            } else { Command::GenesisShow }
         }
         "ingest" => {
             let adapter = args.iter().position(|a| a == "--adapter")
@@ -382,6 +395,7 @@ fn cmd_init(store: Option<&str>) {
     println!("ISLS initialized at {}", isls_dir().display());
     println!("Config written to {}", isls_dir().join("config.json").display());
     println!("Data directories created.");
+
     if store == Some("sqlite") {
         let db_path = isls_dir().join("isls.db");
         match IslandStore::open(&db_path) {
@@ -389,10 +403,104 @@ fn cmd_init(store: Option<&str>) {
             Err(e) => eprintln!("Warning: store init failed: {e}"),
         }
     }
+
+    // Build and commit the Genesis Crystal
+    let mut archive = load_archive();
+    if archive.crystals().iter().any(|c| c.created_at == 0) {
+        eprintln!("Error: genesis crystal already exists. Use 'isls genesis show' to inspect it.");
+        std::process::exit(1);
+    }
+
+    let registries = RegistrySet::new();
+    match build_genesis_crystal(&config, &registries) {
+        Ok(gc) => {
+            let gc_id: String = gc.crystal_id.iter().map(|b| format!("{:02x}", b)).collect();
+            let class = gc.genesis_metadata.as_ref()
+                .map(|m| format!("{:?}", m.conformance_class))
+                .unwrap_or_else(|| "C0".to_string());
+            let n_constraints = gc.genesis_metadata.as_ref()
+                .map(|m| m.constraints.len())
+                .unwrap_or(0);
+            archive.append(gc);
+            save_archive(&archive);
+            println!("Genesis Crystal committed: {}...", &gc_id[..16]);
+            println!("  Conformance: {}  |  Constraints: {}/{} satisfied",
+                class, n_constraints, n_constraints);
+        }
+        Err(e) => {
+            eprintln!("Error: genesis crystal build failed: {e}");
+            std::process::exit(1);
+        }
+    }
+
     println!("\nNext steps:");
     println!("  isls ingest --adapter synthetic --entities 100");
     println!("  isls run");
     println!("  isls status");
+}
+
+fn cmd_genesis_show() {
+    let archive = load_archive();
+    match archive.crystals().iter().find(|c| c.created_at == 0) {
+        None => {
+            println!("Genesis Crystal: NOT FOUND");
+            println!("Run 'isls init' to initialize the system constitution.");
+        }
+        Some(gc) => {
+            let id_hex: String = gc.crystal_id.iter().map(|b| format!("{:02x}", b)).collect();
+            println!("Genesis Crystal");
+            println!("  Crystal ID:  {}...", &id_hex[..32]);
+            println!("  Free energy: {:.1}", gc.free_energy);
+            println!("  Stability:   {:.3}", gc.stability_score);
+            if let Some(meta) = &gc.genesis_metadata {
+                println!("  ADAMANT:     v{}", meta.adamant_version);
+                println!("  Conformance: {:?}", meta.conformance_class);
+                let satisfied = meta.constraints.iter().filter(|c| c.satisfied).count();
+                println!("  Constraints: {}/{} satisfied", satisfied, meta.constraints.len());
+                println!("  Crates:      {}", meta.system_fingerprint.crate_count);
+                println!("  Tests:       {}", meta.system_fingerprint.test_count);
+                println!("  Platform:    {}", meta.system_fingerprint.platform);
+                println!("  ISLS:        v{}", meta.system_fingerprint.isls_version);
+                if let Some(git) = &meta.system_fingerprint.git_commit {
+                    println!("  Git:         {}", git);
+                }
+                println!("\n  Constitutional constraints:");
+                for c in &meta.constraints {
+                    let status = if c.satisfied { "PASS" } else { "FAIL" };
+                    println!("    [{}] {} | {} | {}", status, c.id, c.axiom_ref,
+                        if c.description.len() > 50 { &c.description[..50] } else { &c.description });
+                }
+            }
+        }
+    }
+}
+
+fn cmd_genesis_validate() {
+    let archive = load_archive();
+    let config = load_config();
+    let registries = RegistrySet::new();
+    let result = validate_genesis(&archive, &config, &registries);
+
+    println!("Genesis Validation");
+    println!("  GV1 Existence:   {}", if result.exists     { "PASS" } else { "FAIL" });
+    println!("  GV2 Integrity:   {}", if result.integrity  { "PASS" } else { "FAIL" });
+    println!("  GV3 Conformance: {}", if result.conformance { "PASS" } else { "FAIL" });
+    println!("  Conformance class: {:?}", result.conformance_class);
+
+    if result.drift.is_empty() {
+        println!("  Constitutional Drift: NONE");
+    } else {
+        println!("  Constitutional Drift: DETECTED");
+        for d in &result.drift {
+            println!("    DRIFT: {}", d);
+        }
+    }
+
+    if result.all_ok() {
+        println!("\nGenesis: VALID");
+    } else {
+        println!("\nGenesis: INVALID");
+    }
 }
 
 fn open_store() -> Option<IslandStore> {
@@ -822,6 +930,23 @@ fn cmd_validate(formal: bool, retro: bool) {
     let graph = isls_persist::PersistentGraph::new();
     let pinned = BTreeMap::new();
 
+    // Genesis validation (always run with formal)
+    if formal || !retro {
+        let config = load_config();
+        let registries = RegistrySet::new();
+        let gen = validate_genesis(&archive, &config, &registries);
+        if gen.exists {
+            let drift_str = if gen.drift.is_empty() { "none".to_string() }
+                else { gen.drift.join(", ") };
+            println!("Genesis: {} | Conformance: {:?} | Drift: {}",
+                if gen.all_ok() { "VALID" } else { "INVALID" },
+                gen.conformance_class,
+                drift_str);
+        } else {
+            println!("Genesis: NOT INITIALIZED (run 'isls init')");
+        }
+    }
+
     if formal || !retro {
         println!("Running V-Formal validation ({} crystals in archive)...", archive.len());
         let report = FormalValidator::validate(&archive, &pinned);
@@ -1098,10 +1223,15 @@ fn cmd_report_full_html() {
     let latest_capsule_exists = capsules_dir.join("latest.json").exists();
     let capsule_result = load_capsule_test_result(&results_dir);
 
+    // Load genesis data for Section 0
+    let archive = load_archive();
+    let genesis_crystal = archive.crystals().iter().find(|c| c.created_at == 0).cloned();
+
     let html = build_full_html(
         meta, &formals, &reports, &bench_results,
         &git_hash, &rust_version, platform, &now,
         latest_manifest.as_ref(), latest_capsule_exists, &capsule_result,
+        genesis_crystal.as_ref(),
     );
 
     let out_path = results_dir.join("full-report.html");
@@ -1130,6 +1260,7 @@ fn build_full_html(
     latest_manifest: Option<&isls_manifest::ExecutionManifest>,
     _latest_capsule_exists: bool,
     capsule_result: &str,
+    genesis_crystal: Option<&isls_types::SemanticCrystal>,
 ) -> String {
     let mut h = String::with_capacity(64 * 1024);
 
@@ -1187,6 +1318,71 @@ fn build_full_html(
          Platform: {} &nbsp;|&nbsp; Git: <code>{}</code></div>\n",
         now, html_escape(rust_version), html_escape(platform), html_escape(git_hash)
     ));
+
+    // ── Section 0: System Constitution (Genesis Crystal) ─────────────────────
+    h.push_str("<div class='section'>\n<h2>0. System Constitution</h2>\n");
+    match genesis_crystal.and_then(|gc| gc.genesis_metadata.as_ref().map(|m| (gc, m))) {
+        None => {
+            h.push_str("<p style='color:#e07070'>Genesis Crystal not found. Run <code>isls init</code> to establish the system constitution.</p>\n");
+        }
+        Some((gc, meta)) => {
+            let gc_id_hex: String = gc.crystal_id.iter().map(|b| format!("{:02x}", b)).collect();
+            let satisfied = meta.constraints.iter().filter(|c| c.satisfied).count();
+            let total = meta.constraints.len();
+            let drift_count = meta.constraints.iter()
+                .filter(|c| c.severity == isls_types::ConstraintSeverity::Mandatory && !c.satisfied)
+                .count();
+
+            // Summary row
+            h.push_str("<div class='grid2'>\n<div><table><tbody>\n");
+            h.push_str(&format!("<tr><td>Genesis Crystal ID</td><td><code>{}…</code></td></tr>\n",
+                &gc_id_hex[..16]));
+            h.push_str(&format!("<tr><td>ADAMANT Version</td><td>v{}</td></tr>\n",
+                html_escape(&meta.adamant_version)));
+            h.push_str(&format!("<tr><td>Conformance Class</td><td class='g'>{:?} (Constitutional)</td></tr>\n",
+                meta.conformance_class));
+            h.push_str(&format!("<tr><td>Constraints</td><td class='g'>{}/{} satisfied</td></tr>\n",
+                satisfied, total));
+            if drift_count == 0 {
+                h.push_str("<tr><td>Constitutional Drift</td><td class='g'>NONE</td></tr>\n");
+            } else {
+                h.push_str(&format!("<tr><td>Constitutional Drift</td><td class='r'>DETECTED ({} constraint(s))</td></tr>\n",
+                    drift_count));
+            }
+            h.push_str("</tbody></table></div>\n");
+
+            // Fingerprint
+            h.push_str("<div><table><tbody>\n");
+            let fp = &meta.system_fingerprint;
+            h.push_str(&format!("<tr><td>ISLS Version</td><td>v{}</td></tr>\n",
+                html_escape(&fp.isls_version)));
+            h.push_str(&format!("<tr><td>Crates</td><td>{}</td></tr>\n", fp.crate_count));
+            h.push_str(&format!("<tr><td>Tests</td><td>{}</td></tr>\n", fp.test_count));
+            h.push_str(&format!("<tr><td>Platform</td><td>{}</td></tr>\n",
+                html_escape(&fp.platform)));
+            if let Some(git) = &fp.git_commit {
+                h.push_str(&format!("<tr><td>Git</td><td><code>{}</code></td></tr>\n",
+                    html_escape(git)));
+            }
+            h.push_str("</tbody></table></div>\n");
+            h.push_str("</div>\n"); // close grid2
+
+            // Constraint table
+            h.push_str("<h3 style='margin:.8rem 0 .4rem'>Constitutional Constraints (GC-01\u{2013}GC-21)</h3>\n");
+            h.push_str("<table><thead><tr><th>ID</th><th>ADAMANT Ref</th><th>Status</th><th>Evidence</th></tr></thead><tbody>\n");
+            for c in &meta.constraints {
+                let (cls, status) = if c.satisfied { ("g", "PASS") } else { ("r", "FAIL") };
+                let ev_short = if c.evidence.len() > 60 { &c.evidence[..60] } else { &c.evidence };
+                h.push_str(&format!(
+                    "<tr><td><strong>{}</strong></td><td>{}</td><td class='{}'>{}</td><td>{}</td></tr>\n",
+                    html_escape(&c.id), html_escape(&c.axiom_ref), cls, status,
+                    html_escape(ev_short)
+                ));
+            }
+            h.push_str("</tbody></table>\n");
+        }
+    }
+    h.push_str("</div>\n"); // close section 0
 
     // ── Section 1: Executive Summary ─────────────────────────────────────────
     h.push_str("<div class='section'>\n<h2>1. Executive Summary</h2>\n");
@@ -1992,6 +2188,8 @@ fn main() {
         Command::Export { run_id, output } => cmd_export(&run_id, &output),
         Command::StoreVacuum => cmd_store_vacuum(),
         Command::StoreCheck => cmd_store_check(),
+        Command::GenesisShow => cmd_genesis_show(),
+        Command::GenesisValidate => cmd_genesis_validate(),
     }
 }
 

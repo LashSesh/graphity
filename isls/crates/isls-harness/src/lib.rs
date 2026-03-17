@@ -8,6 +8,7 @@ pub mod validate;
 pub mod synthetic;
 pub mod report;
 pub mod iterate;
+pub mod genesis;
 #[cfg(test)]
 pub mod extension_tests;
 #[cfg(test)]
@@ -24,3 +25,8 @@ pub use validate::{FormalReport, FormalValidator, LiveValidator, RetroReport, Re
 pub use synthetic::{PlantedConstraint, RecoveryScore, ScenarioKind, SyntheticGenerator, SyntheticScenario};
 pub use report::{FullReport, ReportGenerator, SystemOverview};
 pub use iterate::{generate_iteration_guidance, IterationItem, Priority};
+pub use genesis::{
+    AmendmentSpec, DriftEntry, GenesisError, GenesisValidationResult,
+    build_genesis_crystal, detect_constitutional_drift, evaluate_constitutional_constraints,
+    validate_genesis,
+};

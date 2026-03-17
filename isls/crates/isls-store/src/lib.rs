@@ -109,6 +109,16 @@ pub struct PatternRow {
     pub timestamp: f64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConstitutionRow {
+    pub crystal_id: String,
+    pub is_genesis: bool,
+    pub is_amendment: bool,
+    pub conformance: String,   // 'C0'..'C4'
+    pub constraints: String,   // JSON array of ConstitutionalConstraint
+    pub created_at: String,
+}
+
 // ─── Schema Migration SQL ─────────────────────────────────────────────────────
 
 const SCHEMA_V1: &str = "
@@ -217,6 +227,15 @@ CREATE TABLE IF NOT EXISTS patterns (
     signature_json  TEXT NOT NULL,
     component_kinds TEXT NOT NULL,
     timestamp       REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS constitution (
+    crystal_id    TEXT PRIMARY KEY,
+    is_genesis    INTEGER NOT NULL,
+    is_amendment  INTEGER NOT NULL,
+    conformance   TEXT NOT NULL,
+    constraints   TEXT NOT NULL,
+    created_at    TEXT NOT NULL
 );
 ";
 
@@ -680,6 +699,46 @@ impl IslandStore {
             }
         };
         Ok(rows)
+    }
+
+    // ── Constitution ──────────────────────────────────────────────────────────
+
+    pub fn insert_constitution(&self, row: &ConstitutionRow) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO constitution \
+             (crystal_id, is_genesis, is_amendment, conformance, constraints, created_at) \
+             VALUES (?1,?2,?3,?4,?5,?6)",
+            params![
+                row.crystal_id,
+                row.is_genesis as i64,
+                row.is_amendment as i64,
+                row.conformance,
+                row.constraints,
+                row.created_at,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Get the active constitution: latest amendment, or genesis if none.
+    pub fn get_active_constitution(&self) -> Result<ConstitutionRow> {
+        let conn = self.conn.lock().unwrap();
+        // Prefer amendment (is_amendment=1) if one exists, otherwise genesis
+        let row = conn.query_row(
+            "SELECT crystal_id, is_genesis, is_amendment, conformance, constraints, created_at \
+             FROM constitution ORDER BY is_genesis ASC, created_at DESC LIMIT 1",
+            [],
+            |row| Ok(ConstitutionRow {
+                crystal_id: row.get(0)?,
+                is_genesis: row.get::<_, i64>(1)? != 0,
+                is_amendment: row.get::<_, i64>(2)? != 0,
+                conformance: row.get(3)?,
+                constraints: row.get(4)?,
+                created_at: row.get(5)?,
+            }),
+        ).map_err(|_| StoreError::NotFound("no constitution found".to_string()))?;
+        Ok(row)
     }
 
     // ── Maintenance ───────────────────────────────────────────────────────────

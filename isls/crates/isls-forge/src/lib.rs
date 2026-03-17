@@ -822,6 +822,7 @@ fn build_forge_crystal(
         universe_id: format!("forge:{}", hex_encode(&spec.id)[..8].to_string()),
         sub_crystal_ids: Vec::new(),
         parent_crystal_ids: Vec::new(),
+        genesis_metadata: None,
     }
 }
 
@@ -987,6 +988,7 @@ mod tests {
             universe_id: "u0".to_string(),
             sub_crystal_ids: Vec::new(),
             parent_crystal_ids: Vec::new(),
+            genesis_metadata: None,
         };
 
         let mut cfg = forge_config("api");
