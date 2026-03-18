@@ -213,8 +213,9 @@ echo.
 echo [9/11] Running formal validation...
 
 :: Reset to S-Basic for a clean validation snapshot
+:: NOTE: metrics\ (bench_history.jsonl) is intentionally preserved so
+::       the HTML report (Step 11) can display B16-B24 generative data.
 if exist "%ISLS_HOME%\data"      rmdir /s /q "%ISLS_HOME%\data"
-if exist "%ISLS_HOME%\metrics"   rmdir /s /q "%ISLS_HOME%\metrics"
 if exist "%ISLS_HOME%\manifests" rmdir /s /q "%ISLS_HOME%\manifests"
 if exist "%ISLS_HOME%\config.json" del /q "%ISLS_HOME%\config.json"
 
