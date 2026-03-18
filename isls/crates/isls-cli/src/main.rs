@@ -111,6 +111,7 @@ enum Command {
     OracleStatus,
     OracleMemory,
     OracleSealKey { key: String, lock_genesis: bool },
+    OracleDiagnose,
     // C26 Template commands
     TemplateList,
     TemplateShow { name: String },
@@ -216,6 +217,7 @@ fn parse_args(args: &[String]) -> Command {
                 match args[2].as_str() {
                     "status" => Command::OracleStatus,
                     "memory" => Command::OracleMemory,
+                    "diagnose" => Command::OracleDiagnose,
                     "seal-key" => {
                         let key = args.iter().position(|a| a == "--key")
                             .and_then(|i| args.get(i + 1))
@@ -752,6 +754,137 @@ fn cmd_oracle_memory() {
     println!();
     println!("  Match threshold:   {:.2}", 0.85f64);
     println!("  Quality threshold: {:.2}", 0.60f64);
+}
+
+fn cmd_oracle_diagnose() {
+    use isls_oracle::{OracleConfig, OracleEngine, OraclePatternMemory, SynthesisPrompt, OutputFormat};
+    use std::time::Instant;
+
+    println!("Oracle Diagnostic (isls oracle diagnose)");
+    println!("─────────────────────────────────────────");
+
+    // 1. Check environment variables
+    let openai_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+    let anthropic_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+    let has_openai = !openai_key.is_empty();
+    let has_anthropic = !anthropic_key.is_empty();
+
+    println!("OPENAI_API_KEY set:     {}", has_openai);
+    println!("ANTHROPIC_API_KEY set:  {}", has_anthropic);
+    println!();
+
+    if !has_openai && !has_anthropic {
+        println!("ERROR: No API key found. Cannot diagnose live oracle.");
+        println!("       Set OPENAI_API_KEY or ANTHROPIC_API_KEY and retry.");
+        return;
+    }
+
+    // 2. Build the oracle
+    let (provider, mut config) = if has_openai {
+        let mut c = OracleConfig::default();
+        c.provider = Some("openai".to_string());
+        c.model = "gpt-4o-mini".to_string();
+        c.api_key_source = "env:OPENAI_API_KEY".to_string();
+        ("openai", c)
+    } else {
+        let mut c = OracleConfig::default();
+        c.provider = Some("claude".to_string());
+        c.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
+        ("anthropic", c)
+    };
+    config.max_retries = 0; // single attempt for diagnostics
+
+    let engine = OracleEngine::new(config, OraclePatternMemory::new());
+
+    println!("Provider:   {}", provider);
+    println!("Model:      {}", engine.oracle_model());
+    println!("Available:  {}", engine.oracle_available());
+    println!();
+
+    if !engine.oracle_available() {
+        println!("ERROR: oracle.available() returned false despite key being set.");
+        println!("       Check that the key has the correct prefix (sk- for OpenAI, sk-ant- for Anthropic).");
+        return;
+    }
+
+    // 3. Make one real API call with a minimal Rust function
+    println!("Making one live API call...");
+    let prompt = SynthesisPrompt {
+        system: "Output ONLY valid Rust code. No markdown fences. No explanation. No backticks.".to_string(),
+        user: "pub fn health() -> &'static str { \"ok\" }".to_string(),
+        output_format: OutputFormat::Rust,
+        max_tokens: 256,
+        temperature: 0.0,
+    };
+
+    let t0 = Instant::now();
+    let result = engine.synthesize_prompt(&prompt);
+    let elapsed = t0.elapsed();
+
+    println!("Call took:  {:?}", elapsed);
+    if elapsed.as_millis() < 50 {
+        println!("WARNING: <50ms suggests no real HTTP call was made (expected >200ms).");
+    }
+    println!();
+
+    match result {
+        Ok(resp) => {
+            println!("Status:     SUCCESS");
+            println!("Model:      {}", resp.model);
+            println!("Tokens:     {}", resp.tokens_used);
+            println!("Finish:     {}", resp.finish_reason);
+            println!("Length:     {} chars", resp.content.len());
+            println!("--- BEGIN ORACLE OUTPUT ---");
+            println!("{}", resp.content);
+            println!("--- END ORACLE OUTPUT ---");
+            println!();
+
+            // 4. Try to compile the output
+            println!("Compiling output with rustc...");
+            let compile_err = try_compile_for_diag(&resp.content);
+            match compile_err.as_deref() {
+                None => println!("COMPILE: SUCCESS"),
+                Some(e) if e.contains("rustc not found") => {
+                    println!("COMPILE: SKIPPED (rustc not in PATH)");
+                }
+                Some(e) => {
+                    println!("COMPILE: FAILED");
+                    println!("stderr:\n{}", e);
+                }
+            }
+        }
+        Err(e) => {
+            println!("Status:     FAILED");
+            println!("Error:      {}", e);
+        }
+    }
+}
+
+fn try_compile_for_diag(code: &str) -> Option<String> {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let dir = std::env::temp_dir().join(format!("isls-diag-{}", unique));
+    let _ = std::fs::create_dir_all(&dir);
+    let src = dir.join("diag.rs");
+    if std::fs::write(&src, code).is_err() {
+        return Some("failed to write source file".to_string());
+    }
+    let result = std::process::Command::new("rustc")
+        .args(["--edition", "2021", "--crate-type", "lib",
+               "--out-dir", dir.to_str().unwrap_or("/tmp"),
+               src.to_str().unwrap_or("diag.rs")])
+        .output();
+    let _ = std::fs::remove_dir_all(&dir);
+    match result {
+        Ok(o) if o.status.success() => None,
+        Ok(o) => Some(String::from_utf8_lossy(&o.stderr).to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            Some("rustc not found in PATH".to_string())
+        }
+        Err(e) => Some(e.to_string()),
+    }
 }
 
 fn cmd_oracle_seal_key(key: &str, lock_genesis: bool) {
@@ -3709,6 +3842,7 @@ fn main() {
         Command::OracleStatus => cmd_oracle_status(),
         Command::OracleMemory => cmd_oracle_memory(),
         Command::OracleSealKey { key, lock_genesis } => cmd_oracle_seal_key(&key, lock_genesis),
+        Command::OracleDiagnose => cmd_oracle_diagnose(),
         Command::TemplateList => cmd_template_list(),
         Command::TemplateShow { name } => cmd_template_show(&name),
         Command::TemplateCreate { name, structure } => cmd_template_create(&name, &structure),
