@@ -1,4 +1,4 @@
-# ISLS &mdash; Invariant Structure Learning System
+# AVALON &mdash; Invariant Structure Learning System & Closed-Loop Software Production
 
 **Version 1.0.0** &nbsp;|&nbsp; **26 Crates** &nbsp;|&nbsp; **326+ Tests** &nbsp;|&nbsp; **Zero Warnings**
 
