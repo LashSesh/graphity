@@ -1347,6 +1347,7 @@ fn load_bench_history(path: &PathBuf) -> Vec<isls_harness::BenchResult> {
 // ─── C28 Bench Suite (B16–B24) ───────────────────────────────────────────────
 
 fn cmd_bench_suite(suite: &str) {
+    ensure_dirs().expect("failed to create dirs");
     use isls_harness::run_generative_suite;
 
     let git_commit = std::process::Command::new("git")
