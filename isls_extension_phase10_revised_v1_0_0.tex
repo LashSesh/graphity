@@ -1,0 +1,713 @@
+%%% =======================================================================
+%%% ISLS Extension Phase 10 v1.0.0 (Revised)
+%%% C28: Babylon Bridge — Compiler-Backed Multi-Language Forge
+%%% Author: Sebastian Klemm
+%%% Date: 18 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm,algorithmic}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{titlesec}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{axiom}{Axiom}[section]
+\newtheorem{requirement}{Requirement}[section]
+\newtheorem{invariant}{Invariant}[section]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\ISLS}{\textsf{ISLS}}
+
+\definecolor{sec-color}{HTML}{1e3a5f}
+
+\titleformat{\section}
+  {\Large\bfseries\color{sec-color}}
+  {\thesection}{1em}{}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Phase 10 v1.0.0 (Revised)}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Phase 10 — Babylon Bridge},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+{\Huge\bfseries \ISLS{} Extension Phase~10\\[0.3cm]
+v1.0.0 (Revised)}\\[1.5cm]
+{\Large C28: The Babylon Bridge}\\[1cm]
+{\large Compiler-Backed Multi-Language Forge\\[0.3cm]
+Not ``more prompt templates.''\\
+A real IR with real parsers, real embedding,\\
+and real cross-language transformation.}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 18 March 2026}\\[1.5cm]
+
+\begin{abstract}
+\noindent
+This document supersedes the earlier Phase~10 specification. Instead
+of adding six LLM-prompt matrices for different languages (hoping the
+Oracle outputs valid TypeScript, Python, SQL), this revision
+integrates the Babylon Compiler as a structural backbone.
+
+Babylon brings: three working parsers (Sanskroot, HanLan, Cuneiform)
+that lower to a shared \texttt{glyph-ir::IrDocument}; a 5D H5
+embedding engine; Q16 fixed-point determinism; a crystallization and
+gating pipeline; and a verified bundle emitter. Merkaba Factory brings:
+codegen backends for Python, Rust, JavaScript, TypeScript, and Go.
+
+The bridge: the \ISLS{} Forge generates an \texttt{ArtifactIR}
+(C22). The Babylon Bridge translates ArtifactIR components into
+\texttt{glyph-ir::IrDocument} fragments. The Oracle (C25) fills
+semantic gaps (function bodies, logic). The filled IR is validated by
+Babylon's pipeline (embedding, gating, evidence chain). Then codegen
+backends emit to the target language.
+
+The result: generated code is not a string the LLM produced. It is
+an IR that was parsed, embedded, gated, and emitted through a real
+compiler pipeline. If the code has structural errors, the IR
+validation catches them \emph{before} the toolchain runs. If the code
+needs to be in a different language, re-emit from the same IR.
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Absorbs:} Babylon Compiler (\texttt{glyph-ir},
+  \texttt{glyph-embed}, \texttt{glyph-gate}, \texttt{glyph-mef},
+  \texttt{glyph-frontends}); Merkaba \texttt{domain-translator}
+  codegen concept.\\
+\textbf{Depends on:} C22 (ArtifactIR), C23 (Forge), C25 (Oracle),
+  C27 (Foundry).
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+%%% =====================================================================
+\part{Why This Is Different}\label{part:why}
+
+\section{The Previous Approach (Discarded)}\label{sec:old}
+
+The original Phase~10 added six ``Matrix'' implementations: each was
+a prompt template that told the Oracle ``generate TypeScript'' or
+``generate Python.'' The output was a string. Validation was: run
+\texttt{tsc} or \texttt{python -m py\_compile} and hope.
+
+Problems:
+\begin{enumerate}[nosep]
+  \item \textbf{No structural validation}: a syntactically valid
+        TypeScript file can be architecturally wrong (wrong imports,
+        wrong types, missing interfaces). The toolchain check catches
+        syntax, not structure.
+  \item \textbf{No cross-language consistency}: if the Rust backend
+        defines a \texttt{User} struct, the TypeScript frontend must
+        have an identical \texttt{User} interface. LLM-only generation
+        has no mechanism to enforce this.
+  \item \textbf{No pivot representation}: to support $n$ languages, you
+        need $n$ prompt templates. To support $n \times m$
+        cross-language transforms, you need $n \times m$ templates.
+        With an IR, you need $n$ frontends + $m$ backends.
+\end{enumerate}
+
+\section{The Babylon Approach}\label{sec:new}
+
+\begin{lstlisting}[title={Previous: String-based}]
+Oracle("generate Rust code") -> String -> cargo check -> hope
+Oracle("generate TypeScript") -> String -> tsc --noEmit -> hope
+\end{lstlisting}
+
+\begin{lstlisting}[title={Revised: IR-based}]
+ArtifactIR
+  -> Babylon Bridge: convert to glyph-ir IrDocument
+  -> Oracle fills function bodies as IR node content
+  -> glyph-embed: compute H5 embedding (structural validation)
+  -> glyph-gate: PoR check (structural consistency)
+  -> Codegen Backend: emit to target language from validated IR
+  -> Toolchain: cargo check / tsc / python (final confirmation)
+\end{lstlisting}
+
+The IR is the single source of truth. Languages are views of the IR,
+not independent LLM outputs.
+
+
+%%% =====================================================================
+\part{Architecture}\label{part:arch}
+
+\section{The Bridge Pipeline}\label{sec:pipeline}
+
+\begin{lstlisting}[title={Complete Pipeline}]
+DecisionSpec
+  |
+  v
+[PMHD Drill] -> PmhdMonolith
+  |
+  v
+[ArtifactIR] -> Components, Interfaces, Constraints
+  |
+  v
+[Babylon Bridge: ArtifactIR -> glyph-ir]
+  |                                       (1) Structure from ArtifactIR
+  |                                       (2) Bodies from Oracle
+  v
+[glyph-ir::IrDocument] -- canonical IR with nodes, edges, embedding
+  |
+  v
+[glyph-embed] -- H5 embedding: structural_coupling, functional_density,
+  |               topological_complexity, symmetry, entropy
+  v
+[glyph-gate] -- PoR check: does the IR represent a coherent program?
+  |
+  v
+[glyph-mef] -- Evidence chain for the compilation
+  |
+  v
+[Codegen Backend] -- Emit from IR to target language
+  |    |    |    |    |
+  v    v    v    v    v
+ Rust  TS  Python SQL  YAML
+  |
+  v
+[Foundry] -- cargo check / tsc / pytest (final toolchain validation)
+  |
+  v
+[Crystal] -- proven to: (a) have valid IR structure,
+             (b) pass H5 embedding checks,
+             (c) pass PoR gate,
+             (d) compile in target language,
+             (e) pass tests
+\end{lstlisting}
+
+
+\section{What Babylon Provides}\label{sec:babylonprovides}
+
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Crate} & \textbf{Used For} & \textbf{Integration Point} \\
+\midrule
+\texttt{glyph-ir} & Universal IR & ArtifactIR $\to$ IrDocument
+  conversion. Nodes: Module, Function, Block, If, Return, Call,
+  Assignment, Literal, BinaryOp, Identifier. Edges: Contains, Next,
+  Condition, ThenBranch, ElseBranch, Argument, Target, Value, Left,
+  Right, CalleeRef. \\
+\texttt{glyph-embed} & 5D structural validation & After IR
+  construction, compute H5 embedding. Five axes: structural coupling,
+  functional density, topological complexity, symmetry, entropy.
+  Embedding scores below threshold flag structural problems. \\
+\texttt{glyph-canon} & Canonical serialization & JCS (RFC 8785) +
+  SHA-256 digest. Same canonical form as \ISLS{}. \\
+\texttt{glyph-q16} & Fixed-point arithmetic & Q16.16 for embedding
+  axes. Deterministic across platforms. \\
+\texttt{glyph-gate} & Structural gating & PoR FSM + obligation
+  evaluation on the IR. Rejects structurally inconsistent programs
+  before codegen. \\
+\texttt{glyph-mef} & Evidence chain & Append-only hash chain for
+  compilation steps. Fuses with \ISLS{} evidence chain. \\
+\texttt{glyph-frontends} & (Future) Parse LLM output & When the
+  Oracle produces code in a language that Babylon can parse, the
+  output is parsed back to IR for round-trip validation. \\
+\bottomrule
+\end{tabularx}
+
+
+%%% =====================================================================
+\part{The Bridge: ArtifactIR $\to$ glyph-ir}\label{part:bridge}
+
+\section{Conversion}\label{sec:convert}
+
+\begin{definition}[ArtifactIR to IrDocument]\label{def:convert}
+Each ArtifactIR Component maps to glyph-ir nodes:
+\begin{lstlisting}
+pub fn artifact_to_ir(ir: &ArtifactIR) -> IrDocument {
+    let mut doc = IrDocument::new(
+        &ir.header.domain,
+        &hex_encode(&ir.header.artifact_id),
+    );
+
+    // Root module node
+    let root_id = format!("n_root");
+    doc.nodes.push(IrNode::new(&root_id, NodeKind::Module, "root"));
+
+    // Each ArtifactIR component -> Function node
+    for (i, comp) in ir.components.iter().enumerate() {
+        let fn_id = format!("n_fn_{}", i);
+        let mut node = IrNode::new(&fn_id, NodeKind::Function, &comp.name);
+        node.properties = Some({
+            let mut props = BTreeMap::new();
+            props.insert("kind".into(), json!(comp.kind));
+            props.insert("content".into(), json!(comp.content));
+            if !comp.dependencies.is_empty() {
+                props.insert("deps".into(), json!(comp.dependencies));
+            }
+            props
+        });
+        doc.nodes.push(node);
+        doc.edges.push(IrEdge::new(&root_id, &fn_id, EdgeKind::Contains));
+    }
+
+    // Each ArtifactIR interface -> edges between function nodes
+    for iface in &ir.interfaces {
+        if let (Some(p), Some(c)) = (
+            find_node_idx(&doc, &iface.provider),
+            find_node_idx(&doc, &iface.consumer),
+        ) {
+            doc.edges.push(IrEdge::new(
+                &doc.nodes[p].id,
+                &doc.nodes[c].id,
+                EdgeKind::CalleeRef,
+            ));
+        }
+    }
+
+    doc.canonicalize();
+    doc
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Oracle-Filled IR]\label{def:oraclefill}
+After conversion, each Function node has a \texttt{content} property
+containing the ArtifactIR component description. The Oracle (C25)
+is called to fill each node with implementation code:
+\begin{lstlisting}
+pub fn fill_ir_with_oracle(
+    doc: &mut IrDocument,
+    oracle: &mut OracleEngine,
+    domain: &str,
+) -> Result<()> {
+    for node in &mut doc.nodes {
+        if node.kind == NodeKind::Function {
+            let content = node.properties
+                .as_ref()
+                .and_then(|p| p.get("content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            let prompt = format!(
+                "Implement this {} function:\n{}\n\
+                 Output ONLY the function body code. No explanation.",
+                domain, content
+            );
+
+            let response = oracle.synthesize_raw(&prompt)?;
+
+            // Store the implementation in the node
+            if let Some(props) = &mut node.properties {
+                props.insert("implementation".into(),
+                    json!(response.content));
+            }
+        }
+    }
+    Ok(())
+}
+\end{lstlisting}
+The key difference: the Oracle fills \emph{nodes in an IR}, not
+\emph{entire files}. The structure (which functions exist, how they
+connect, what their signatures are) comes from the ArtifactIR. Only
+the bodies come from the Oracle.
+\end{definition}
+
+
+\section{H5 Embedding as Structural Gate}\label{sec:h5}
+
+\begin{definition}[Structural Validation via Embedding]\label{def:h5val}
+After the Oracle fills the IR, the H5 embedding is computed:
+\begin{lstlisting}
+let embedding = glyph_embed::compute_embedding(&doc);
+\end{lstlisting}
+
+The five axes catch structural problems:
+\begin{itemize}[nosep]
+  \item $a_1$ (structural coupling): if too high, components are
+        over-coupled. If zero, components are disconnected.
+  \item $a_2$ (functional density): if zero, no functions exist. If
+        too high, too many tiny functions (fragmentation).
+  \item $a_3$ (topological complexity): if too high, too many
+        branches/conditions (oracle over-complicated it).
+  \item $a_4$ (symmetry): if too low, asymmetric structure (some
+        modules much larger than others).
+  \item $a_5$ (entropy): if too low, repetitive code. If too high,
+        random/incoherent.
+\end{itemize}
+
+Each axis has a range check. If any axis is outside $[\theta_{\min},
+\theta_{\max}]$, the IR is flagged for re-generation.
+\end{definition}
+
+
+%%% =====================================================================
+\part{Codegen Backends}\label{part:codegen}
+
+\section{Backend Trait}\label{sec:backendtrait}
+
+\begin{definition}[Codegen Backend]\label{def:backend}
+\begin{lstlisting}
+pub trait CodegenBackend: Send + Sync {
+    /// Target language name
+    fn language(&self) -> &str;
+
+    /// File extension
+    fn extension(&self) -> &str;
+
+    /// Emit a complete source file from an IrDocument
+    fn emit(&self, doc: &IrDocument, config: &CodegenConfig) -> Result<Vec<EmittedFile>>;
+
+    /// Emit a single function node to a code string
+    fn emit_function(&self, node: &IrNode, doc: &IrDocument) -> Result<String>;
+}
+
+pub struct EmittedFile {
+    pub path: String,      // relative path (e.g., "src/main.rs")
+    pub content: String,
+    pub language: String,
+}
+
+pub struct CodegenConfig {
+    pub indent: usize,
+    pub line_width: usize,
+    pub include_tests: bool,
+    pub include_docs: bool,
+}
+\end{lstlisting}
+\end{definition}
+
+
+\section{Built-In Backends}\label{sec:backends}
+
+\begin{tabularx}{\textwidth}{l l l X}
+\toprule
+\textbf{Backend} & \textbf{Language} & \textbf{Ext} & \textbf{What It Emits} \\
+\midrule
+\texttt{RustBackend} & Rust & .rs & \texttt{mod}, \texttt{pub fn},
+  \texttt{struct}, \texttt{impl}, \texttt{\#[test]}. Cargo.toml
+  generation. \\
+\texttt{TypeScriptBackend} & TypeScript & .ts/.tsx & \texttt{export
+  function}, \texttt{interface}, \texttt{type}, React components
+  (if .tsx). \\
+\texttt{PythonBackend} & Python & .py & \texttt{def}, \texttt{class},
+  \texttt{@dataclass}, type hints, \texttt{pytest} tests. \\
+\texttt{SqlBackend} & SQL & .sql & \texttt{CREATE TABLE},
+  \texttt{ALTER TABLE}, indexes, views, migration files. \\
+\texttt{YamlBackend} & YAML & .yaml/.yml & Docker Compose,
+  GitHub Actions, Kubernetes manifests. \\
+\texttt{MarkdownBackend} & Markdown & .md & README, API docs,
+  architecture docs, generated from IR structure. \\
+\bottomrule
+\end{tabularx}
+
+\begin{definition}[Multi-Target Emission]\label{def:multitarget}
+A single IR can be emitted to multiple targets simultaneously:
+\begin{lstlisting}
+pub fn emit_multi(
+    doc: &IrDocument,
+    targets: &[(&dyn CodegenBackend, CodegenConfig)],
+) -> Result<Vec<EmittedFile>> {
+    let mut all_files = Vec::new();
+    for (backend, config) in targets {
+        all_files.extend(backend.emit(doc, config)?);
+    }
+    Ok(all_files)
+}
+\end{lstlisting}
+This is how a full-stack project is produced: one IR, multiple
+backends, one consistent set of types.
+\end{definition}
+
+
+\section{Cross-Language Type Consistency}\label{sec:crosslang}
+
+\begin{definition}[Type Bridge]\label{def:typebridge}
+Types defined in one language view of the IR are automatically
+available in all other language views:
+\begin{lstlisting}
+// In the IR: a Module node "User" with properties {fields: [...]}
+// Rust backend emits:
+pub struct User {
+    pub id: i64,
+    pub name: String,
+    pub email: String,
+}
+
+// TypeScript backend emits (from the same IR node):
+export interface User {
+    id: number;
+    name: string;
+    email: string;
+}
+
+// Python backend emits:
+@dataclass
+class User:
+    id: int
+    name: str
+    email: str
+
+// SQL backend emits:
+CREATE TABLE users (
+    id   BIGINT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL
+);
+\end{lstlisting}
+
+The types are consistent because they come from the same IR node. No
+``hoping the LLM generates matching types.''
+\end{definition}
+
+
+%%% =====================================================================
+\part{Round-Trip Validation}\label{part:roundtrip}
+
+\section{Parse-Back Validation}\label{sec:parseback}
+
+\begin{definition}[Round-Trip Check]\label{def:roundtrip}
+For languages where Babylon has a frontend parser (currently:
+Sanskroot, HanLan, Cuneiform; extendable to Rust, Python, TS), the
+emitted code is parsed back to IR and compared:
+\begin{lstlisting}
+pub fn round_trip_validate(
+    original_ir: &IrDocument,
+    emitted_code: &str,
+    frontend: &str,
+) -> Result<RoundTripResult> {
+    let reparsed_ir = parse_to_ir(emitted_code, frontend)?;
+    let original_embedding = compute_embedding(original_ir);
+    let reparsed_embedding = compute_embedding(&reparsed_ir);
+    let distance = h5_distance(&original_embedding, &reparsed_embedding);
+
+    Ok(RoundTripResult {
+        parseable: true,
+        embedding_distance: distance,
+        structurally_equivalent: distance < ROUND_TRIP_THRESHOLD,
+    })
+}
+\end{lstlisting}
+
+If the round-trip distance exceeds the threshold, the codegen backend
+has a bug or the Oracle's body code introduced structural changes that
+broke the IR's topology. This is caught at the IR level, not at the
+toolchain level.
+\end{definition}
+
+
+%%% =====================================================================
+\part{Full-Stack Templates (IR-Based)}\label{part:templates}
+
+\section{IR-Based Templates}\label{sec:irtemplates}
+
+The six full-stack templates from the original Phase~10 (T11--T16) are
+reimplemented as IR trees rather than prompt templates. Each template
+is a pre-built \texttt{IrDocument} with structural nodes and edges,
+ready for Oracle body-filling and multi-target emission.
+
+\begin{tabularx}{\textwidth}{l l r X}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{IR Nodes} &
+  \textbf{Emit Targets} \\
+\midrule
+T11 & SaaS Starter & 45 & Rust + TS + SQL + Docker + MD \\
+T12 & Dashboard & 32 & Rust + TS + SQL + Docker \\
+T13 & API + Docs & 20 & Rust + MD + Docker \\
+T14 & ML Pipeline & 18 & Python + SQL + Docker \\
+T15 & Static Site & 14 & HTML/CSS + MD \\
+T16 & Monorepo & 38 & Rust + TS + SQL + Docker + MD \\
+\bottomrule
+\end{tabularx}
+
+Each template's IR is pre-embedded (H5 axes computed), pre-gated
+(PoR validated), and stored as a crystal in the template catalog.
+The Oracle fills only the function bodies. Structure is guaranteed
+by the IR.
+
+
+%%% =====================================================================
+\part{Integration with Existing Crates}\label{part:integration}
+
+\section{Dependency Strategy}\label{sec:deps}
+
+The Babylon crates (\texttt{glyph-ir}, \texttt{glyph-embed},
+\texttt{glyph-canon}, \texttt{glyph-q16}, \texttt{glyph-gate},
+\texttt{glyph-mef}) are added as workspace dependencies. They are
+\textbf{not} copied into \ISLS{} --- they are used as external crates
+from the babylon-compiler repository (local path or git dependency).
+
+\begin{lstlisting}[title={Workspace Cargo.toml additions}]
+[workspace.dependencies]
+glyph-ir     = { path = "../../babylon-compiler/crates/glyph-ir" }
+glyph-embed  = { path = "../../babylon-compiler/crates/glyph-embed" }
+glyph-canon  = { path = "../../babylon-compiler/crates/glyph-canon" }
+glyph-q16    = { path = "../../babylon-compiler/crates/glyph-q16" }
+glyph-gate   = { path = "../../babylon-compiler/crates/glyph-gate" }
+glyph-mef    = { path = "../../babylon-compiler/crates/glyph-mef" }
+\end{lstlisting}
+
+
+\section{Modified Forge Pipeline}\label{sec:modforge}
+
+\begin{lstlisting}[title={ForgeEngine with Babylon Bridge}]
+impl ForgeEngine {
+    pub fn forge(&mut self, spec: DecisionSpec) -> Result<ForgeResult> {
+        // 1. PMHD Drill -> Monolith (unchanged)
+        let monolith = self.drill(&spec)?;
+
+        // 2. ArtifactIR (unchanged)
+        let artifact_ir = ArtifactIR::build_from_monolith(&monolith, &spec, 0)?;
+
+        // 3. NEW: Convert to glyph-ir
+        let mut ir_doc = babylon_bridge::artifact_to_ir(&artifact_ir);
+
+        // 4. NEW: Oracle fills function bodies in the IR
+        babylon_bridge::fill_ir_with_oracle(
+            &mut ir_doc, &mut self.oracle, &spec.domain
+        )?;
+
+        // 5. NEW: H5 embedding (structural validation)
+        let embedding = glyph_embed::compute_embedding(&ir_doc);
+        if !babylon_bridge::embedding_in_range(&embedding) {
+            // Structural problem detected -> re-generate
+            return Err(ForgeError::StructuralValidation(embedding));
+        }
+
+        // 6. NEW: Codegen to target language(s)
+        let backends = self.get_backends(&spec.domain)?;
+        let files = babylon_bridge::emit_multi(&ir_doc, &backends)?;
+
+        // 7. Write files + Foundry loop (unchanged)
+        let result = self.foundry.fabricate(files, &spec)?;
+
+        // 8. Crystallize (now includes IR digest + H5 embedding)
+        self.crystallize(result, &ir_doc, &embedding)
+    }
+}
+\end{lstlisting}
+
+
+\section{CLI Extension}\label{sec:cli}
+
+\begin{lstlisting}
+# Forge with target language (uses Babylon backend)
+isls forge --spec intent.json --domain rust
+isls forge --spec intent.json --domain typescript
+isls forge --spec intent.json --domain python
+
+# Forge full-stack (multiple backends from one IR)
+isls forge --spec intent.json --template saas-starter
+
+# Inspect the glyph-ir for a forge result
+isls forge --spec intent.json --domain rust --emit-ir ir.json
+
+# Compute H5 embedding of existing source code
+isls babylon embed --source src/main.rs --frontend rust
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Acceptance Tests}\label{part:tests}
+
+\begin{longtable}{l l p{5.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-BB1 & IR conversion & Convert ArtifactIR to IrDocument; verify
+  node and edge counts match component and interface counts. \\
+AT-BB2 & IR determinism & Convert same ArtifactIR twice; verify
+  identical IrDocument digest. \\
+AT-BB3 & H5 embedding & Compute embedding of IR with 5 functions;
+  verify all 5 axes in valid Q16 range. \\
+AT-BB4 & Rust codegen & Emit IrDocument via RustBackend; verify
+  .rs files produced with correct function signatures. \\
+AT-BB5 & TypeScript codegen & Emit via TypeScriptBackend; verify
+  .ts files with correct interface definitions. \\
+AT-BB6 & Python codegen & Emit via PythonBackend; verify .py files
+  with correct class definitions. \\
+AT-BB7 & SQL codegen & Emit via SqlBackend; verify .sql files with
+  correct CREATE TABLE statements. \\
+AT-BB8 & Cross-language types & Define a type in IR; emit to Rust
+  and TypeScript; verify field names and types match. \\
+AT-BB9 & Multi-target emission & Emit single IR to 3 backends;
+  verify files for all 3 languages produced. \\
+AT-BB10 & Structural rejection & Create IR with zero functions
+  (a2=0); verify H5 gate rejects. \\
+AT-BB11 & Full-stack forge & Forge SaaS Starter (T11); verify
+  backend/, frontend/, database/ dirs with correct language files. \\
+AT-BB12 & Oracle fills bodies & Create IR with 3 function nodes;
+  fill with mock Oracle; verify all 3 have implementation property. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Handoff}\label{part:handoff}
+
+\section{Test Count}
+
+\begin{tabular}{l r r}
+\toprule
+\textbf{Phase} & \textbf{New Tests} & \textbf{Cumulative} \\
+\midrule
+Phase 1--9 & 326 & 326 \\
+Phase 10 revised (C28) & 12 & $\ge$ 338 \\
+\bottomrule
+\end{tabular}
+
+\section{Completion Criteria}
+
+\begin{enumerate}[nosep]
+  \item ArtifactIR converts to glyph-ir deterministically.
+  \item Oracle fills function bodies in IR nodes (not whole files).
+  \item H5 embedding validates structural coherence before codegen.
+  \item Six codegen backends produce valid target-language files.
+  \item Cross-language type consistency from single IR source.
+  \item Full-stack templates emit multi-language projects.
+  \item Babylon crates integrated as workspace dependencies.
+  \item Foundry validates emitted code with language-appropriate
+        toolchains.
+  \item Total tests $\ge 338$, zero warnings.
+  \item \textbf{The IR is the truth. Languages are views.}
+\end{enumerate}
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} Extension Phase 10 (Revised) v1.0.0.\\
+Not ``more prompts.'' A real compiler.\\
+Structure from the IR. Bodies from the Oracle.\\
+Types consistent across languages by construction.\\
+Validated before emission. Verified after.}
+\end{center}
+
+\end{document}
