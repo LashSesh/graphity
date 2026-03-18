@@ -1,0 +1,24 @@
+[package]
+name = "isls-foundry"
+version = "0.1.0"
+edition = "2021"
+description = "C27: The Foundry — Closed-Loop Software Fabrication"
+
+[dependencies]
+isls-types      = { path = "../isls-types" }
+isls-forge      = { path = "../isls-forge" }
+isls-oracle     = { path = "../isls-oracle" }
+isls-compose    = { path = "../isls-compose" }
+isls-templates  = { path = "../isls-templates" }
+isls-artifact-ir = { path = "../isls-artifact-ir" }
+isls-pmhd       = { path = "../isls-pmhd" }
+isls-store      = { path = "../isls-store" }
+
+serde           = { workspace = true }
+serde_json      = { workspace = true }
+sha2            = { workspace = true }
+thiserror       = { workspace = true }
+chrono          = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
