@@ -88,6 +88,10 @@ enum Command {
     Seal { secret: String, lock_manifest: Option<String>, output: Option<String> },
     Open { capsule: String },
     Bench,
+    BenchSuite { suite: String },
+    // C28 Babylon Bridge commands
+    ForgeMultilang { spec: Option<String>, lang: String, template: Option<String>, dump_ir: Option<String> },
+    BabylonCheck { ir: Option<String> },
     Validate { formal: bool, retro: bool },
     Report { json: bool, html: bool, full_html: bool },
     Status,
@@ -329,7 +333,56 @@ fn parse_args(args: &[String]) -> Command {
                 .unwrap_or_default();
             Command::Open { capsule }
         }
-        "bench" => Command::Bench,
+        "bench" => {
+            let suite = args.iter().position(|a| a == "--suite")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let id = args.iter().position(|a| a == "--id")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            if let Some(suite_name) = suite {
+                Command::BenchSuite { suite: suite_name }
+            } else if let Some(bench_id) = id {
+                Command::BenchSuite { suite: format!("id:{}", bench_id) }
+            } else {
+                Command::Bench
+            }
+        }
+        "babylon" => {
+            if args.len() > 2 && args[2].as_str() == "check" {
+                let ir = args.iter().position(|a| a == "--ir")
+                    .and_then(|i| args.get(i + 1))
+                    .cloned();
+                Command::BabylonCheck { ir }
+            } else {
+                Command::Help
+            }
+        }
+        "forge" => {
+            // Check for --lang flag (multilang forge via C28)
+            let lang = args.iter().position(|a| a == "--lang")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let template = args.iter().position(|a| a == "--template")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let spec = args.iter().position(|a| a == "--spec")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let dump_ir = args.iter().position(|a| a == "--dump-ir")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            if lang.is_some() || template.is_some() {
+                Command::ForgeMultilang {
+                    spec,
+                    lang: lang.unwrap_or_else(|| "rust".to_string()),
+                    template,
+                    dump_ir,
+                }
+            } else {
+                Command::Help
+            }
+        }
         "validate" => {
             let formal = args.contains(&"--formal".to_string());
             let retro = args.contains(&"--retro".to_string());
@@ -1291,6 +1344,209 @@ fn load_bench_history(path: &PathBuf) -> Vec<isls_harness::BenchResult> {
         .collect()
 }
 
+// ─── C28 Bench Suite (B16–B24) ───────────────────────────────────────────────
+
+fn cmd_bench_suite(suite: &str) {
+    use isls_harness::run_generative_suite;
+
+    let git_commit = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    let results: Vec<isls_harness::BenchResult> = match suite {
+        "generative" => {
+            println!("Running generative pipeline benchmarks (B16\u{2013}B24)...");
+            run_generative_suite(&git_commit)
+        }
+        "core" => {
+            println!("Running core benchmarks (B01\u{2013}B15)...");
+            let config = load_config();
+            let bench = isls_harness::BenchSuite::new(config, 42);
+            bench.run_all()
+        }
+        s if s.starts_with("id:") => {
+            let bench_id = &s[3..];
+            println!("Running benchmark {bench_id}...");
+            run_generative_suite(&git_commit)
+                .into_iter()
+                .filter(|r| r.bench_id == bench_id)
+                .collect()
+        }
+        _ => {
+            println!("Running all benchmarks (B01\u{2013}B24)...");
+            let config = load_config();
+            let bench = isls_harness::BenchSuite::new(config, 42);
+            let mut all = bench.run_all();
+            all.extend(run_generative_suite(&git_commit));
+            all
+        }
+    };
+
+    println!("{:<6} {:<35} {:>14} {:<15}", "ID", "Metric", "Value", "Unit");
+    println!("{}", "-".repeat(75));
+    for result in &results {
+        println!("{:<6} {:<35} {:>14.3} {:<15}",
+            result.bench_id, result.metric_name, result.metric_value, result.metric_unit);
+    }
+    println!("\n{} benchmark(s) completed.", results.len());
+}
+
+// ─── C28 Multilang Forge ─────────────────────────────────────────────────────
+
+fn cmd_forge_multilang(
+    spec_file: Option<&str>,
+    lang: &str,
+    template: Option<&str>,
+    dump_ir: Option<&str>,
+) {
+    use isls_multilang::{BabylonForge, templates::TemplateCatalog as MultiLangCatalog};
+    use isls_pmhd::{DecisionSpec, PmhdConfig, QualityThresholds};
+    use isls_artifact_ir::ArtifactIR;
+    use std::collections::BTreeMap;
+
+    println!("Forge [C28 Babylon Bridge]");
+    if let Some(t) = template {
+        let catalog = MultiLangCatalog::new();
+        if let Some(tmpl) = catalog.get(t) {
+            println!("  Template: {} ({}) — {}", tmpl.id, tmpl.name, tmpl.languages_display());
+            println!("  Atoms: {}, Molecules: {}", tmpl.atom_count, tmpl.molecule_count);
+            for atom in &tmpl.atoms {
+                println!("    [{:?}] {} → {}", atom.fill, atom.name, atom.backend);
+            }
+        } else {
+            eprintln!("Template '{}' not found. Available: {}",
+                t,
+                catalog.list().iter().map(|t| t.slug.as_str()).collect::<Vec<_>>().join(", "));
+            return;
+        }
+    }
+
+    // Build a minimal ArtifactIR from spec file or default
+    let intent = if let Some(path) = spec_file {
+        std::fs::read_to_string(path).unwrap_or_else(|_| "build a REST API service".to_string())
+    } else {
+        "build a REST API service".to_string()
+    };
+
+    let mut goals = BTreeMap::new();
+    goals.insert("coherence".to_string(), 0.7);
+    let spec = DecisionSpec::new(
+        &intent,
+        goals,
+        vec![],
+        lang,
+        PmhdConfig {
+            ticks: 6,
+            pool_size: 4,
+            commit_budget: 2,
+            thresholds: QualityThresholds::default(),
+            ..Default::default()
+        },
+    );
+
+    let mut drill = isls_pmhd::DrillEngine::new(spec.config.clone());
+    let res = drill.drill(&spec);
+    let monolith = match res.monoliths.into_iter().next() {
+        Some(m) => m,
+        None => { eprintln!("No monolith from PMHD drill."); return; }
+    };
+    let ir = match ArtifactIR::build_from_monolith(&monolith, &spec, 0) {
+        Ok(ir) => ir,
+        Err(e) => { eprintln!("IR build failed: {e}"); return; }
+    };
+
+    let forge = BabylonForge::new();
+
+    // Dump IR if requested
+    if let Some(out_path) = dump_ir {
+        match forge.dump_ir(&ir) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(out_path, &json) {
+                    eprintln!("Failed to write IR: {e}");
+                } else {
+                    println!("  IR written to: {out_path}");
+                }
+            }
+            Err(e) => eprintln!("IR dump failed: {e}"),
+        }
+    }
+
+    // Generate scaffolding
+    let oracle_bodies = BTreeMap::new();
+    match forge.generate(&ir, lang, &oracle_bodies) {
+        Ok(files) => {
+            println!("  Language: {lang}");
+            println!("  Generated {} file(s):", files.len());
+            for f in &files {
+                println!("    {} ({} scaffold + {} oracle lines)",
+                    f.path, f.scaffold_lines, f.oracle_lines);
+            }
+        }
+        Err(e) => eprintln!("Forge failed: {e}"),
+    }
+}
+
+// ─── C28 Babylon Check ───────────────────────────────────────────────────────
+
+fn cmd_babylon_check(ir_path: Option<&str>) {
+    use isls_multilang::{embed, glyph_ir::IrDocument};
+
+    let json = if let Some(path) = ir_path {
+        match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(e) => { eprintln!("Failed to read IR file: {e}"); return; }
+        }
+    } else {
+        eprintln!("Usage: isls babylon check --ir <file.json>");
+        return;
+    };
+
+    let doc: IrDocument = match serde_json::from_str(&json) {
+        Ok(d) => d,
+        Err(e) => { eprintln!("Failed to parse IR: {e}"); return; }
+    };
+
+    let embedding = embed::compute_embedding(&doc);
+    let cfg = embed::EmbedConfig::default();
+
+    println!("Babylon IR Check");
+    println!("  Domain:      {}", doc.domain);
+    println!("  Artifact ID: {}", doc.artifact_id);
+    println!("  Digest:      {}", doc.digest);
+    println!("  Nodes:       {}", doc.nodes.len());
+    println!("  Edges:       {}", doc.edges.len());
+    println!();
+    println!("H5 Embedding:");
+    println!("  a1 structural_coupling:    {:.4}  [0.05, 0.80]  {}",
+        embedding.structural_coupling,
+        range_label(embedding.structural_coupling, 0.05, 0.80));
+    println!("  a2 functional_density:     {:.4}  [0.10, 0.90]  {}",
+        embedding.functional_density,
+        range_label(embedding.functional_density, 0.10, 0.90));
+    println!("  a3 topological_complexity: {:.4}  [0.00, 0.70]  {}",
+        embedding.topological_complexity,
+        range_label(embedding.topological_complexity, 0.0, 0.70));
+    println!("  a4 symmetry:               {:.4}  [0.20, 1.00]  {}",
+        embedding.symmetry,
+        range_label(embedding.symmetry, 0.20, 1.0));
+    println!("  a5 entropy:                {:.4}  [0.10, 0.90]  {}",
+        embedding.entropy,
+        range_label(embedding.entropy, 0.10, 0.90));
+
+    match embed::validate_embedding(&embedding, &cfg) {
+        Ok(()) => println!("\nResult: PASS (all axes in range, soft-gate mode)"),
+        Err(e) => println!("\nResult: WARNING — {e}"),
+    }
+}
+
+fn range_label(v: f64, min: f64, max: f64) -> &'static str {
+    if v >= min && v <= max { "OK" } else { "WARN" }
+}
+
 fn cmd_validate(formal: bool, retro: bool) {
     ensure_dirs().expect("failed to create dirs");
     let archive = load_archive();
@@ -1428,6 +1684,7 @@ fn cmd_report(json: bool, html: bool) {
         health: health.clone(),
         history_len: collector.history.len(),
         validation_html,
+        generative_bench_results: vec![],
     };
 
     if json {
@@ -2568,7 +2825,9 @@ fn print_help() {
     println!("    --lock-manifest <path|latest> Manifest to bind to");
     println!("  open [options]                 Open (decrypt) a capsule");
     println!("    --capsule <path>             Path to capsule JSON");
-    println!("  bench                          Run full benchmark suite, emit report");
+    println!("  bench                          Run full benchmark suite (B01\u{2013}B24)");
+    println!("    --suite <core|generative>    Run only core or generative benchmarks");
+    println!("    --id <B16>                   Run a specific benchmark by ID");
     println!("  validate [options]             Run validation suite against collected data");
     println!("    --formal                     V-Formal: invariant checks on all crystals");
     println!("    --retro                      V-Retro: retrospective accuracy validation");
@@ -2590,6 +2849,14 @@ fn print_help() {
     println!("    --name <name>                Name for composed template");
     println!("    --include <name>             Templates to include (repeat for each)");
     println!();
+    println!("BABYLON BRIDGE COMMANDS (C28):");
+    println!("  forge --spec <file> --lang <lang>  Forge with explicit target language");
+    println!("    --lang <rust|typescript|python|sql|yaml|markdown>");
+    println!("    --template <slug>             Use a full-stack template (T11\u{2013}T16)");
+    println!("    --dump-ir <output.json>       Emit IR for inspection");
+    println!("  babylon check --ir <file>      Validate IR structure via H5 embedding");
+    println!("  isls bench --suite generative  Run generative benchmarks (B16\u{2013}B24)");
+    println!();
     println!("GATEWAY COMMANDS (C19):");
     println!("  serve [options]                Start the Gateway + Studio web interface");
     println!("    --port <port>                Port to listen on (default: 8420)");
@@ -2603,6 +2870,12 @@ fn print_help() {
     println!("  isls seal --secret 'my-secret' --lock-manifest latest");
     println!("  isls open --capsule ~/.isls/capsules/latest.json");
     println!("  isls bench");
+    println!("  isls bench --suite generative");
+    println!("  isls bench --suite core");
+    println!("  isls forge --spec intent.json --lang rust");
+    println!("  isls forge --spec intent.json --template saas-starter");
+    println!("  isls forge --spec intent.json --lang rust --dump-ir output.json");
+    println!("  isls babylon check --ir output.json");
     println!("  isls validate --formal");
     println!("  isls report");
     println!("  isls report --html > report.html");
@@ -2635,6 +2908,11 @@ fn main() {
             cmd_open(&capsule);
         }
         Command::Bench => cmd_bench(),
+        Command::BenchSuite { suite } => cmd_bench_suite(&suite),
+        Command::ForgeMultilang { spec, lang, template, dump_ir } => {
+            cmd_forge_multilang(spec.as_deref(), &lang, template.as_deref(), dump_ir.as_deref());
+        }
+        Command::BabylonCheck { ir } => cmd_babylon_check(ir.as_deref()),
         Command::Validate { formal, retro } => cmd_validate(formal, retro),
         Command::Report { json, html, full_html } => {
             if full_html { cmd_report_full_html(); } else { cmd_report(json, html); }
