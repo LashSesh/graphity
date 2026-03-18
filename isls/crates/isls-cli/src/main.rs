@@ -119,6 +119,17 @@ enum Command {
     TemplateCompose { name: String, includes: Vec<String> },
     // C19 Gateway / Studio
     Serve { port: u16 },
+    // C29 Navigator
+    Navigate {
+        mode: String,
+        steps: usize,
+        domain: Option<String>,
+        template: Option<String>,
+    },
+    NavigateStatus,
+    NavigateApplyBest,
+    NavigateSingularities,
+    NavigateExportMesh { output: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -407,6 +418,46 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(8420);
             Command::Serve { port }
+        }
+        "navigate" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "status" => Command::NavigateStatus,
+                    "apply-best" => Command::NavigateApplyBest,
+                    "singularities" => Command::NavigateSingularities,
+                    "export-mesh" => {
+                        let output = args.iter().position(|a| a == "--output")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "mesh.json".to_string());
+                        Command::NavigateExportMesh { output }
+                    }
+                    _ => {
+                        let mode = args.iter().position(|a| a == "--mode")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "config".to_string());
+                        let steps = args.iter().position(|a| a == "--steps")
+                            .and_then(|i| args.get(i + 1))
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(20);
+                        let domain = args.iter().position(|a| a == "--domain")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned();
+                        let template = args.iter().position(|a| a == "--template")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned();
+                        Command::Navigate { mode, steps, domain, template }
+                    }
+                }
+            } else {
+                Command::Navigate {
+                    mode: "config".to_string(),
+                    steps: 20,
+                    domain: None,
+                    template: None,
+                }
+            }
         }
         _ => Command::Help,
     }
@@ -3172,6 +3223,168 @@ fn hex_hash(h: &isls_types::Hash256) -> String {
     h.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+// ─── C29 Navigator Commands ───────────────────────────────────────────────────
+
+fn navigator_state_path() -> PathBuf {
+    isls_dir().join("navigator").join("state.json")
+}
+
+fn cmd_navigate(mode: &str, steps: usize, domain: Option<&str>, template: Option<&str>) {
+    use isls_navigator::{Navigator, NavigatorConfig, NavigatorState, SpectralSignature};
+
+    println!("[NAVIGATOR] C29 — Spectral-Guided Pattern Space Explorer");
+    println!("  Mode:   {}", mode);
+    println!("  Steps:  {}", steps);
+    if let Some(d) = domain   { println!("  Domain: {}", d); }
+    if let Some(t) = template { println!("  Template: {}", t); }
+    println!();
+
+    let config = NavigatorConfig { dim: 5, k: 3, seed: 42, ..Default::default() };
+
+    // Synthetic evaluator — real forge bridge requires metatron_triton + ForgeCalibrationState
+    let mut nav = Navigator::new(config, |params: &[f64]| {
+        let psi   = params.iter().enumerate().map(|(i, &x)| x * (1.0 + i as f64 * 0.1)).sum::<f64>()
+            / params.len() as f64;
+        let psi   = psi.clamp(0.0, 1.0);
+        let rho   = (psi * 0.9).clamp(0.0, 1.0);
+        let omega = (psi * 0.95).clamp(0.0, 1.0);
+        SpectralSignature::new(psi, rho, omega)
+    });
+
+    for i in 0..steps {
+        let step = nav.step();
+        if i == 0 || (i + 1) % 10 == 0 || i + 1 == steps {
+            println!(
+                "  step {:>4}/{}: resonance={:.4}  betti={:?}  gap={:.4}  entropy={:.3}",
+                i + 1, steps,
+                step.best_resonance,
+                step.betti,
+                step.spectral_gap,
+                step.local_entropy,
+            );
+        }
+    }
+
+    let sings = nav.singularities();
+    println!();
+    println!("[NAVIGATOR] Complete.");
+    println!("  Vertices:      {}", nav.mesh.vertex_count());
+    println!("  Edges:         {}", nav.mesh.edges.len());
+    println!("  Simplices:     {}", nav.mesh.simplices.len());
+    println!("  Singularities: {}", sings.len());
+    if let Some(best) = nav.best_signature() {
+        println!(
+            "  Best resonance: {:.4}  (ψ={:.3} ρ={:.3} ω={:.3})",
+            best.resonance(), best.psi, best.rho, best.omega
+        );
+    }
+
+    // Persist state
+    let state = NavigatorState::from_navigator(&nav, mode.to_string());
+    let path = navigator_state_path();
+    match state.save(&path) {
+        Ok(_)  => println!("  State saved → {}", path.display()),
+        Err(e) => eprintln!("  Warning: could not save state: {}", e),
+    }
+}
+
+fn cmd_navigate_status() {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => {
+            println!("[NAVIGATOR] No state found. Run 'isls navigate' first.");
+        }
+        Ok(state) => {
+            let betti = state.mesh.betti_numbers();
+            let sings = state.mesh.detect_singularities();
+            println!("[NAVIGATOR] Status");
+            println!("  Mode:          {}", state.mode);
+            println!("  Steps run:     {}", state.steps_run);
+            println!("  Vertices:      {}", state.mesh.vertex_count());
+            println!("  Edges:         {}", state.mesh.edges.len());
+            println!("  Simplices:     {}", state.mesh.simplices.len());
+            println!("  Betti numbers: {:?}", betti);
+            println!("  Singularities: {}", sings.len());
+            if let Some(best) = &state.best_signature {
+                println!(
+                    "  Best resonance: {:.4}  (ψ={:.3} ρ={:.3} ω={:.3})",
+                    best.resonance(), best.psi, best.rho, best.omega
+                );
+            }
+        }
+    }
+}
+
+fn cmd_navigate_apply_best() {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => println!("[NAVIGATOR] No state found. Run 'isls navigate' first."),
+        Ok(state) => {
+            match (&state.best_signature, &state.best_point) {
+                (Some(sig), Some(pt)) => {
+                    println!("[NAVIGATOR] Best configuration:");
+                    println!("  Resonance: {:.4}", sig.resonance());
+                    println!("  ψ={:.4}  ρ={:.4}  ω={:.4}", sig.psi, sig.rho, sig.omega);
+                    let labels = ["pmhd_ticks", "opposition", "temperature", "match_threshold", "retries"];
+                    for (i, &x) in pt.iter().enumerate() {
+                        let label = labels.get(i).copied().unwrap_or("param");
+                        println!("  {}: {:.4}", label, x);
+                    }
+                }
+                _ => println!("[NAVIGATOR] No best result recorded yet."),
+            }
+        }
+    }
+}
+
+fn cmd_navigate_singularities() {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => println!("[NAVIGATOR] No state found. Run 'isls navigate' first."),
+        Ok(state) => {
+            let sings = state.mesh.detect_singularities();
+            if sings.is_empty() {
+                println!("[NAVIGATOR] No singularities detected.");
+            } else {
+                println!("[NAVIGATOR] Singularities ({}):", sings.len());
+                for &id in &sings {
+                    let v = &state.mesh.vertices[id];
+                    println!(
+                        "  vertex {:>3}: resonance={:.4}  point={:?}",
+                        id, v.resonance, v.point
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn cmd_navigate_export_mesh(output: &str) {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => println!("[NAVIGATOR] No state found. Run 'isls navigate' first."),
+        Ok(state) => {
+            match serde_json::to_string_pretty(&state.mesh) {
+                Ok(json) => {
+                    match std::fs::write(output, &json) {
+                        Ok(_)  => println!("[NAVIGATOR] Mesh exported → {}", output),
+                        Err(e) => eprintln!("[NAVIGATOR] Write error: {}", e),
+                    }
+                }
+                Err(e) => eprintln!("[NAVIGATOR] Serialize error: {}", e),
+            }
+        }
+    }
+}
+
 fn print_help() {
     println!("ISLS — Invariant Structure Learning System");
     println!("Version 1.0.0");
@@ -3233,6 +3446,18 @@ fn print_help() {
     println!("  serve [options]                Start the Gateway + Studio web interface");
     println!("    --port <port>                Port to listen on (default: 8420)");
     println!("                                 Studio: http://localhost:8420/studio");
+    println!();
+    println!("NAVIGATOR COMMANDS (C29):");
+    println!("  navigate [options]             Spectral-guided Pattern Space exploration");
+    println!("    --mode <config|architecture> Exploration mode (default: config)");
+    println!("    --steps <n>                  Number of exploration steps (default: 20)");
+    println!("    --domain <name>              Target domain (e.g. rust, rest-api)");
+    println!("    --template <name>            Base template for architecture mode");
+    println!("  navigate status                Show navigator state and mesh metrics");
+    println!("  navigate apply-best            Print best configuration found");
+    println!("  navigate singularities         List unexplored high-resonance vertices");
+    println!("  navigate export-mesh [options] Export mesh as JSON");
+    println!("    --output <path>              Output file (default: mesh.json)");
     println!();
     println!("EXAMPLES:");
     println!("  isls init");
@@ -3309,6 +3534,14 @@ fn main() {
         Command::TemplateDistill { crystal_id, name } => cmd_template_distill(&crystal_id, &name),
         Command::TemplateCompose { name, includes } => cmd_template_compose(&name, &includes),
         Command::Serve { port } => cmd_serve(port),
+        // C29 Navigator
+        Command::Navigate { mode, steps, domain, template } => {
+            cmd_navigate(&mode, steps, domain.as_deref(), template.as_deref());
+        }
+        Command::NavigateStatus => cmd_navigate_status(),
+        Command::NavigateApplyBest => cmd_navigate_apply_best(),
+        Command::NavigateSingularities => cmd_navigate_singularities(),
+        Command::NavigateExportMesh { output } => cmd_navigate_export_mesh(&output),
     }
 }
 

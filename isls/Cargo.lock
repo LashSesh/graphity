@@ -867,6 +867,7 @@ dependencies = [
  "isls-harness",
  "isls-manifest",
  "isls-multilang",
+ "isls-navigator",
  "isls-observe",
  "isls-oracle",
  "isls-persist",
@@ -1072,6 +1073,15 @@ dependencies = [
  "sha2",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "isls-navigator"
+version = "1.0.0"
+dependencies = [
+ "isls-topology",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
