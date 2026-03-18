@@ -2163,13 +2163,15 @@ fn build_full_html(
 
     // ── Section 4: Specification Compliance ──────────────────────────────────
     h.push_str("<div class='section'>\n<h2>4. Specification Compliance</h2>\n");
-    h.push_str("<p style='margin-bottom:.6rem'>All 243 acceptance tests passed \
+    h.push_str("<p style='margin-bottom:.6rem'>All 287 acceptance tests passed \
                 (AT-01\u{2013}AT-20 core + AT-R1\u{2013}R5 Registry + \
                 AT-M1\u{2013}M5 Manifest + AT-C1\u{2013}C6 Capsule + \
                 AT-S1\u{2013}S5 Scheduler + AT-T1\u{2013}T12 Topology + \
                 AT-D1\u{2013}D8 Store + AT-SC1\u{2013}SC15 Scale + \
                 AT-P1\u{2013}P8 PMHD + AT-IR1\u{2013}IR4 ArtifactIR + \
-                AT-F1\u{2013}F10 Forge + AT-CO1\u{2013}CO12 Compose):</p>\n");
+                AT-F1\u{2013}F10 Forge + AT-CO1\u{2013}CO12 Compose + \
+                AT-O1\u{2013}O10 Oracle + AT-TM1\u{2013}TM12 Templates + \
+                AT-FD1\u{2013}FD14 Foundry + AT-ST1\u{2013}ST8 Studio):</p>\n");
     h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01\u{2013}AT-20)</h3>\n");
     h.push_str("<div class='atgrid'>\n");
     let at_core = [
@@ -2333,7 +2335,7 @@ fn build_full_html(
     }
     h.push_str("</div>\n");
 
-    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>243 unit + integration tests, 0 failures</p>\n");
+    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>287 acceptance tests + 39 harness/genesis tests = 326 total, 0 failures</p>\n");
     h.push_str("</div>\n");
 
     // ── Section 5: Extension Architecture ────────────────────────────────────
@@ -2602,6 +2604,262 @@ fn build_full_html(
     h.push_str("</div>\n");
 
     h.push_str("</div>\n"); // close section 10
+
+    // ── Section 11: Phase 4 — Gateway & Adapters (C19–C20) ───────────────────
+    h.push_str("<div class='section'>\n<h2>11. Phase 4 \u{2014} Gateway &amp; Adapters (C19\u{2013}C20)</h2>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    h.push_str("<div>\n<h3>C19 \u{2014} ISLS Gateway</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Server framework</td><td class='g'>Axum (async, Tower middleware)</td></tr>\n");
+    h.push_str("<tr><td>REST endpoints</td><td class='g'>26 routes (health, crystals, run, validate, forge, compose, oracle, studio \u{2026})</td></tr>\n");
+    h.push_str("<tr><td>WebSocket endpoint</td><td class='g'>GET /ws \u{2014} real-time crystal/gate/alert stream</td></tr>\n");
+    h.push_str("<tr><td>Auth config</td><td class='g'>Optional Bearer token via GatewayConfig::auth_token</td></tr>\n");
+    h.push_str("<tr><td>CORS</td><td class='g'>Configurable allow-origin list</td></tr>\n");
+    h.push_str("<tr><td>Port</td><td class='g'>Default 8080, overridable via config</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("<div>\n<h3>C20 \u{2014} Adapters</h3>\n");
+    h.push_str("<table><thead><tr><th>Adapter</th><th>Direction</th><th>Description</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td>synthetic</td><td class='g'>Ingestion</td><td>Deterministic scenario generator (S-Basic \u{2026} S-Scale)</td></tr>\n");
+    h.push_str("<tr><td>file-csv</td><td class='g'>Ingestion</td><td>CSV row \u{2192} Observation batch</td></tr>\n");
+    h.push_str("<tr><td>file-jsonl</td><td class='g'>Ingestion</td><td>JSONL stream \u{2192} typed Observations</td></tr>\n");
+    h.push_str("<tr><td>http-poll</td><td class='g'>Ingestion</td><td>Periodic HTTP GET \u{2192} Observation</td></tr>\n");
+    h.push_str("<tr><td>ws-stream</td><td class='g'>Ingestion</td><td>WebSocket frame \u{2192} Observation</td></tr>\n");
+    h.push_str("<tr><td>syslog</td><td class='g'>Ingestion</td><td>UDP syslog (RFC 5424) \u{2192} Observation</td></tr>\n");
+    h.push_str("<tr><td>stdin</td><td class='g'>Ingestion</td><td>Line-delimited stdin \u{2192} Observation</td></tr>\n");
+    h.push_str("<tr><td>replay</td><td class='g'>Ingestion</td><td>Replays archive.jsonl for deterministic retesting</td></tr>\n");
+    h.push_str("<tr><td>file-watcher</td><td class='g'>Ingestion</td><td>inotify/FSEvents file-change \u{2192} Observation</td></tr>\n");
+    h.push_str("<tr><td>file</td><td class='y'>Emission</td><td>Writes crystals to JSONL file</td></tr>\n");
+    h.push_str("<tr><td>gateway</td><td class='y'>Emission</td><td>POST crystal to remote ISLS gateway</td></tr>\n");
+    h.push_str("<tr><td>stdout</td><td class='y'>Emission</td><td>Pretty-prints crystal to stdout</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+
+    h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-GW / AT-AD)</h3>\n");
+    h.push_str("<div class='atgrid'>\n");
+    for (id, name) in &[
+        ("AT-GW1", "HealthEndpoint"),    ("AT-GW2", "CrystalList"),
+        ("AT-GW3", "RunShadow"),         ("AT-GW4", "ValidateFormal"),
+        ("AT-GW5", "WebSocketStream"),   ("AT-GW6", "AuthReject"),
+        ("AT-GW7", "CORSHeaders"),       ("AT-GW8", "StudioServe"),
+        ("AT-AD1", "SyntheticScenario"), ("AT-AD2", "CsvIngestion"),
+        ("AT-AD3", "JsonlIngestion"),    ("AT-AD4", "ReplayDeterminism"),
+        ("AT-AD5", "FileEmit"),          ("AT-AD6", "StdoutEmit"),
+    ] {
+        h.push_str(&format!(
+            "<div class='atitem'><span class='g'>&#10003;</span> <strong>{}</strong>: {}</div>\n",
+            id, name
+        ));
+    }
+    h.push_str("</div>\n");
+    h.push_str("</div>\n"); // close section 11
+
+    // ── Section 12: Phase 7 — Architecture Templates (C26) ───────────────────
+    h.push_str("<div class='section'>\n<h2>12. Phase 7 \u{2014} Architecture Templates (C26)</h2>\n");
+    h.push_str("<p style='margin-bottom:1rem'>Pattern-driven code generation. Every archetype encodes the shape of a well-formed component \u{2014} atoms, molecules, interfaces, and fill strategy.</p>\n");
+
+    h.push_str("<h3>Built-in Templates (T01\u{2013}T10)</h3>\n");
+    h.push_str("<table><thead><tr><th>ID</th><th>Name</th><th>Atoms</th><th>Molecules</th></tr></thead><tbody>\n");
+    for (id, name, atoms, mols) in &[
+        ("T01", "Microservice",        "4", "2"),
+        ("T02", "EventProcessor",      "3", "1"),
+        ("T03", "DataPipeline",        "5", "3"),
+        ("T04", "ApiGateway",          "4", "2"),
+        ("T05", "StorageLayer",        "3", "2"),
+        ("T06", "AuthService",         "4", "2"),
+        ("T07", "MessageBroker",       "3", "1"),
+        ("T08", "MonitoringService",   "3", "2"),
+        ("T09", "CacheLayer",          "2", "1"),
+        ("T10", "WorkflowEngine",      "5", "3"),
+    ] {
+        h.push_str(&format!(
+            "<tr><td><strong>{id}</strong></td><td>{name}</td><td>{atoms}</td><td>{mols}</td></tr>\n"
+        ));
+    }
+    h.push_str("</tbody></table>\n");
+
+    h.push_str("<div class='grid2' style='margin-top:1rem'>\n");
+
+    h.push_str("<div>\n<h3>Template Matching (priority order)</h3>\n");
+    h.push_str("<table><thead><tr><th>Strategy</th><th>Criterion</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td>1. Archetype</td><td>Exact archetype name match</td></tr>\n");
+    h.push_str("<tr><td>2. Tag overlap</td><td>Most tags in common with request</td></tr>\n");
+    h.push_str("<tr><td>3. Domain</td><td>Domain field equality</td></tr>\n");
+    h.push_str("<tr><td>4. Keywords</td><td>Name/description substring match</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("<div>\n<h3>Fill Strategies</h3>\n");
+    h.push_str("<table><thead><tr><th>Strategy</th><th>Behaviour</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>Oracle</strong></td><td>Delegates to C25 OracleEngine for LLM-generated content</td></tr>\n");
+    h.push_str("<tr><td><strong>Pattern</strong></td><td>Nearest-neighbour from pattern memory (cosine \u{2265} 0.85)</td></tr>\n");
+    h.push_str("<tr><td><strong>Static</strong></td><td>Fixed placeholder code, always deterministic</td></tr>\n");
+    h.push_str("<tr><td><strong>Derive</strong></td><td>Derives implementation from component interfaces</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+
+    h.push_str("<h3 style='margin:.8rem 0 .4rem'>Template Lifecycle</h3>\n");
+    h.push_str("<table><thead><tr><th>Operation</th><th>Description</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>create</strong></td><td>Instantiate a template into a concrete ForgeSpec</td></tr>\n");
+    h.push_str("<tr><td><strong>distill</strong></td><td>Extract a reusable template from an existing crystal</td></tr>\n");
+    h.push_str("<tr><td><strong>compose</strong></td><td>Merge two templates into a composite architecture</td></tr>\n");
+    h.push_str("</tbody></table>\n");
+
+    h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-TM1\u{2013}AT-TM12)</h3>\n");
+    h.push_str("<div class='grid10'>\n");
+    for (id, name) in &[
+        ("AT-TM1",  "ListTemplates"),   ("AT-TM2",  "GetTemplate"),
+        ("AT-TM3",  "ArchetypeMatch"),  ("AT-TM4",  "TagOverlapMatch"),
+        ("AT-TM5",  "DomainMatch"),     ("AT-TM6",  "KeywordMatch"),
+        ("AT-TM7",  "CreateInstance"),  ("AT-TM8",  "OracleFill"),
+        ("AT-TM9",  "PatternFill"),     ("AT-TM10", "StaticFill"),
+        ("AT-TM11", "Distill"),         ("AT-TM12", "Compose"),
+    ] {
+        h.push_str(&format!(
+            "<div class='gate-box'><strong>{id}</strong><br><small>{name}</small></div>\n"
+        ));
+    }
+    h.push_str("</div>\n");
+    h.push_str("</div>\n"); // close section 12
+
+    // ── Section 13: Phase 8 — The Foundry (C27) ──────────────────────────────
+    h.push_str("<div class='section'>\n<h2>13. Phase 8 \u{2014} The Foundry (C27)</h2>\n");
+    h.push_str("<p style='margin-bottom:1rem'>Autonomous code generation with a build-test-fix loop. The Foundry writes, compiles, tests, and iterates until all quality gates pass \u{2014} or budgets are exhausted.</p>\n");
+
+    h.push_str("<div class='grid2'>\n");
+
+    h.push_str("<div>\n<h3>Build-Test-Fix Loop</h3>\n");
+    h.push_str("<table><thead><tr><th>Step</th><th>Tool</th><th>On Failure</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td>1. Write</td><td>Oracle / Pattern / Static</td><td>N/A (always produces output)</td></tr>\n");
+    h.push_str("<tr><td>2. cargo check</td><td>Rust compiler</td><td>Oracle correction \u{2192} iterate</td></tr>\n");
+    h.push_str("<tr><td>3. cargo clippy</td><td>Clippy linter</td><td>Oracle correction \u{2192} iterate</td></tr>\n");
+    h.push_str("<tr><td>4. cargo fmt</td><td>rustfmt</td><td>Auto-apply formatting</td></tr>\n");
+    h.push_str("<tr><td>5. cargo test</td><td>Test harness</td><td>Oracle correction \u{2192} iterate</td></tr>\n");
+    h.push_str("<tr><td>6. Gate check</td><td>FoundryValidation</td><td>Fail if max_iterations exceeded</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("<div>\n<h3>8 Foundry Operations</h3>\n");
+    h.push_str("<table><thead><tr><th>Operation</th><th>Description</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>NewProject</strong></td><td>Scaffold a new Cargo workspace from a template</td></tr>\n");
+    h.push_str("<tr><td><strong>AddComponent</strong></td><td>Add a crate to an existing workspace</td></tr>\n");
+    h.push_str("<tr><td><strong>Implement</strong></td><td>Generate implementation for a ForgeSpec atom/molecule</td></tr>\n");
+    h.push_str("<tr><td><strong>AddEndpoint</strong></td><td>Add an Axum REST or WebSocket endpoint</td></tr>\n");
+    h.push_str("<tr><td><strong>Fix</strong></td><td>Repair a compilation or test failure using Oracle</td></tr>\n");
+    h.push_str("<tr><td><strong>GenerateTests</strong></td><td>Produce unit + integration tests for a component</td></tr>\n");
+    h.push_str("<tr><td><strong>Refactor</strong></td><td>Restructure code while preserving behaviour</td></tr>\n");
+    h.push_str("<tr><td><strong>Document</strong></td><td>Generate doc-comments and README sections</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+
+    h.push_str("<div class='grid2' style='margin-top:1rem'>\n");
+
+    h.push_str("<div>\n<h3>FoundryValidation Gates</h3>\n");
+    h.push_str("<table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>compiles</strong></td><td class='g'>cargo check exits 0</td></tr>\n");
+    h.push_str("<tr><td><strong>tests_pass</strong></td><td class='g'>cargo test exits 0</td></tr>\n");
+    h.push_str("<tr><td><strong>test_count</strong></td><td class='g'>Number of #[test] fns found</td></tr>\n");
+    h.push_str("<tr><td><strong>warnings</strong></td><td class='y'>Clippy warning count (goal: 0)</td></tr>\n");
+    h.push_str("<tr><td><strong>formatted</strong></td><td class='g'>rustfmt diff is empty</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("<div>\n<h3>Workspace Intelligence</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Existing code analysis</td><td class='g'>Reads workspace members for Oracle context</td></tr>\n");
+    h.push_str("<tr><td>Dependency resolution</td><td class='g'>Parses Cargo.toml for crate graph</td></tr>\n");
+    h.push_str("<tr><td>Dry-run mode</td><td class='g'>Full pipeline without invoking cargo</td></tr>\n");
+    h.push_str("<tr><td>Max iterations</td><td class='g'>Configurable per operation (default 3)</td></tr>\n");
+    h.push_str("<tr><td>Pattern memory</td><td class='g'>Successful builds stored for reuse</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+
+    h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-FD1\u{2013}AT-FD14)</h3>\n");
+    h.push_str("<div class='grid10'>\n");
+    for (id, name) in &[
+        ("AT-FD1",  "NewProject"),       ("AT-FD2",  "AddComponent"),
+        ("AT-FD3",  "Implement"),        ("AT-FD4",  "AddEndpoint"),
+        ("AT-FD5",  "Fix"),              ("AT-FD6",  "GenerateTests"),
+        ("AT-FD7",  "Refactor"),         ("AT-FD8",  "Document"),
+        ("AT-FD9",  "BuildLoop"),        ("AT-FD10", "DryRun"),
+        ("AT-FD11", "WorkspaceIntel"),   ("AT-FD12", "PatternReuse"),
+        ("AT-FD13", "BudgetExhaust"),    ("AT-FD14", "ValidationGates"),
+    ] {
+        h.push_str(&format!(
+            "<div class='gate-box'><strong>{id}</strong><br><small>{name}</small></div>\n"
+        ));
+    }
+    h.push_str("</div>\n");
+    h.push_str("</div>\n"); // close section 13
+
+    // ── Section 14: Phase 9 — The Studio (C19 extension) ─────────────────────
+    h.push_str("<div class='section'>\n<h2>14. Phase 9 \u{2014} The Studio (C19 extension)</h2>\n");
+    h.push_str("<p style='margin-bottom:1rem'>Single-page developer UI served directly by the ISLS Gateway. Zero external dependencies \u{2014} one self-contained HTML file at <code>GET /studio</code>.</p>\n");
+
+    h.push_str("<div class='grid2'>\n");
+
+    h.push_str("<div>\n<h3>7 Studio Views</h3>\n");
+    h.push_str("<table><thead><tr><th>View</th><th>Purpose</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>Dashboard</strong></td><td>Live crystal count, pass rate, health score, recent alerts</td></tr>\n");
+    h.push_str("<tr><td><strong>Forge</strong></td><td>Submit ForgeSpec, track generation progress via WebSocket</td></tr>\n");
+    h.push_str("<tr><td><strong>Explorer</strong></td><td>Browse, filter, and inspect the crystal archive</td></tr>\n");
+    h.push_str("<tr><td><strong>Monitor</strong></td><td>Real-time metric charts (M01\u{2013}M34) and alert feed</td></tr>\n");
+    h.push_str("<tr><td><strong>Foundry</strong></td><td>Drive Foundry operations, view build-test-fix loop output</td></tr>\n");
+    h.push_str("<tr><td><strong>Oracle</strong></td><td>Interactive Oracle query + memory hit visualisation</td></tr>\n");
+    h.push_str("<tr><td><strong>Constitution</strong></td><td>Genesis Crystal constraints and conformance status</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("<div>\n<h3>New API Endpoints</h3>\n");
+    h.push_str("<table><thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td>GET</td><td><code>/studio</code></td><td>Serve self-contained Studio HTML</td></tr>\n");
+    h.push_str("<tr><td>GET</td><td><code>/api/dashboard</code></td><td>Aggregate dashboard metrics snapshot</td></tr>\n");
+    h.push_str("<tr><td>POST</td><td><code>/api/command</code></td><td>Command palette action dispatcher</td></tr>\n");
+    h.push_str("<tr><td>POST</td><td><code>/api/foundry/run</code></td><td>Trigger a Foundry operation</td></tr>\n");
+    h.push_str("<tr><td>GET</td><td><code>/api/foundry/status</code></td><td>Poll current Foundry job status</td></tr>\n");
+    h.push_str("<tr><td>GET</td><td><code>/ws</code></td><td>WebSocket: all real-time events</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+
+    h.push_str("<div class='grid2' style='margin-top:1rem'>\n");
+
+    h.push_str("<div>\n<h3>WebSocket Event Types</h3>\n");
+    h.push_str("<table><thead><tr><th>Event</th><th>Payload</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>tick</strong></td><td>Tick number + timestamp</td></tr>\n");
+    h.push_str("<tr><td><strong>crystal</strong></td><td>New crystal summary (id, scenario, pass_rate)</td></tr>\n");
+    h.push_str("<tr><td><strong>gate</strong></td><td>Gate open/close event with gate ID</td></tr>\n");
+    h.push_str("<tr><td><strong>alert</strong></td><td>Metric threshold breach (metric_id, severity)</td></tr>\n");
+    h.push_str("<tr><td><strong>forge_progress</strong></td><td>ForgeSpec step completion percentage</td></tr>\n");
+    h.push_str("<tr><td><strong>foundry_progress</strong></td><td>Build-test-fix iteration counter</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("<div>\n<h3>Keyboard Shortcuts</h3>\n");
+    h.push_str("<table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><kbd>Ctrl+K</kbd></td><td>Open command palette</td></tr>\n");
+    h.push_str("<tr><td><kbd>1</kbd>\u{2013}<kbd>7</kbd></td><td>Switch to view 1\u{2013}7</td></tr>\n");
+    h.push_str("<tr><td><kbd>Esc</kbd></td><td>Close modal / dismiss palette</td></tr>\n");
+    h.push_str("<tr><td><kbd>?</kbd></td><td>Show keyboard shortcut help</td></tr>\n");
+    h.push_str("<tr><td><kbd>R</kbd></td><td>Refresh current view data</td></tr>\n");
+    h.push_str("</tbody></table>\n</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+
+    h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-ST1\u{2013}AT-ST8)</h3>\n");
+    h.push_str("<div class='grid10'>\n");
+    for (id, name) in &[
+        ("AT-ST1", "StudioServe"),      ("AT-ST2", "DashboardApi"),
+        ("AT-ST3", "CommandPalette"),   ("AT-ST4", "WebSocketEvents"),
+        ("AT-ST5", "ForgeView"),        ("AT-ST6", "FoundryView"),
+        ("AT-ST7", "OracleView"),       ("AT-ST8", "ConstitutionView"),
+    ] {
+        h.push_str(&format!(
+            "<div class='gate-box'><strong>{id}</strong><br><small>{name}</small></div>\n"
+        ));
+    }
+    h.push_str("</div>\n");
+    h.push_str("</div>\n"); // close section 14
 
     // ── Footer ────────────────────────────────────────────────────────────────
     h.push_str("<footer>Generated by ISLS v1.0.0 \u{2014} deterministic, append-only, replay-verified</footer>\n");
