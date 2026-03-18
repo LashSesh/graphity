@@ -158,8 +158,10 @@ echo ""
 # ─── Step 9: Formal validation ────────────────────────────────────────────
 echo "[9/11] Running formal validation..."
 
-rm -rf "${ISLS_HOME}/data" "${ISLS_HOME}/metrics" "${ISLS_HOME}/manifests" \
+rm -rf "${ISLS_HOME}/data" "${ISLS_HOME}/manifests" \
        "${ISLS_HOME}/config.json"
+# NOTE: metrics/ (bench_history.jsonl) is intentionally preserved so
+#       the HTML report (Step 11) can display B16–B24 generative data.
 
 "${ISLS}" ingest --adapter synthetic --scenario S-Basic 2>/dev/null || true
 "${ISLS}" run --mode shadow --ticks 100 2>/dev/null || true
