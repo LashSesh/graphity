@@ -340,6 +340,15 @@ pub struct AutonomyMetrics {
     pub total_tokens: u64,
     /// Total estimated cost USD
     pub total_cost_usd: f64,
+    // ── Constraint Propagation breakdown (C25 pass) ──────────────────────────
+    /// Components resolved deterministically (zero degrees of freedom)
+    pub deterministic_synths: u64,
+    /// Components handled via pattern reuse (high-similarity match)
+    pub constrained_calls: u64,
+    /// Oracle calls with constrained prompt (low degrees of freedom)
+    pub open_calls: u64,
+    /// Propagation ratio = (deterministic_synths + constrained_calls) / total_requests
+    pub propagation_ratio: f64,
 }
 
 impl AutonomyMetrics {
@@ -367,11 +376,34 @@ impl AutonomyMetrics {
         self.update_ratio();
     }
 
+    /// Record the outcome of a constraint propagation pass for one synthesis run.
+    pub fn record_propagation(
+        &mut self,
+        deterministic: u64,
+        pattern_reuse: u64,
+        constrained: u64,
+        open: u64,
+    ) {
+        self.deterministic_synths += deterministic;
+        self.constrained_calls   += pattern_reuse; // pattern reuse = constrained (no LLM)
+        self.open_calls          += constrained + open;
+        self.update_propagation_ratio();
+    }
+
     fn update_ratio(&mut self) {
         self.autonomy_ratio = if self.total_requests == 0 {
             0.0
         } else {
             self.memory_hits as f64 / self.total_requests as f64
+        };
+    }
+
+    fn update_propagation_ratio(&mut self) {
+        let total = self.deterministic_synths + self.constrained_calls + self.open_calls;
+        self.propagation_ratio = if total == 0 {
+            0.0
+        } else {
+            (self.deterministic_synths + self.constrained_calls) as f64 / total as f64
         };
     }
 

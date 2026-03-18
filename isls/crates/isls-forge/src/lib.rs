@@ -22,6 +22,9 @@ use isls_pmhd::{DecisionSpec, DrillEngine, PatternEntry, PatternMemory, PmhdConf
 use isls_artifact_ir::{ArtifactIR, IrError};
 use isls_store::{IslandStore, PatternRow, StoreError};
 
+pub mod constraint_propagation;
+use constraint_propagation::{run_propagation_pass, PropagationStats};
+
 // ─── Error ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Error)]
@@ -476,6 +479,8 @@ pub struct ForgeResult {
     pub crystals: Vec<SemanticCrystal>,
     pub manifest: ForgeManifest,
     pub pattern_count: usize,
+    /// Aggregate constraint propagation stats across all synthesised IRs.
+    pub propagation_stats: PropagationStats,
 }
 
 // ─── Persistent PatternMemory (store-backed) ──────────────────────────────────
@@ -620,9 +625,19 @@ impl ForgeEngine {
 
         let mut artifacts = Vec::new();
         let mut crystals = Vec::new();
+        let mut combined_stats = PropagationStats::default();
 
         for (i, monolith) in drill_result.monoliths.iter().enumerate() {
             let ir = ArtifactIR::build_from_monolith(monolith, &spec, i as u32)?;
+
+            // Constraint Propagation Pass — runs BEFORE Oracle (C25).
+            // Classifies components and determines synthesis strategy to reduce Oracle calls.
+            let (_analyses, cp_stats) = run_propagation_pass(&ir, &self.pattern_memory);
+            combined_stats.total        += cp_stats.total;
+            combined_stats.deterministic += cp_stats.deterministic;
+            combined_stats.pattern_reuse += cp_stats.pattern_reuse;
+            combined_stats.constrained  += cp_stats.constrained;
+            combined_stats.open         += cp_stats.open;
 
             // Matrix interpret
             let matrix_cfg = MatrixConfig::default();
@@ -665,6 +680,7 @@ impl ForgeEngine {
             crystals,
             manifest,
             pattern_count: self.pattern_memory.len(),
+            propagation_stats: combined_stats,
         })
     }
 

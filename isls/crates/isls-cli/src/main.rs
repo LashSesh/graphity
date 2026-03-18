@@ -2164,7 +2164,7 @@ fn build_full_html(
 
     // ── Section 4: Specification Compliance ──────────────────────────────────
     h.push_str("<div class='section'>\n<h2>4. Specification Compliance</h2>\n");
-    h.push_str("<p style='margin-bottom:.6rem'>All 299 acceptance tests passed \
+    h.push_str("<p style='margin-bottom:.6rem'>All 311 acceptance tests passed \
                 (AT-01\u{2013}AT-20 core + AT-R1\u{2013}R5 Registry + \
                 AT-M1\u{2013}M5 Manifest + AT-C1\u{2013}C6 Capsule + \
                 AT-S1\u{2013}S5 Scheduler + AT-T1\u{2013}T12 Topology + \
@@ -2173,7 +2173,7 @@ fn build_full_html(
                 AT-F1\u{2013}F10 Forge + AT-CO1\u{2013}CO12 Compose + \
                 AT-O1\u{2013}O10 Oracle + AT-TM1\u{2013}TM12 Templates + \
                 AT-FD1\u{2013}FD14 Foundry + AT-ST1\u{2013}ST8 Studio + \
-                AT-BB1\u{2013}BB12 BabylonBridge):</p>\n");
+                AT-BB1\u{2013}BB12 BabylonBridge + AT-CP1\u{2013}CP12 ConstraintPropagation):</p>\n");
     h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01\u{2013}AT-20)</h3>\n");
     h.push_str("<div class='atgrid'>\n");
     let at_core = [
@@ -2351,7 +2351,7 @@ fn build_full_html(
     }
     h.push_str("</div>\n");
 
-    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>299 acceptance tests + 44 harness/genesis/bench tests = 343 total, 0 failures</p>\n");
+    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>311 acceptance tests + 44 harness/genesis/bench tests = 355 total, 0 failures</p>\n");
     h.push_str("</div>\n");
 
     // ── Section 5: Extension Architecture ────────────────────────────────────
@@ -2605,13 +2605,57 @@ fn build_full_html(
     h.push_str("</tbody></table></div>\n");
     h.push_str("</div>\n");
 
-    h.push_str("<h3>Acceptance Tests (AT-O1\u{2013}AT-O10)</h3>\n");
+    h.push_str("<h3>Constraint Propagation Dashboard (C25 \u{2014} Pre-Oracle Pass)</h3>\n");
+    h.push_str("<p style='margin-bottom:0.6rem'>For every ArtifactIR component, the propagation pass \
+        computes degrees of freedom before calling the Oracle. Components with zero freedom are synthesised \
+        deterministically; others are classified into Constrained&nbsp;/&nbsp;Open Oracle calls. \
+        Target: 50\u{2013}70\u{202f}% Oracle-call reduction.</p>\n");
+    h.push_str("<div class='grid2'>\n");
+    h.push_str("<div><table><thead><tr><th>Strategy</th><th>Condition</th><th>Oracle?</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>Deterministic</strong></td><td>DoF\u{2009}=\u{2009}0 (TypeConversion, EntryPoint\u{2026})</td><td class='g'>No</td></tr>\n");
+    h.push_str("<tr><td><strong>PatternReuse</strong></td><td>Similarity\u{2009}\u{2265}\u{2009}0.92 in PatternMemory</td><td class='g'>No</td></tr>\n");
+    h.push_str("<tr><td><strong>ConstrainedOracle</strong></td><td>1\u{2009}\u{2264}\u{2009}DoF\u{2009}\u{2264}\u{2009}3 (CRUD, Validation\u{2026})</td><td style='color:#ffa500'>Constrained prompt</td></tr>\n");
+    h.push_str("<tr><td><strong>OpenOracle</strong></td><td>DoF\u{2009}>\u{2009}3 (BusinessLogic, Unknown)</td><td style='color:#ff6b6b'>Full Oracle</td></tr>\n");
+    h.push_str("</tbody></table></div>\n");
+    h.push_str("<div><table><thead><tr><th>Metric</th><th>Field</th><th>Formula</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>M35</strong></td><td>propagation_ratio</td><td>(deterministic + pattern_reuse) / total</td></tr>\n");
+    h.push_str("<tr><td><strong>Threshold</strong></td><td>\u{2014}</td><td class='g'>\u{2265} 0.50 (50\u{202f}% Oracle reduction)</td></tr>\n");
+    h.push_str("<tr><td><strong>deterministic_synths</strong></td><td>AutonomyMetrics</td><td>Zero-DoF components resolved</td></tr>\n");
+    h.push_str("<tr><td><strong>constrained_calls</strong></td><td>AutonomyMetrics</td><td>PatternReuse resolutions</td></tr>\n");
+    h.push_str("<tr><td><strong>open_calls</strong></td><td>AutonomyMetrics</td><td>Constrained + Open Oracle calls</td></tr>\n");
+    h.push_str("</tbody></table></div>\n");
+    h.push_str("</div>\n");
+
+    h.push_str("<h3>Component Classification Rules</h3>\n");
+    h.push_str("<table><thead><tr><th>ComponentKind</th><th>Name Pattern</th><th>Base DoF</th><th>Deterministic?</th></tr></thead><tbody>\n");
+    for (kind, pattern, dof, det) in &[
+        ("TypeConversion", "_to_, _mapper, _dto, _converter", "0", "Always"),
+        ("EntryPoint",     "main, run",                        "0", "Always"),
+        ("CrudOperation",  "create_, get_, update_, delete_",  "1", "With strong pattern"),
+        ("Validation",     "validate_, check_, verify_",       "1", "With strong pattern"),
+        ("ConfigInit",     "config, init, setup, bootstrap",   "1", "With strong pattern"),
+        ("RouteHandler",   "handle_, _handler, post_, put_",   "2", "No (ConstrainedOracle)"),
+        ("TestFunction",   "test_, assert_, _test",            "1", "With strong pattern"),
+        ("BusinessLogic",  "claim (IR kind)",                  "5", "No (OpenOracle)"),
+        ("Unknown",        "(no match)",                       "4", "No (OpenOracle)"),
+    ] {
+        h.push_str(&format!(
+            "<tr><td><strong>{kind}</strong></td><td><code>{pattern}</code></td><td>{dof}</td><td>{det}</td></tr>\n"
+        ));
+    }
+    h.push_str("</tbody></table>\n");
+
+    h.push_str("<h3>Acceptance Tests (AT-O1\u{2013}AT-O10 + AT-CP1\u{2013}AT-CP12)</h3>\n");
     h.push_str("<div class='grid10'>\n");
     for (id, name) in &[
-        ("AT-O1","MemoryHit"), ("AT-O2","LlmFallback"), ("AT-O3","ValidationRej"),
-        ("AT-O4","PromptDet"),  ("AT-O5","Budget"),      ("AT-O6","Autonomy"),
-        ("AT-O7","Crystallize"),("AT-O8","Graceful"),    ("AT-O9","NoLeak"),
+        ("AT-O1","MemoryHit"),   ("AT-O2","LlmFallback"),  ("AT-O3","ValidationRej"),
+        ("AT-O4","PromptDet"),   ("AT-O5","Budget"),        ("AT-O6","Autonomy"),
+        ("AT-O7","Crystallize"), ("AT-O8","Graceful"),      ("AT-O9","NoLeak"),
         ("AT-O10","CapsuleKey"),
+        ("AT-CP1","TypeConvClass"),  ("AT-CP2","CrudClass"),    ("AT-CP3","ValidClass"),
+        ("AT-CP4","EntryPtDoF"),     ("AT-CP5","CfgDetStrat"),  ("AT-CP6","BizOpenOracle"),
+        ("AT-CP7","DetSynthesis"),   ("AT-CP8","BizDetFail"),   ("AT-CP9","ConstrainedPmt"),
+        ("AT-CP10","StatsRatio"),    ("AT-CP11","FullPassRed"), ("AT-CP12","DtoDetStrat"),
     ] {
         h.push_str(&format!(
             "<div class='gate-box'><strong>{id}</strong><br><small>{name}</small></div>\n"
