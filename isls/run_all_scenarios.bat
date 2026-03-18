@@ -16,6 +16,26 @@ echo  One click. Everything.
 echo ============================================
 echo.
 
+:: ─── API-Key Eingabe ────────────────────────────────────────────────────────
+if not defined OPENAI_API_KEY (
+  if not defined ANTHROPIC_API_KEY (
+    echo Kein API-Key gesetzt. Bitte jetzt eingeben.
+    echo Einfach ENTER druecken um ohne Live-Oracle zu starten.
+    echo.
+    set /p "BENCH_PROVIDER=Provider (openai / anthropic / leer): "
+    if /i "!BENCH_PROVIDER!"=="openai" (
+      set /p "OPENAI_API_KEY=OpenAI API-Key (sk-...): "
+    ) else if /i "!BENCH_PROVIDER!"=="anthropic" (
+      set /p "ANTHROPIC_API_KEY=Anthropic API-Key (sk-ant-...): "
+    )
+    echo.
+  )
+)
+if defined OPENAI_API_KEY    echo   Aktiv: OpenAI
+if defined ANTHROPIC_API_KEY echo   Aktiv: Anthropic
+if not defined OPENAI_API_KEY if not defined ANTHROPIC_API_KEY echo   Kein Key - Live-Oracle wird uebersprungen.
+echo.
+
 :: ─── Step 1: Build ─────────────────────────────────────────────────────────
 echo [1/11] Building release binary...
 echo        (First build compiles bundled SQLite from C — requires MSVC or MinGW-w64)
