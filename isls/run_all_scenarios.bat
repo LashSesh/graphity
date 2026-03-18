@@ -153,7 +153,7 @@ echo.
 
 :: ─── Step 6: Gateway + B23 latency benchmark ──────────────────────────────
 echo [6/11] Starting gateway for B23 latency benchmark...
-start /b %ISLS% serve --port 8420
+start "" /b %ISLS% serve --port 8420
 timeout /t 3 /nobreak >nul
 
 echo        Running B23 (gateway_latency)...
