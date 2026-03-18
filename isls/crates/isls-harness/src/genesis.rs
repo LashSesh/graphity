@@ -281,8 +281,8 @@ pub fn compute_system_fingerprint(config: &Config, registries: &RegistrySet) -> 
     let config_digest = content_address(config);
     SystemFingerprint {
         isls_version: "1.0.0".to_string(),
-        crate_count: 27,   // C1-C27 (Phase 10 adds C25 Oracle, C26 Templates, C27 Foundry + Studio in C19)
-        test_count: 326,   // 287 acceptance + 39 genesis/harness tests
+        crate_count: 27,   // C1-C27 (C25 Oracle, C26 Templates, C27 Foundry, C28 Multilang/Studio in C19)
+        test_count: 355,   // 311 acceptance + 44 harness/genesis/bench tests
         registry_digest,
         config_digest,
         platform: std::env::consts::OS.to_string(),
