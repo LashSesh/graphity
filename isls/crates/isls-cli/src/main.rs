@@ -1489,10 +1489,16 @@ fn cmd_forge_multilang(
         let mut cfg = OracleConfig::default();
         if let Some(p) = oracle_provider {
             cfg.provider = Some(p.to_string());
-            // Set sensible defaults for OpenAI provider
-            if p == "openai" {
-                cfg.model = "gpt-4o-mini".to_string();
-                cfg.api_key_source = "env:OPENAI_API_KEY".to_string();
+            match p {
+                "openai" => {
+                    cfg.model = "gpt-4o-mini".to_string();
+                    cfg.api_key_source = "env:OPENAI_API_KEY".to_string();
+                }
+                "anthropic" | "claude" => {
+                    // Anthropic keys (sk-ant-...) must NOT go through the OpenAI key path
+                    cfg.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
+                }
+                _ => {}
             }
         }
         cfg

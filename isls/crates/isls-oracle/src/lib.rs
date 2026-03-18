@@ -1029,6 +1029,10 @@ impl OracleEngine {
             config.api_key_source.clone()
         };
 
+        // Helper: is this key format an OpenAI key?
+        // Anthropic keys start with "sk-ant-"; OpenAI keys start with "sk-" but NOT "sk-ant-".
+        let is_openai_key = |k: &str| k.starts_with("sk-") && !k.starts_with("sk-ant-");
+
         match config.provider.as_deref() {
             Some("openai") => {
                 // Explicit OpenAI: use resolved key, or fall back to env var
@@ -1045,8 +1049,8 @@ impl OracleEngine {
                 }
                 Box::new(oracle)
             }
-            Some("claude") => {
-                // Explicit Claude: use resolved key, or fall back to env var
+            // "anthropic" is an accepted alias for "claude"
+            Some("claude") | Some("anthropic") => {
                 let key = if !api_key.is_empty() {
                     api_key
                 } else {
@@ -1055,10 +1059,12 @@ impl OracleEngine {
                 Box::new(ClaudeOracle::new(key))
             }
             _ => {
-                // Auto-detect: check ANTHROPIC_API_KEY first, then OPENAI_API_KEY
+                // Auto-detect: check ANTHROPIC_API_KEY first, then OPENAI_API_KEY.
+                // When api_key_source resolves to a key, distinguish by key format:
+                //   sk-ant-... → Anthropic/Claude
+                //   sk-...     → OpenAI
                 if !api_key.is_empty() {
-                    // api_key_source was explicit — infer provider from key format
-                    if api_key.starts_with("sk-") {
+                    if is_openai_key(&api_key) {
                         let mut oracle = OpenAIOracle::new(api_key);
                         if !config.model.is_empty()
                             && config.model != "claude-sonnet-4-20250514"
@@ -1067,6 +1073,7 @@ impl OracleEngine {
                         }
                         return Box::new(oracle);
                     }
+                    // sk-ant-... or other formats → ClaudeOracle
                     return Box::new(ClaudeOracle::new(api_key));
                 }
                 if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
@@ -1085,7 +1092,7 @@ impl OracleEngine {
                         return Box::new(oracle);
                     }
                 }
-                // No key found — return empty ClaudeOracle (skeleton fallback path)
+                // No key found — skeleton fallback
                 Box::new(ClaudeOracle::new(String::new()))
             }
         }

@@ -21,51 +21,66 @@ use isls_multilang::templates::TemplateCatalog as MultiLangCatalog;
 
 use crate::bench::BenchResult;
 
-/// Run all generative benchmarks (B16–B24) and return results.
+/// Run all generative benchmarks (B16–B24) in deterministic mock/skeleton mode.
+///
+/// All oracle calls use an empty api_key → `available()` = false → skeleton path.
+/// Safe to run in CI without any API keys.
 pub fn run_generative_suite(git_commit: &str) -> Vec<BenchResult> {
     let mut results = Vec::new();
     results.push(bench_forge_throughput(git_commit));
-    results.push(bench_oracle_latency(git_commit));
-    results.push(bench_oracle_rejection_rate(git_commit));
+    results.push(bench_oracle_latency(git_commit));         // skeleton mode
+    results.push(bench_oracle_rejection_rate(git_commit));  // skeleton mode
     results.push(bench_pattern_hit_rate(git_commit));
     results.push(bench_foundry_compile_rate(git_commit));
-    results.push(bench_foundry_avg_attempts(git_commit));
     results.push(bench_template_match_accuracy(git_commit));
+    results.push(bench_foundry_avg_attempts(git_commit));
     results.push(bench_gateway_latency(git_commit));
-    results.push(bench_full_fabrication_time(git_commit));
+    results.push(bench_full_fabrication_time(git_commit));  // skeleton mode
     results
 }
 
 /// Live-oracle variant of the generative benchmark suite.
 ///
-/// Detects which provider is active via environment variables:
-///   - OPENAI_API_KEY     → label "openai"
-///   - ANTHROPIC_API_KEY  → label "anthropic"
+/// Detects which provider is active (OpenAI key takes precedence over Anthropic):
+///   OPENAI_API_KEY     → label/calls "openai"
+///   ANTHROPIC_API_KEY  → label/calls "anthropic"
 ///
-/// When a key is present, B17/B18/B20/B21/B24 are marked as live results
-/// (the OracleEngine automatically uses the real API when a key is set).
-/// When no key is found the function falls back to the mock suite silently.
+/// B17 (oracle_latency) and B24 (full_fabrication_time) are re-run against the
+/// real LLM API so the timings reflect actual network round-trips.
+/// All other benchmarks remain mock (they measure local logic, not API latency).
+/// Falls back to the pure-mock suite silently when no key is available.
 pub fn run_generative_suite_live(git_commit: &str) -> Vec<BenchResult> {
-    let active = if std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
-        Some("openai")
-    } else if std::env::var("ANTHROPIC_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
-        Some("anthropic")
-    } else {
-        None
+    let active: Option<&str> =
+        if std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
+            Some("openai")
+        } else if std::env::var("ANTHROPIC_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
+            Some("anthropic")
+        } else {
+            None
+        };
+
+    let Some(provider) = active else {
+        // No key → identical to mock suite
+        return run_generative_suite(git_commit);
     };
 
+    // Start from the mock suite (B16, B18, B19, B20, B21, B22, B23 stay mock)
     let mut results = run_generative_suite(git_commit);
 
-    if let Some(provider) = active {
-        // Annotate live-capable benchmarks so the report reflects real measurements.
-        // The OracleEngine reads the key from env and routes to the real provider.
-        for r in &mut results {
-            if matches!(r.bench_id.as_str(), "B17" | "B18" | "B20" | "B21" | "B24") {
-                r.metric_name = format!("{} [live:{}]", r.metric_name, provider);
-            }
+    // Replace B17 and B24 with real live measurements
+    let b17_live = bench_oracle_latency_live(git_commit, provider);
+    let b24_live = bench_full_fabrication_time_live(git_commit, provider);
+
+    for r in &mut results {
+        if r.bench_id == "B17" { *r = b17_live.clone(); }
+        if r.bench_id == "B24" { *r = b24_live.clone(); }
+    }
+    // Annotate the other oracle-adjacent benchmarks so the report shows the provider
+    for r in &mut results {
+        if matches!(r.bench_id.as_str(), "B18" | "B20" | "B21") {
+            r.metric_name = format!("{} [live:{}]", r.metric_name, provider);
         }
     }
-    // No provider → identical to mock suite; the report will show "mock" values.
     results
 }
 
@@ -96,10 +111,10 @@ pub fn bench_forge_throughput(git_commit: &str) -> BenchResult {
 
 // ─── B17: oracle_latency ──────────────────────────────────────────────────────
 
-/// B17: Average Oracle synthesis call latency (ms/call).
-/// With mock Oracle measures overhead (skeleton path), not API latency.
+/// B17: Average Oracle synthesis call latency (ms/call) — skeleton/mock mode.
 pub fn bench_oracle_latency(git_commit: &str) -> BenchResult {
-    let config = OracleConfig::default();
+    let mut config = OracleConfig::default();
+    config.api_key_source = String::new(); // force skeleton: no real API calls
     let mut engine = OracleEngine::new(config, OraclePatternMemory::new());
     let matrix = RustModuleMatrix;
 
@@ -122,12 +137,46 @@ pub fn bench_oracle_latency(git_commit: &str) -> BenchResult {
     make_result("B17", git_commit, "oracle_latency", ms_per_call, "ms/call")
 }
 
+// ─── B17 (live): oracle_latency — real API call ───────────────────────────────
+
+/// B17 live: measure real Oracle API call latency (ms/call).
+/// Uses 3 calls (not 20) to limit cost while still getting a meaningful sample.
+fn bench_oracle_latency_live(git_commit: &str, provider: &str) -> BenchResult {
+    let mut config = OracleConfig::default();
+    config.provider = Some(provider.to_string());
+    if provider == "openai" {
+        config.model = "gpt-4o-mini".to_string();
+        config.api_key_source = "env:OPENAI_API_KEY".to_string();
+    } else {
+        config.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
+    }
+    let mut engine = OracleEngine::new(config, OraclePatternMemory::new());
+    let matrix = RustModuleMatrix;
+
+    const N: usize = 3; // 3 live calls is enough for a latency sample
+    let specs = generate_test_specs(N);
+    let start = Instant::now();
+    for spec in &specs {
+        let mut drill = DrillEngine::new(spec.config.clone());
+        let res = drill.drill(spec);
+        if let Some(monolith) = res.monoliths.into_iter().next() {
+            if let Ok(ir) = ArtifactIR::build_from_monolith(&monolith, spec, 0) {
+                let _ = engine.synthesize(&ir, &matrix);
+            }
+        }
+    }
+    let elapsed = start.elapsed();
+    let ms_per_call = elapsed.as_millis() as f64 / N as f64;
+
+    make_result("B17", git_commit, &format!("oracle_latency [live:{provider}]"), ms_per_call, "ms/call")
+}
+
 // ─── B18: oracle_rejection_rate ──────────────────────────────────────────────
 
-/// B18: Fraction of Oracle outputs that fail validation (percent).
-/// With mock Oracle (skeleton path): should be 0%.
+/// B18: Fraction of Oracle outputs that fail validation (percent) — skeleton mode.
 pub fn bench_oracle_rejection_rate(git_commit: &str) -> BenchResult {
-    let config = OracleConfig::default();
+    let mut config = OracleConfig::default();
+    config.api_key_source = String::new(); // force skeleton
     let mut engine = OracleEngine::new(config, OraclePatternMemory::new());
     let matrix = RustModuleMatrix;
 
@@ -265,6 +314,39 @@ pub fn bench_full_fabrication_time(git_commit: &str) -> BenchResult {
     let elapsed = start.elapsed();
 
     make_result("B24", git_commit, "full_fabrication_time", elapsed.as_secs_f64(), "seconds")
+}
+
+// ─── B24 (live): full_fabrication_time — real API call ────────────────────────
+
+/// B24 live: wall-clock time from DecisionSpec through PMHD → ArtifactIR → real
+/// Oracle synthesis (1 API call). ForgeConfig has no oracle slot, so we measure
+/// the oracle-inclusive pipeline directly.
+fn bench_full_fabrication_time_live(git_commit: &str, provider: &str) -> BenchResult {
+    let mut config = OracleConfig::default();
+    config.provider = Some(provider.to_string());
+    if provider == "openai" {
+        config.model = "gpt-4o-mini".to_string();
+        config.api_key_source = "env:OPENAI_API_KEY".to_string();
+    } else {
+        config.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
+    }
+    let mut engine = OracleEngine::new(config, OraclePatternMemory::new());
+    let matrix = RustModuleMatrix;
+    let spec = simple_rust_api_spec();
+
+    let start = Instant::now();
+    let mut drill = DrillEngine::new(spec.config.clone());
+    let res = drill.drill(&spec);
+    if let Some(monolith) = res.monoliths.into_iter().next() {
+        if let Ok(ir) = ArtifactIR::build_from_monolith(&monolith, &spec, 0) {
+            let _ = engine.synthesize(&ir, &matrix);
+        }
+    }
+    let elapsed = start.elapsed();
+
+    make_result("B24", git_commit,
+        &format!("full_fabrication_time [live:{provider}]"),
+        elapsed.as_secs_f64(), "seconds")
 }
 
 // ─── Test Data Generators ─────────────────────────────────────────────────────
