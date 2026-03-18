@@ -1,0 +1,805 @@
+%%% =======================================================================
+%%% ISLS Extension Phase 9 v1.0.0
+%%% The Studio: Unified Operator Interface
+%%% Web-Based Command Bridge for the ISLS Substrate
+%%% Author: Sebastian Klemm
+%%% Date: 18 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+\newcommand{\ISLS}{\textsf{ISLS}}
+
+\definecolor{sec-color}{HTML}{1e3a5f}
+\definecolor{dim}{HTML}{64748b}
+
+\titleformat{\section}
+  {\Large\bfseries\color{sec-color}}
+  {\thesection}{1em}{}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Extension Phase 9 v1.0.0}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Phase 9 — The Studio},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+{\Huge\bfseries \ISLS{} Extension Phase~9\\[0.3cm]
+v1.0.0}\\[1.5cm]
+{\Large The Studio}\\[1cm]
+{\large Unified Web-Based Operator Interface\\[0.3cm]
+One screen. Everything the system can do.\\[0.3cm]
+Type what you want. Watch it build.}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 18 March 2026}\\[1.5cm]
+
+\begin{abstract}
+\noindent
+This document specifies the \ISLS{} Studio: a single-page web
+application served by the Gateway (C19) that provides a unified
+operator interface for the entire substrate. No new Rust crate is
+needed --- the Studio is a static HTML/JS/CSS bundle served by the
+existing Axum server, communicating via the existing REST and
+WebSocket APIs.
+
+The Studio has seven views: Dashboard (system health at a glance),
+Forge (describe what you want, watch it build), Explorer (browse
+crystals, manifests, patterns), Monitor (live engine metrics and
+events), Foundry (project fabrication with compile feedback), Oracle
+(autonomy metrics, pattern memory, budget), and Constitution (Genesis
+Crystal, ADAMANT status).
+
+Design principles: dark theme, keyboard-first, minimal clicks,
+real-time updates via WebSocket, zero external dependencies (no npm,
+no React, no build step --- pure vanilla HTML/JS/CSS served as a
+single file from the binary).
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Parent:} ISLS v1.0.0 + Extensions Phase 1--8.\\
+\textbf{Depends on:} C19 (Gateway REST + WebSocket), all prior crates
+  (exposed via Gateway).\\
+\textbf{Implementation:} Single HTML file embedded in the
+  \texttt{isls-gateway} crate as a static asset. No new crate.
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+%%% =====================================================================
+\part{Architecture}\label{part:arch}
+
+\section{Why a Web UI}\label{sec:why}
+
+The Gateway (C19) already serves REST and WebSocket endpoints. The
+HTML report already demonstrates that the system can render rich
+output. The Studio extends this to an interactive, real-time
+interface without adding any new backend code --- it consumes the
+existing API.
+
+\begin{itemize}[nosep]
+  \item No new Rust crate. The Studio is a static asset in
+        \texttt{isls-gateway}.
+  \item No build toolchain (no npm, no webpack, no React). Pure
+        HTML + vanilla JS + CSS. One file.
+  \item Served at \texttt{http://localhost:8420/studio} when
+        the gateway is running.
+  \item Dark theme matching the existing HTML report aesthetic.
+  \item Real-time via WebSocket (\texttt{ws://localhost:8420/events}).
+  \item Keyboard shortcuts for every action.
+\end{itemize}
+
+\section{Technology}\label{sec:tech}
+
+\begin{lstlisting}[title={No build step. One file.}]
+isls-gateway/
+  src/
+    static/
+      studio.html     <-- THE ENTIRE STUDIO
+                          HTML + CSS + JS in one file
+                          Embedded as include_str! in Axum
+                          Served at GET /studio
+\end{lstlisting}
+
+The Studio uses:
+\begin{itemize}[nosep]
+  \item Vanilla JavaScript (ES2020+, no framework)
+  \item CSS Grid + Flexbox for layout
+  \item WebSocket for real-time events
+  \item \texttt{fetch()} for REST API calls
+  \item \texttt{<canvas>} for charts (no chart library ---
+        hand-drawn with Canvas API)
+  \item CSS custom properties for theming
+  \item \texttt{localStorage} for user preferences (panel sizes,
+        last view)
+\end{itemize}
+
+
+%%% =====================================================================
+\part{The Seven Views}\label{part:views}
+
+\section{Navigation}\label{sec:nav}
+
+A sidebar on the left with seven icons. Clicking an icon switches
+the main content area. Keyboard shortcut: \texttt{1}--\texttt{7}
+switches views.
+
+\begin{lstlisting}[title={Sidebar Navigation}]
+[D] Dashboard       (Ctrl+1)
+[F] Forge            (Ctrl+2)
+[E] Explorer         (Ctrl+3)
+[M] Monitor          (Ctrl+4)
+[B] Foundry/Build    (Ctrl+5)
+[O] Oracle           (Ctrl+6)
+[C] Constitution     (Ctrl+7)
+\end{lstlisting}
+
+Bottom of sidebar: system status pill (GREEN/YELLOW/RED), uptime,
+crystal count, test count.
+
+
+%%% -------------------------------------------------------------------
+\section{View 1: Dashboard}\label{sec:dashboard}
+
+The landing page. System health at a glance.
+
+\begin{lstlisting}[title={Dashboard Layout}]
++--------------------------------------------------+
+|  ISLS v1.0.0  |  Uptime: 4h 23m  | 311 tests    |
++--------------------------------------------------+
+|                                                    |
+|  [Health: GREEN]  [Crystals: 146]  [Drift: NONE]  |
+|                                                    |
+|  +-- Scenario Summary (from last run) -----------+ |
+|  | S-Basic  51 crystals  100%                    | |
+|  | S-Regime 22 crystals  100%                    | |
+|  | S-Causal 16 crystals  100%                    | |
+|  | S-Break  21 crystals  100%                    | |
+|  | S-Scale  36 crystals  100%                    | |
+|  +-----------------------------------------------+ |
+|                                                    |
+|  +-- Key Metrics --------------------------------+ |
+|  | Ingestion: 234K obs/s  Replay: 18K steps/s   | |
+|  | Evidence: 5us/verify   Memory: 0.99 MB       | |
+|  | Autonomy: 0% (no forge runs yet)              | |
+|  +-----------------------------------------------+ |
+|                                                    |
+|  +-- Live Event Feed (WebSocket) ----------------+ |
+|  | 12:04:23 crystal emitted (S-Basic tick 42)    | |
+|  | 12:04:22 gate: accept (d=0.61 q=0.54)        | |
+|  | 12:04:21 tick 42: 50 entities, 1 crystal      | |
+|  +-----------------------------------------------+ |
+|                                                    |
+|  +-- Constitution --------------------------------+ |
+|  | Genesis: a315ea43  C4  21/21  Drift: NONE     | |
+|  +-----------------------------------------------+ |
++--------------------------------------------------+
+\end{lstlisting}
+
+\textbf{Data sources:} \texttt{GET /health}, \texttt{GET /status},
+\texttt{GET /metrics}, \texttt{GET /crystals?limit=5},
+\texttt{ws://events} for live feed.
+
+
+%%% -------------------------------------------------------------------
+\section{View 2: Forge}\label{sec:forge}
+
+The generative interface. Describe what you want; watch it build.
+
+\begin{lstlisting}[title={Forge View Layout}]
++--------------------------------------------------+
+|  FORGE                                             |
++--------------------------------------------------+
+|                                                    |
+|  [Intent Input - large text area]                  |
+|  "Build a REST API for a bookmark manager          |
+|   with tags, search, and user authentication"      |
+|                                                    |
+|  Domain: [Rust v]  Template: [Auto-detect v]       |
+|  Strategy: [Hybrid v]  Max atoms: [20]             |
+|                                                    |
+|  [ FORGE ]  (Ctrl+Enter)                           |
+|                                                    |
+|  +-- Progress ------------------------------------+ |
+|  | Template matched: T01 (REST API)               | |
+|  | Decomposing... 11 atoms, 4 molecules           | |
+|  | [===========___________] 5/11 atoms forged     | |
+|  |                                                 | |
+|  | Atom: service (Oracle) ... generating...        | |
+|  | Atom: middleware (Memory) ... done (0.01s)      | |
+|  | Atom: router (Oracle) ... done (1.2s)           | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Output Preview (live) ----------------------+ |
+|  | src/router.rs                                  | |
+|  | +-----------------------------------------+   | |
+|  | | pub async fn list_bookmarks(            |   | |
+|  | |     State(db): State<SqlitePool>,       |   | |
+|  | |     Query(params): Query<ListParams>,   |   | |
+|  | | ) -> Result<Json<Vec<Bookmark>>, ...     |   | |
+|  | +-----------------------------------------+   | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Composition Tree ----------------------------+ |
+|  | System: bookmark-api                           | |
+|  |   +- api-layer (3 atoms)                      | |
+|  |   +- domain-layer (4 atoms)                   | |
+|  |   +- infra-layer (4 atoms)                    | |
+|  +------------------------------------------------+ |
++--------------------------------------------------+
+\end{lstlisting}
+
+\textbf{Interaction:}
+\begin{enumerate}[nosep]
+  \item Operator types intent in the text area.
+  \item Selects domain and optional template.
+  \item Clicks FORGE or presses Ctrl+Enter.
+  \item Studio sends \texttt{POST /forge} with spec.
+  \item Subscribes to \texttt{ws://events} filtered to forge events.
+  \item Progress updates in real-time (atom by atom).
+  \item When complete: output files shown in preview panel.
+  \item Operator can click any file to see full content.
+  \item Download button: ZIP of the complete project.
+\end{enumerate}
+
+
+%%% -------------------------------------------------------------------
+\section{View 3: Explorer}\label{sec:explorer}
+
+Browse and inspect everything the system has produced.
+
+\begin{lstlisting}[title={Explorer Layout}]
++--------------------------------------------------+
+|  EXPLORER                                          |
++--------------------------------------------------+
+|  [Crystals] [Manifests] [Patterns] [Templates]    |
+|                                                    |
+|  Search: [________________] Filter: [All scales v] |
+|                                                    |
+|  +-- Crystal List --------------------------------+ |
+|  | ID          Tick  Score  Scale  Checks         | |
+|  | a7b3c9..    42    0.78   micro  8/8            | |
+|  | f2d1e8..    43    0.81   micro  8/8            | |
+|  | 3c9a7b..    45    0.72   meso   8/8            | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Crystal Detail (click to expand) ------------+ |
+|  | Crystal: a7b3c9...                             | |
+|  | Created: tick 42 | Scale: micro                | |
+|  | Stability: 0.78  | Free Energy: -3.2           | |
+|  |                                                 | |
+|  | Constraint Program (3 constraints):             | |
+|  |   1. entity_correlation(BTC, ETH) > 0.7        | |
+|  |   2. window_stability(50 ticks) = true          | |
+|  |   3. dual_consensus(primal, dual) > 0.9         | |
+|  |                                                 | |
+|  | Topology: spectral_gap=0.12, kuramoto_r=0.87   | |
+|  |                                                 | |
+|  | Evidence Chain: 42 entries, hash-verified       | |
+|  |                                                 | |
+|  | [Validate] [Replay] [Export] [Forge from this]  | |
+|  +------------------------------------------------+ |
++--------------------------------------------------+
+\end{lstlisting}
+
+\textbf{Features:}
+\begin{itemize}[nosep]
+  \item Four tabs: Crystals, Manifests, Patterns, Templates.
+  \item Search by ID, tick, scale, domain.
+  \item Click crystal to expand detail panel.
+  \item ``Forge from this'' button: takes crystal to Forge view
+        as seed.
+  \item ``Validate'' button: runs formal validation on this crystal.
+  \item ``Export'' button: downloads crystal + evidence as JSON.
+\end{itemize}
+
+
+%%% -------------------------------------------------------------------
+\section{View 4: Monitor}\label{sec:monitor}
+
+Live engine telemetry. Real-time charts and event stream.
+
+\begin{lstlisting}[title={Monitor Layout}]
++--------------------------------------------------+
+|  MONITOR            [Start] [Stop] [Step]          |
++--------------------------------------------------+
+|                                                    |
+|  Engine: RUNNING  Tick: 142  Entities: 2,034       |
+|  Crystals this run: 23  Mode: shadow               |
+|                                                    |
+|  +-- Metric Charts (canvas, real-time) -----------+ |
+|  | [Coherence over time    ~~~~~~~~~~~~]          | |
+|  | [Gate selectivity       ~~~~~~~~~~~~]          | |
+|  | [Crystal rate           ~~~~~~~~~~~~]          | |
+|  | [Spectral gap           ~~~~~~~~~~~~]          | |
+|  | [Kuramoto r             ~~~~~~~~~~~~]          | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Live Event Stream ---------------------------+ |
+|  | [crystal] [gate] [tick] [alert] [scale]        | |
+|  | 12:04:23 crystal a7b3c9 emitted (score 0.78)  | |
+|  | 12:04:22 gate ACCEPT d=0.61 q=0.54 r=0.78    | |
+|  | 12:04:21 tick 142: 2034 entities               | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Scale State ---------------------------------+ |
+|  | Micro: 2034 entities  Meso: 12 clusters        | |
+|  | Macro: 3 domains  Bridges: 8 active            | |
+|  +------------------------------------------------+ |
++--------------------------------------------------+
+\end{lstlisting}
+
+\textbf{Features:}
+\begin{itemize}[nosep]
+  \item Start/Stop/Step buttons control the engine via
+        \texttt{POST /engine/start|stop|step}.
+  \item Real-time line charts drawn on \texttt{<canvas>}, updated
+        every tick via WebSocket.
+  \item Event stream with filter buttons (crystal, gate, tick,
+        alert, scale).
+  \item Scale state panel shows multi-scale hierarchy.
+\end{itemize}
+
+
+%%% -------------------------------------------------------------------
+\section{View 5: Foundry}\label{sec:foundry}
+
+Project fabrication with live compile/test feedback.
+
+\begin{lstlisting}[title={Foundry Layout}]
++--------------------------------------------------+
+|  FOUNDRY                                           |
++--------------------------------------------------+
+|                                                    |
+|  Operation: [New Project v]                        |
+|                                                    |
+|  [Intent / Description]                            |
+|  "REST API for bookmark manager with tags"         |
+|                                                    |
+|  Output: [~/projects/bookmark-api]                 |
+|  [ BUILD ] (Ctrl+Enter)                            |
+|                                                    |
+|  +-- Fabrication Progress ------------------------+ |
+|  | Template: T01 (REST API)                       | |
+|  | Atoms: [==============____] 7/9                | |
+|  | Compile: attempt 2/5                           | |
+|  |                                                 | |
+|  | > cargo check... FAIL                          | |
+|  | error[E0277]: Serialize not implemented for..  | |
+|  | > Oracle correction... sent                    | |
+|  | > cargo check... OK                            | |
+|  | > cargo test... 12/12 passed                   | |
+|  | > cargo clippy... 0 errors                     | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- File Tree -----------------------------------+ |
+|  | bookmark-api/                                  | |
+|  |   Cargo.toml                                   | |
+|  |   src/                                         | |
+|  |     main.rs        [Oracle]                    | |
+|  |     router.rs      [Oracle]                    | |
+|  |     service.rs     [Oracle]                    | |
+|  |     models.rs      [Oracle]                    | |
+|  |     database.rs    [Oracle]                    | |
+|  |     config.rs      [Static]                    | |
+|  |     error.rs       [Pattern]                   | |
+|  |   tests/                                       | |
+|  |     integration.rs [Oracle]                    | |
+|  |   README.md        [Generated]                 | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Code Preview --------------------------------+ |
+|  | (click file to preview)                        | |
+|  +------------------------------------------------+ |
++--------------------------------------------------+
+\end{lstlisting}
+
+\textbf{Operations:} Dropdown switches between: New Project,
+Add Component, Add Endpoint, Implement Trait, Fix, Generate Tests,
+Refactor, Document.
+
+For existing-project operations, a ``Project Directory'' field
+appears.
+
+
+%%% -------------------------------------------------------------------
+\section{View 6: Oracle}\label{sec:oracle}
+
+Autonomy metrics, pattern memory browser, budget status.
+
+\begin{lstlisting}[title={Oracle Layout}]
++--------------------------------------------------+
+|  ORACLE                                            |
++--------------------------------------------------+
+|                                                    |
+|  Autonomy Ratio: [========____] 67% (42/63)       |
+|  Oracle Calls: 21  |  Rejections: 3 (14%)         |
+|  Tokens Used: 34,200  |  Cost: $0.68              |
+|  Budget: 79/100 calls  |  465K/500K tokens         |
+|                                                    |
+|  +-- Autonomy Over Time (chart) -----------------+ |
+|  | [line chart showing ratio increasing]          | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Pattern Memory ------------------------------+ |
+|  | 42 patterns | Domains: rust(28) api(9) schema(5)| |
+|  |                                                 | |
+|  | Search: [________________]                      | |
+|  |                                                 | |
+|  | ID          Domain  Quality  Reuse Count        | |
+|  | p-a7b3..    rust    0.82     7                  | |
+|  | p-f2d1..    api     0.76     3                  | |
+|  | p-3c9a..    rust    0.91     12                 | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- Oracle Configuration ------------------------+ |
+|  | Provider: Claude (claude-sonnet-4-20250514)         | |
+|  | Temperature: 0.0  Max tokens: 4096             | |
+|  | Memory-first: ON  Match threshold: 0.85        | |
+|  | API Key: configured (env)                      | |
+|  +------------------------------------------------+ |
++--------------------------------------------------+
+\end{lstlisting}
+
+
+%%% -------------------------------------------------------------------
+\section{View 7: Constitution}\label{sec:constitution}
+
+Genesis Crystal and ADAMANT conformance status.
+
+\begin{lstlisting}[title={Constitution Layout}]
++--------------------------------------------------+
+|  CONSTITUTION                                      |
++--------------------------------------------------+
+|                                                    |
+|  Genesis Crystal: a315ea43...                      |
+|  ADAMANT Version: v1.0.0                           |
+|  Conformance Class: C4 (Constitutional)            |
+|  Drift: NONE                                       |
+|                                                    |
+|  +-- Constraints (GC-01 to GC-21) ---------------+ |
+|  | GC-01  Axiom 2.0.1  State Boundedness    PASS  | |
+|  | GC-02  Axiom 2.0.2  Typed Operations     PASS  | |
+|  | GC-03  Axiom 2.0.3  Trace Discipline     PASS  | |
+|  | ...                                            | |
+|  | GC-21  Sec 18       Human Override       PASS  | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  +-- System Fingerprint --------------------------+ |
+|  | ISLS v1.0.0 | 27 crates | 311 tests           | |
+|  | Platform: windows | Rust: 1.90.0               | |
+|  | Registry: <digest> | Config: <digest>          | |
+|  +------------------------------------------------+ |
+|                                                    |
+|  [ Validate Genesis ] [ Export Certificate ]        |
++--------------------------------------------------+
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Real-Time Communication}\label{part:realtime}
+
+\section{WebSocket Integration}\label{sec:ws}
+
+\begin{lstlisting}[title={Studio WebSocket Client}]
+const ws = new WebSocket('ws://localhost:8420/events');
+
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+
+    switch (msg.type) {
+        case 'tick':
+            updateMonitorTick(msg.data);
+            break;
+        case 'crystal':
+            updateDashboardCrystal(msg.data);
+            addExplorerCrystal(msg.data);
+            break;
+        case 'gate':
+            updateMonitorGate(msg.data);
+            break;
+        case 'alert':
+            showAlert(msg.data);
+            break;
+        case 'forge_progress':
+            updateForgeProgress(msg.data);
+            break;
+        case 'foundry_progress':
+            updateFoundryProgress(msg.data);
+            break;
+        case 'metric':
+            updateMonitorChart(msg.data);
+            break;
+    }
+};
+
+// Subscribe to relevant events based on current view
+function switchView(view) {
+    ws.send(JSON.stringify({
+        subscribe: getEventsForView(view)
+    }));
+}
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Design System}\label{part:design}
+
+\section{Theme}\label{sec:theme}
+
+\begin{lstlisting}[title={CSS Custom Properties}]
+:root {
+    --bg-primary: #0d0d1a;
+    --bg-secondary: #1a1a2e;
+    --bg-tertiary: #16213e;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0b4d6;
+    --text-dim: #64748b;
+    --accent: #3b82f6;
+    --success: #22c55e;
+    --warning: #eab308;
+    --error: #ef4444;
+    --border: #2a2a4a;
+    --gold: #d4a843;
+
+    --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+    --font-ui: 'Inter', system-ui, sans-serif;
+
+    --radius: 8px;
+    --gap: 1rem;
+}
+\end{lstlisting}
+
+Matches the existing HTML report dark theme exactly.
+
+\section{Responsive Layout}\label{sec:responsive}
+
+\begin{lstlisting}[title={Grid Layout}]
+.studio {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    grid-template-rows: 48px 1fr 32px;
+    height: 100vh;
+}
+
+.sidebar { grid-row: 1 / -1; }
+.header  { grid-column: 2; }
+.content { grid-column: 2; overflow: auto; }
+.status  { grid-column: 2; }
+\end{lstlisting}
+
+
+\section{Keyboard Shortcuts}\label{sec:keyboard}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{Shortcut} & \textbf{Action} \\
+\midrule
+\texttt{Ctrl+1..7} & Switch to view 1--7 \\
+\texttt{Ctrl+Enter} & Execute primary action (Forge/Build) \\
+\texttt{Ctrl+K} & Open command palette (fuzzy search) \\
+\texttt{Ctrl+S} & Start/stop engine \\
+\texttt{Ctrl+E} & Open explorer \\
+\texttt{Escape} & Close modal / cancel operation \\
+\texttt{/} & Focus search field \\
+\bottomrule
+\end{tabularx}
+
+
+\section{Command Palette}\label{sec:cmdpalette}
+
+\texttt{Ctrl+K} opens a fuzzy-search command palette (like VS Code):
+
+\begin{lstlisting}
+> forge rest api for bookmarks
+> start engine shadow mode
+> show crystal a7b3c9
+> validate all crystals
+> oracle status
+> template list
+> foundry new cli tool
+> export report html
+\end{lstlisting}
+
+Commands are matched against a registry of actions. Each action maps
+to an API call. This gives keyboard-only operators a way to do
+everything without touching the mouse.
+
+
+%%% =====================================================================
+\part{Gateway Extensions}\label{part:gateway}
+
+\section{New Endpoints for Studio}\label{sec:endpoints}
+
+\begin{lstlisting}[title={Studio-Specific Endpoints}]
+GET  /studio                  -> Serve the studio.html file
+GET  /api/dashboard           -> Aggregated dashboard data
+GET  /api/forge/progress      -> Current forge progress (polling fallback)
+GET  /api/foundry/progress    -> Current foundry progress
+POST /api/foundry/fabricate   -> Start fabrication (returns stream ID)
+GET  /api/foundry/files/{id}  -> Get generated file content
+GET  /api/foundry/download/{id} -> Download project as ZIP
+POST /api/command             -> Execute a command palette action
+\end{lstlisting}
+
+\section{WebSocket Events for Studio}\label{sec:wsevents}
+
+Two new event types for real-time Forge/Foundry progress:
+
+\begin{lstlisting}
+{ "type": "forge_progress",
+  "data": { "phase": "atom", "index": 5, "total": 9,
+            "atom_name": "service", "source": "oracle",
+            "status": "generating" } }
+
+{ "type": "foundry_progress",
+  "data": { "phase": "compile", "attempt": 2, "max": 5,
+            "status": "fail",
+            "error": "error[E0277]: Serialize not implemented..." } }
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Implementation Notes}\label{part:implnotes}
+
+\section{Single-File Architecture}\label{sec:singlefile}
+
+The entire Studio is one HTML file with inline CSS and JS. This is
+deliberate:
+\begin{itemize}[nosep]
+  \item No build step.
+  \item No node\_modules.
+  \item No framework dependency.
+  \item Embedded in the Rust binary via \texttt{include\_str!}.
+  \item Works offline (once loaded, only needs the API).
+  \item Estimated size: 30--50 KB (fits in a single TCP packet after
+        gzip).
+\end{itemize}
+
+\section{Canvas Charts}\label{sec:charts}
+
+Line charts are drawn directly on \texttt{<canvas>} with a minimal
+charting function (~100 lines of JS). No external chart library.
+
+\begin{lstlisting}[title={Minimal Canvas Chart}]
+function drawLineChart(canvas, data, opts) {
+    const ctx = canvas.getContext('2d');
+    const { width, height } = canvas;
+    const max = Math.max(...data);
+    const min = Math.min(...data);
+    const range = max - min || 1;
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.strokeStyle = opts.color || '#3b82f6';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((v, i) => {
+        const x = (i / (data.length - 1)) * width;
+        const y = height - ((v - min) / range) * height;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+}
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Acceptance Tests}\label{part:tests}
+
+\begin{longtable}{l l p{5.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-ST1 & Studio serves & Start gateway; GET /studio; verify HTML
+  returned with status 200. \\
+AT-ST2 & Dashboard data & GET /api/dashboard; verify JSON contains
+  health, crystal count, metrics. \\
+AT-ST3 & WebSocket connect & Connect to ws://events; verify
+  connection established and heartbeat received. \\
+AT-ST4 & Forge via API & POST /forge with spec; verify response
+  contains crystal ID and artifacts. \\
+AT-ST5 & Foundry via API & POST /api/foundry/fabricate with spec;
+  verify fabrication starts and progress events stream. \\
+AT-ST6 & Explorer query & GET /crystals?limit=5; verify JSON array
+  with crystal summaries. \\
+AT-ST7 & Command palette & POST /api/command with ``start engine'';
+  verify engine starts. \\
+AT-ST8 & Project download & After foundry run; GET download endpoint;
+  verify ZIP file returned. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Handoff}\label{part:handoff}
+
+\section{What Changes}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-gateway/src/static/studio.html} & New file: the entire
+  Studio (HTML + CSS + JS). \\
+\texttt{isls-gateway/src/lib.rs} & Add route: \texttt{GET /studio}
+  serving the static file. Add \texttt{GET /api/dashboard},
+  \texttt{POST /api/command}, forge/foundry progress endpoints. \\
+\texttt{isls-gateway/src/ws.rs} & Add \texttt{forge\_progress} and
+  \texttt{foundry\_progress} event types. \\
+\texttt{isls-cli} & Add hint on \texttt{isls serve}: ``Studio
+  available at http://localhost:8420/studio''. \\
+\bottomrule
+\end{tabularx}
+
+\section{Test Count}
+
+\begin{tabular}{l r r}
+\toprule
+\textbf{Phase} & \textbf{New Tests} & \textbf{Cumulative} \\
+\midrule
+Phase 1--8 & 311 & 311 \\
+Phase 9 (Studio) & 8 & $\ge$ 319 \\
+\bottomrule
+\end{tabular}
+
+\section{Completion Criteria}
+
+\begin{enumerate}[nosep]
+  \item \texttt{isls serve} starts and \texttt{http://localhost:8420/studio}
+        loads.
+  \item All 7 views render with data from the API.
+  \item WebSocket delivers real-time events to the Studio.
+  \item Forge view: type intent, click FORGE, see progress, see output.
+  \item Foundry view: fabricate project, see compile/test feedback.
+  \item Explorer view: browse crystals, inspect details, validate.
+  \item Command palette works with keyboard shortcuts.
+  \item Single HTML file, no external dependencies.
+  \item Total tests $\ge 319$, zero warnings.
+  \item \textbf{One URL. One screen. Everything.}
+\end{enumerate}
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} Extension Phase 9 v1.0.0.\\
+No framework. No build step. No npm.\\
+One HTML file. Seven views. Full control.\\[0.3cm]
+\texttt{isls serve} $\to$ \texttt{localhost:8420/studio} $\to$ everything.}
+\end{center}
+
+\end{document}
