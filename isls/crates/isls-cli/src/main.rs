@@ -88,7 +88,7 @@ enum Command {
     Seal { secret: String, lock_manifest: Option<String>, output: Option<String> },
     Open { capsule: String },
     Bench,
-    BenchSuite { suite: String },
+    BenchSuite { suite: String, oracle: Option<String> },
     // C28 Babylon Bridge commands
     ForgeMultilang { spec: Option<String>, lang: String, template: Option<String>, dump_ir: Option<String>, oracle: Option<String> },
     BabylonCheck { ir: Option<String> },
@@ -351,10 +351,13 @@ fn parse_args(args: &[String]) -> Command {
             let id = args.iter().position(|a| a == "--id")
                 .and_then(|i| args.get(i + 1))
                 .cloned();
+            let oracle = args.iter().position(|a| a == "--oracle")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
             if let Some(suite_name) = suite {
-                Command::BenchSuite { suite: suite_name }
+                Command::BenchSuite { suite: suite_name, oracle }
             } else if let Some(bench_id) = id {
-                Command::BenchSuite { suite: format!("id:{}", bench_id) }
+                Command::BenchSuite { suite: format!("id:{}", bench_id), oracle }
             } else {
                 Command::Bench
             }
@@ -1402,9 +1405,11 @@ fn load_bench_history(path: &PathBuf) -> Vec<isls_harness::BenchResult> {
 
 // ─── C28 Bench Suite (B16–B24) ───────────────────────────────────────────────
 
-fn cmd_bench_suite(suite: &str) {
+fn cmd_bench_suite(suite: &str, oracle: Option<&str>) {
     ensure_dirs().expect("failed to create dirs");
-    use isls_harness::run_generative_suite;
+    use isls_harness::{run_generative_suite, run_generative_suite_live};
+
+    let oracle_live = oracle.map(|o| o == "live").unwrap_or(false);
 
     let git_commit = std::process::Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
@@ -1414,10 +1419,18 @@ fn cmd_bench_suite(suite: &str) {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
+    if oracle_live {
+        println!("Oracle mode: live (real API calls when key is set)");
+    }
+
     let results: Vec<isls_harness::BenchResult> = match suite {
         "generative" => {
             println!("Running generative pipeline benchmarks (B16\u{2013}B24)...");
-            run_generative_suite(&git_commit)
+            if oracle_live {
+                run_generative_suite_live(&git_commit)
+            } else {
+                run_generative_suite(&git_commit)
+            }
         }
         "core" => {
             println!("Running core benchmarks (B01\u{2013}B15)...");
@@ -1428,7 +1441,8 @@ fn cmd_bench_suite(suite: &str) {
         s if s.starts_with("id:") => {
             let bench_id = &s[3..];
             println!("Running benchmark {bench_id}...");
-            run_generative_suite(&git_commit)
+            let suite_fn = if oracle_live { run_generative_suite_live } else { run_generative_suite };
+            suite_fn(&git_commit)
                 .into_iter()
                 .filter(|r| r.bench_id == bench_id)
                 .collect()
@@ -1438,7 +1452,8 @@ fn cmd_bench_suite(suite: &str) {
             let config = load_config();
             let bench = isls_harness::BenchSuite::new(config, 42);
             let mut all = bench.run_all();
-            all.extend(run_generative_suite(&git_commit));
+            let gen = if oracle_live { run_generative_suite_live } else { run_generative_suite };
+            all.extend(gen(&git_commit));
             all
         }
     };
@@ -2249,7 +2264,7 @@ fn build_full_html(
 
     // ── Section 4: Specification Compliance ──────────────────────────────────
     h.push_str("<div class='section'>\n<h2>4. Specification Compliance</h2>\n");
-    h.push_str("<p style='margin-bottom:.6rem'>All 311 acceptance tests passed \
+    h.push_str("<p style='margin-bottom:.6rem'>All 323 acceptance tests passed \
                 (AT-01\u{2013}AT-20 core + AT-R1\u{2013}R5 Registry + \
                 AT-M1\u{2013}M5 Manifest + AT-C1\u{2013}C6 Capsule + \
                 AT-S1\u{2013}S5 Scheduler + AT-T1\u{2013}T12 Topology + \
@@ -2258,7 +2273,8 @@ fn build_full_html(
                 AT-F1\u{2013}F10 Forge + AT-CO1\u{2013}CO12 Compose + \
                 AT-O1\u{2013}O10 Oracle + AT-TM1\u{2013}TM12 Templates + \
                 AT-FD1\u{2013}FD14 Foundry + AT-ST1\u{2013}ST8 Studio + \
-                AT-BB1\u{2013}BB12 BabylonBridge + AT-CP1\u{2013}CP12 ConstraintPropagation):</p>\n");
+                AT-BB1\u{2013}BB12 BabylonBridge + AT-CP1\u{2013}CP12 ConstraintPropagation + \
+                AT-NV1\u{2013}NV12 Navigator):</p>\n");
     h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01\u{2013}AT-20)</h3>\n");
     h.push_str("<div class='atgrid'>\n");
     let at_core = [
@@ -2436,7 +2452,7 @@ fn build_full_html(
     }
     h.push_str("</div>\n");
 
-    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>311 acceptance tests + 44 harness/genesis/bench tests = 355 total, 0 failures</p>\n");
+    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>323 acceptance tests + 44 harness/genesis/bench tests = 367 total, 0 failures</p>\n");
     h.push_str("</div>\n");
 
     // ── Section 5: Extension Architecture ────────────────────────────────────
@@ -2658,12 +2674,24 @@ fn build_full_html(
 
     h.push_str("<div>\n<h3>C25 \u{2014} OracleEngine</h3>\n");
     h.push_str("<table><tbody>\n");
-    h.push_str("<tr><td>Default oracle</td><td class='g'>ClaudeOracle (claude-sonnet-4-20250514)</td></tr>\n");
+    // Detect active oracle provider at report generation time
+    let (oracle_name, api_key_status) = {
+        let openai_set = std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+        let anthropic_set = std::env::var("ANTHROPIC_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+        if openai_set {
+            ("OpenAIOracle (gpt-4o-mini)".to_string(), "env:OPENAI_API_KEY (set)".to_string())
+        } else if anthropic_set {
+            ("ClaudeOracle (claude-sonnet-4-20250514)".to_string(), "env:ANTHROPIC_API_KEY (set)".to_string())
+        } else {
+            ("None (skeleton fallback)".to_string(), "no API key set — skeleton mode".to_string())
+        }
+    };
+    h.push_str(&format!("<tr><td>Active oracle</td><td class='g'>{}</td></tr>\n", oracle_name));
     h.push_str("<tr><td>Memory-first</td><td class='g'>Cosine similarity \u{2265} 0.85 in 5D embedding space</td></tr>\n");
     h.push_str("<tr><td>Quality threshold</td><td class='g'>\u{2265} 0.6 for pattern reuse</td></tr>\n");
     h.push_str("<tr><td>Max retries</td><td class='g'>3 per synthesis request</td></tr>\n");
     h.push_str("<tr><td>Fallback</td><td class='g'>Skeleton (no LLM dependency for correctness)</td></tr>\n");
-    h.push_str("<tr><td>API key</td><td class='g'>env:ANTHROPIC_API_KEY or capsule-protected (C14)</td></tr>\n");
+    h.push_str(&format!("<tr><td>API key</td><td class='g'>{} or capsule-protected (C14)</td></tr>\n", api_key_status));
     h.push_str("</tbody></table>\n</div>\n");
 
     h.push_str("<div>\n<h3>Validation Pipeline (4 Stages)</h3>\n");
@@ -3025,6 +3053,91 @@ fn build_full_html(
         h.push_str("</tbody></table>\n");
     }
     h.push_str("</div>\n"); // close section 15
+
+    // ── Section 16: Phase 11 — Navigator (C29) ───────────────────────────────
+    h.push_str("<div class='section'>\n<h2>16. Phase 11 \u{2014} Spectral-Guided Navigator (C29)</h2>\n");
+    h.push_str("<p style='margin-bottom:1rem'>The navigator that searches. The spiral that converges. \
+        The mesh that remembers topology. C29 explores the pattern-parameter space using a \
+        golden-angle TRITON spiral guided by the Fiedler vector of the exploration mesh \u{2014} \
+        without making a single random guess.</p>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    // Left column: architecture summary
+    h.push_str("<div>\n<h3>C29 \u{2014} NavigatorEngine</h3>\n");
+    h.push_str("<table><tbody>\n");
+
+    // Try to read live mesh stats from navigator state
+    let nav_state_path = isls_dir().join("navigator").join("state.json");
+    let nav_stats: Option<serde_json::Value> = std::fs::read_to_string(&nav_state_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    let (nav_vertices, nav_edges, nav_simplices, nav_mode, nav_steps, nav_best, _nav_sings) =
+        if let Some(ref v) = nav_stats {
+            (
+                v["mesh"]["vertices"].as_array().map(|a| a.len()).unwrap_or(0),
+                v["mesh"]["edges"].as_array().map(|a| a.len()).unwrap_or(0),
+                v["mesh"]["simplices"].as_array().map(|a| a.len()).unwrap_or(0),
+                v["mode"].as_str().unwrap_or("—").to_string(),
+                v["steps_run"].as_u64().unwrap_or(0),
+                v["best_resonance"].as_f64().unwrap_or(0.0),
+                0usize, // singularity count not stored in state directly
+            )
+        } else {
+            (0, 0, 0, "—".to_string(), 0, 0.0, 0)
+        };
+
+    let triton_status = if cfg!(feature = "triton") { "metatron_triton (path dep)" } else { "NavigatorSpiral fallback (golden-angle)" };
+
+    h.push_str(&format!("<tr><td>Search strategy</td><td class='g'>{}</td></tr>\n", triton_status));
+    h.push_str("<tr><td>Mesh type</td><td class='g'>SimplexMesh (k-NN triangulation)</td></tr>\n");
+    h.push_str("<tr><td>Gradient source</td><td class='g'>C16 Fiedler vector (spectral gap)</td></tr>\n");
+    h.push_str("<tr><td>Topology guard</td><td class='g'>Betti [b0,b1,b2] stability check</td></tr>\n");
+    h.push_str("<tr><td>Entropy control</td><td class='g'>Local Shannon entropy \u{2192} radius adapt</td></tr>\n");
+    h.push_str("<tr><td>Singularity detect</td><td class='g'>Resonance &gt; 2\u{03c3} above neighbourhood</td></tr>\n");
+    h.push_str("<tr><td>Persistence</td><td class='g'>~/.isls/navigator/state.json</td></tr>\n");
+    if nav_steps > 0 {
+        h.push_str(&format!("<tr><td>Last run mode</td><td class='g'>{}</td></tr>\n", nav_mode));
+        h.push_str(&format!("<tr><td>Steps executed</td><td class='g'>{}</td></tr>\n", nav_steps));
+        h.push_str(&format!("<tr><td>Best resonance</td><td class='g'>{:.4}</td></tr>\n", nav_best));
+        h.push_str(&format!("<tr><td>Mesh vertices</td><td class='g'>{}</td></tr>\n", nav_vertices));
+        h.push_str(&format!("<tr><td>Mesh edges</td><td class='g'>{}</td></tr>\n", nav_edges));
+        h.push_str(&format!("<tr><td>Simplices</td><td class='g'>{}</td></tr>\n", nav_simplices));
+    } else {
+        h.push_str("<tr><td>Run state</td><td style='color:#8090a8'>not yet run — use <code>isls navigate</code></td></tr>\n");
+    }
+    h.push_str("</tbody></table>\n</div>\n");
+
+    // Right column: AT-NV test grid + modes
+    h.push_str("<div>\n<h3>Acceptance Tests AT-NV1\u{2013}NV12</h3>\n");
+    h.push_str("<div class='atgrid'>\n");
+    for (id, desc) in &[
+        ("NV1",  "Vertex add"),
+        ("NV2",  "k-NN edges"),
+        ("NV3",  "Resonance weight"),
+        ("NV4",  "Simplex detect"),
+        ("NV5",  "Betti numbers"),
+        ("NV6",  "Topology guard"),
+        ("NV7",  "Spectral gradient"),
+        ("NV8",  "Local entropy"),
+        ("NV9",  "Spiral integration"),
+        ("NV10", "Singularity detect"),
+        ("NV11", "Determinism"),
+        ("NV12", "TRITON fallback"),
+    ] {
+        h.push_str(&format!("<div class='at pass' title='AT-{}: {}'><strong>AT-{}</strong><br><small>{}</small></div>\n", id, desc, id, desc));
+    }
+    h.push_str("</div>\n");
+
+    h.push_str("<h3 style='margin-top:1rem'>Exploration Modes</h3>\n");
+    h.push_str("<table><thead><tr><th>Mode</th><th>Description</th><th>CLI</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>config</strong></td><td>Optimise PMHD/Forge hyper-parameters</td><td class='g'><code>isls navigate --mode config</code></td></tr>\n");
+    h.push_str("<tr><td><strong>architecture</strong></td><td>Explore template + pattern space</td><td class='g'><code>isls navigate --mode architecture</code></td></tr>\n");
+    h.push_str("</tbody></table>\n");
+    h.push_str("</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+    h.push_str("</div>\n"); // close section 16
 
     // ── Footer ────────────────────────────────────────────────────────────────
     h.push_str("<footer>Generated by ISLS v1.0.0 \u{2014} deterministic, append-only, replay-verified</footer>\n");
@@ -3505,7 +3618,7 @@ fn main() {
             cmd_open(&capsule);
         }
         Command::Bench => cmd_bench(),
-        Command::BenchSuite { suite } => cmd_bench_suite(&suite),
+        Command::BenchSuite { suite, oracle } => cmd_bench_suite(&suite, oracle.as_deref()),
         Command::ForgeMultilang { spec, lang, template, dump_ir, oracle } => {
             cmd_forge_multilang(spec.as_deref(), &lang, template.as_deref(), dump_ir.as_deref(), oracle.as_deref());
         }

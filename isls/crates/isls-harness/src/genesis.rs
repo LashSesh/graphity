@@ -262,6 +262,59 @@ pub fn determine_conformance_class(constraints: &[ConstitutionalConstraint]) -> 
     }
 }
 
+// ─── Dynamic crate + test counting ───────────────────────────────────────────
+
+/// Count workspace crates by scanning sibling directories of this crate at build time.
+/// `env!("CARGO_MANIFEST_DIR")` is the source path of isls-harness, embedded at compile time.
+/// This keeps the fingerprint accurate as new crates are added without manual updates.
+fn count_workspace_crates() -> usize {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let crates_dir = match manifest.parent() {
+        Some(p) => p,
+        None => return 28,
+    };
+    match std::fs::read_dir(crates_dir) {
+        Ok(entries) => entries
+            .flatten()
+            .filter(|e| e.path().is_dir() && e.path().join("Cargo.toml").exists())
+            .count(),
+        Err(_) => 28, // Phase 11 fallback (isls-navigator added)
+    }
+}
+
+/// Count workspace tests by scanning `#[test]` annotations across all .rs source files.
+/// Falls back to the compile-time Phase 11 value (367) if the source tree is unavailable.
+fn count_workspace_tests() -> usize {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let crates_dir = match manifest.parent() {
+        Some(p) => p,
+        None => return 367,
+    };
+    let mut count = 0usize;
+    scan_tests_in_dir(crates_dir, &mut count);
+    if count > 0 { count } else { 367 }
+}
+
+fn scan_tests_in_dir(dir: &std::path::Path, count: &mut usize) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let skip = path.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n == "target" || n.starts_with('.'))
+                .unwrap_or(false);
+            if !skip { scan_tests_in_dir(&path, count); }
+        } else if path.extension().map(|e| e == "rs").unwrap_or(false) {
+            if let Ok(src) = std::fs::read_to_string(&path) {
+                *count += src.lines()
+                    .filter(|l| l.trim_start().starts_with("#[test]"))
+                    .count();
+            }
+        }
+    }
+}
+
 // ─── System Fingerprint ───────────────────────────────────────────────────────
 
 pub fn compute_system_fingerprint(config: &Config, registries: &RegistrySet) -> SystemFingerprint {
@@ -281,8 +334,8 @@ pub fn compute_system_fingerprint(config: &Config, registries: &RegistrySet) -> 
     let config_digest = content_address(config);
     SystemFingerprint {
         isls_version: "1.0.0".to_string(),
-        crate_count: 27,   // C1-C27 (C25 Oracle, C26 Templates, C27 Foundry, C28 Multilang/Studio in C19)
-        test_count: 355,   // 311 acceptance + 44 harness/genesis/bench tests
+        crate_count: count_workspace_crates(),
+        test_count: count_workspace_tests(),
         registry_digest,
         config_digest,
         platform: std::env::consts::OS.to_string(),
@@ -600,7 +653,9 @@ mod tests {
         assert!(!meta.adamant_version.is_empty());
         assert_eq!(meta.constraints.len(), 21);
         assert!(!meta.system_fingerprint.isls_version.is_empty());
-        assert_eq!(meta.system_fingerprint.crate_count, 27);
+        // crate_count is now dynamic (filesystem scan); verify it's in the expected range.
+        assert!(meta.system_fingerprint.crate_count >= 28,
+            "expected at least 28 crates (Phase 11), got {}", meta.system_fingerprint.crate_count);
         assert_ne!(meta.constitutional_digest, [0u8; 32]);
 
         // Crystal ID must be deterministic
