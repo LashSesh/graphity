@@ -14,3 +14,7 @@ serde_json = { workspace = true }
 serde_jcs = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
+# NOTE: isls-multilang cannot be a dep here (would create a cycle via isls-oracle).
+# Multi-language generation is invoked at the CLI layer (cmd_forge_multilang in isls-cli)
+# which composes isls-forge + isls-multilang directly. BabylonForge::check_ir() is
+# available for callers that need H5 embedding validation before using ForgeEngine.
