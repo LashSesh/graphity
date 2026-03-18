@@ -90,7 +90,7 @@ enum Command {
     Bench,
     BenchSuite { suite: String },
     // C28 Babylon Bridge commands
-    ForgeMultilang { spec: Option<String>, lang: String, template: Option<String>, dump_ir: Option<String> },
+    ForgeMultilang { spec: Option<String>, lang: String, template: Option<String>, dump_ir: Option<String>, oracle: Option<String> },
     BabylonCheck { ir: Option<String> },
     Validate { formal: bool, retro: bool },
     Report { json: bool, html: bool, full_html: bool },
@@ -372,12 +372,17 @@ fn parse_args(args: &[String]) -> Command {
             let dump_ir = args.iter().position(|a| a == "--dump-ir")
                 .and_then(|i| args.get(i + 1))
                 .cloned();
+            // --oracle <provider>  e.g. --oracle openai  or  --oracle claude
+            let oracle = args.iter().position(|a| a == "--oracle")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
             if lang.is_some() || template.is_some() {
                 Command::ForgeMultilang {
                     spec,
                     lang: lang.unwrap_or_else(|| "rust".to_string()),
                     template,
                     dump_ir,
+                    oracle,
                 }
             } else {
                 Command::Help
@@ -651,7 +656,7 @@ fn cmd_oracle_status() {
     let b = engine.budget_status();
 
     println!("Oracle Status (C25 — Hybrid Synthesis Oracle)");
-    println!("  Provider:    Claude ({})", config.model);
+    println!("  Provider:    {} ({})", engine.oracle_name(), engine.oracle_model());
     println!("  LLM active:  {}", engine.oracle_available());
     println!();
     println!("  Autonomy Metrics:");
@@ -1405,13 +1410,31 @@ fn cmd_forge_multilang(
     lang: &str,
     template: Option<&str>,
     dump_ir: Option<&str>,
+    oracle_provider: Option<&str>,
 ) {
     use isls_multilang::{BabylonForge, templates::TemplateCatalog as MultiLangCatalog};
     use isls_pmhd::{DecisionSpec, PmhdConfig, QualityThresholds};
     use isls_artifact_ir::ArtifactIR;
     use std::collections::BTreeMap;
 
+    // Build oracle config with optional provider override
+    let oracle_config = {
+        use isls_oracle::OracleConfig;
+        let mut cfg = OracleConfig::default();
+        if let Some(p) = oracle_provider {
+            cfg.provider = Some(p.to_string());
+            // Set sensible defaults for OpenAI provider
+            if p == "openai" {
+                cfg.model = "gpt-4o-mini".to_string();
+                cfg.api_key_source = "env:OPENAI_API_KEY".to_string();
+            }
+        }
+        cfg
+    };
+    let provider_display = oracle_provider.unwrap_or("auto");
+
     println!("Forge [C28 Babylon Bridge]");
+    println!("  Oracle provider: {provider_display}");
     if let Some(t) = template {
         let catalog = MultiLangCatalog::new();
         if let Some(tmpl) = catalog.get(t) {
@@ -1476,6 +1499,14 @@ fn cmd_forge_multilang(
             }
             Err(e) => eprintln!("IR dump failed: {e}"),
         }
+    }
+
+    // Report active oracle (config is available for future LLM-backed generation)
+    {
+        use isls_oracle::{OracleEngine, OraclePatternMemory};
+        let engine = OracleEngine::new(oracle_config, OraclePatternMemory::new());
+        println!("  Oracle active:   {} ({}), LLM: {}",
+            engine.oracle_name(), engine.oracle_model(), engine.oracle_available());
     }
 
     // Generate scaffolding
@@ -3250,8 +3281,8 @@ fn main() {
         }
         Command::Bench => cmd_bench(),
         Command::BenchSuite { suite } => cmd_bench_suite(&suite),
-        Command::ForgeMultilang { spec, lang, template, dump_ir } => {
-            cmd_forge_multilang(spec.as_deref(), &lang, template.as_deref(), dump_ir.as_deref());
+        Command::ForgeMultilang { spec, lang, template, dump_ir, oracle } => {
+            cmd_forge_multilang(spec.as_deref(), &lang, template.as_deref(), dump_ir.as_deref(), oracle.as_deref());
         }
         Command::BabylonCheck { ir } => cmd_babylon_check(ir.as_deref()),
         Command::Validate { formal, retro } => cmd_validate(formal, retro),

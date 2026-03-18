@@ -238,6 +238,134 @@ impl SynthesisOracle for ClaudeOracle {
     }
 }
 
+// ─── OpenAIOracle ─────────────────────────────────────────────────────────────
+
+/// Oracle implementation for the OpenAI API (gpt-4o, gpt-4o-mini, etc.).
+/// The API key MUST NOT appear in any log, trace, crystal, manifest, or report.
+pub struct OpenAIOracle {
+    api_key: String,
+    model: String,
+    #[allow(dead_code)]
+    endpoint: String,
+    pub max_retries: usize,
+    pub timeout_ms: u64,
+    pub temperature: f64,
+}
+
+impl OpenAIOracle {
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            model: "gpt-4o-mini".to_string(),
+            endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
+            max_retries: 3,
+            timeout_ms: 60_000,
+            temperature: 0.0,
+        }
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = model.into();
+        self
+    }
+}
+
+impl SynthesisOracle for OpenAIOracle {
+    fn name(&self) -> &str { "openai" }
+    fn model(&self) -> &str { &self.model }
+
+    fn available(&self) -> bool {
+        // OpenAI keys start with "sk-"; "test-key" and empty strings return false
+        self.api_key.starts_with("sk-")
+    }
+
+    fn synthesize(&self, prompt: &SynthesisPrompt) -> Result<OracleResponse> {
+        #[cfg(feature = "llm")]
+        {
+            use std::time::Instant;
+            let client = reqwest::blocking::Client::builder()
+                .timeout(std::time::Duration::from_millis(self.timeout_ms))
+                .build()
+                .map_err(|e| OracleError::Http(e.to_string()))?;
+
+            let body = serde_json::json!({
+                "model": self.model,
+                "max_tokens": prompt.max_tokens,
+                "temperature": prompt.temperature,
+                "messages": [
+                    { "role": "system", "content": prompt.system },
+                    { "role": "user",   "content": prompt.user }
+                ]
+            });
+
+            let t0 = Instant::now();
+            let resp = client
+                .post(&self.endpoint)
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .map_err(|e| OracleError::Http(e.to_string()))?;
+
+            let latency_ms = t0.elapsed().as_millis() as u64;
+
+            if !resp.status().is_success() {
+                let status = resp.status().as_u16();
+                let text = resp.text().unwrap_or_default();
+                return Err(OracleError::Http(format!("HTTP {status}: {text}")));
+            }
+
+            let json: serde_json::Value = resp.json()
+                .map_err(|e| OracleError::Http(e.to_string()))?;
+
+            let content = json["choices"]
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|c| c["message"]["content"].as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let tokens_used = json["usage"]["prompt_tokens"].as_u64().unwrap_or(0) as usize
+                + json["usage"]["completion_tokens"].as_u64().unwrap_or(0) as usize;
+
+            let finish_reason = json["choices"]
+                .as_array()
+                .and_then(|arr| arr.first())
+                .and_then(|c| c["finish_reason"].as_str())
+                .unwrap_or("unknown")
+                .to_string();
+
+            Ok(OracleResponse {
+                content,
+                model: self.model.clone(),
+                tokens_used,
+                finish_reason,
+                latency_ms,
+            })
+        }
+        #[cfg(not(feature = "llm"))]
+        {
+            let _ = prompt;
+            Err(OracleError::Unavailable(
+                "isls-oracle built without `llm` feature; reqwest not linked".to_string(),
+            ))
+        }
+    }
+
+    fn cost_estimate(&self) -> OracleCost {
+        match self.model.as_str() {
+            "gpt-4o-mini" => OracleCost {
+                per_input_token_usd:  0.00000015, // $0.15/MTok
+                per_output_token_usd: 0.00000060, // $0.60/MTok
+            },
+            _ => OracleCost { // gpt-4o default
+                per_input_token_usd:  0.0000025,  // $2.50/MTok
+                per_output_token_usd: 0.000010,   // $10/MTok
+            },
+        }
+    }
+}
+
 // ─── Oracle Budget ────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -422,9 +550,12 @@ impl AutonomyMetrics {
 #[derive(Clone, Debug)]
 pub struct OracleConfig {
     pub enabled: bool,
+    /// Provider selection: "claude", "openai", or None for auto-detect.
+    /// Auto-detect checks ANTHROPIC_API_KEY first, then OPENAI_API_KEY.
+    pub provider: Option<String>,
     pub model: String,
     pub endpoint: String,
-    /// "env:ANTHROPIC_API_KEY" or "capsule:<id>" or raw key (not recommended)
+    /// "env:ANTHROPIC_API_KEY" or "env:OPENAI_API_KEY" or "capsule:<id>" or raw key (not recommended)
     pub api_key_source: String,
     pub temperature: f64,
     pub max_tokens: usize,
@@ -446,6 +577,7 @@ impl Default for OracleConfig {
     fn default() -> Self {
         Self {
             enabled: true,
+            provider: None, // auto-detect
             model: "claude-sonnet-4-20250514".to_string(),
             endpoint: "https://api.anthropic.com/v1/messages".to_string(),
             api_key_source: "env:ANTHROPIC_API_KEY".to_string(),
@@ -897,11 +1029,80 @@ impl OracleEngine {
             config.api_key_source.clone()
         };
 
-        Box::new(ClaudeOracle::new(api_key))
+        match config.provider.as_deref() {
+            Some("openai") => {
+                // Explicit OpenAI: use resolved key, or fall back to env var
+                let key = if !api_key.is_empty() {
+                    api_key
+                } else {
+                    std::env::var("OPENAI_API_KEY").unwrap_or_default()
+                };
+                let mut oracle = OpenAIOracle::new(key);
+                if !config.model.is_empty()
+                    && config.model != "claude-sonnet-4-20250514"
+                {
+                    oracle = oracle.with_model(config.model.clone());
+                }
+                Box::new(oracle)
+            }
+            Some("claude") => {
+                // Explicit Claude: use resolved key, or fall back to env var
+                let key = if !api_key.is_empty() {
+                    api_key
+                } else {
+                    std::env::var("ANTHROPIC_API_KEY").unwrap_or_default()
+                };
+                Box::new(ClaudeOracle::new(key))
+            }
+            _ => {
+                // Auto-detect: check ANTHROPIC_API_KEY first, then OPENAI_API_KEY
+                if !api_key.is_empty() {
+                    // api_key_source was explicit — infer provider from key format
+                    if api_key.starts_with("sk-") {
+                        let mut oracle = OpenAIOracle::new(api_key);
+                        if !config.model.is_empty()
+                            && config.model != "claude-sonnet-4-20250514"
+                        {
+                            oracle = oracle.with_model(config.model.clone());
+                        }
+                        return Box::new(oracle);
+                    }
+                    return Box::new(ClaudeOracle::new(api_key));
+                }
+                if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+                    if !key.is_empty() {
+                        return Box::new(ClaudeOracle::new(key));
+                    }
+                }
+                if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                    if !key.is_empty() {
+                        let mut oracle = OpenAIOracle::new(key);
+                        if !config.model.is_empty()
+                            && config.model != "claude-sonnet-4-20250514"
+                        {
+                            oracle = oracle.with_model(config.model.clone());
+                        }
+                        return Box::new(oracle);
+                    }
+                }
+                // No key found — return empty ClaudeOracle (skeleton fallback path)
+                Box::new(ClaudeOracle::new(String::new()))
+            }
+        }
     }
 
     pub fn oracle_available(&self) -> bool {
         self.oracle.available()
+    }
+
+    /// Human-readable provider name (e.g. "ClaudeOracle", "openai").
+    pub fn oracle_name(&self) -> &str {
+        self.oracle.name()
+    }
+
+    /// Active model identifier (e.g. "claude-sonnet-4-20250514", "gpt-4o-mini").
+    pub fn oracle_model(&self) -> &str {
+        self.oracle.model()
     }
 
     pub fn autonomy(&self) -> &AutonomyMetrics {
@@ -1470,5 +1671,67 @@ mod tests {
 
         let result = memory.find_match(&sig_b, "rust");
         assert!(result.is_none(), "orthogonal signatures should not match at threshold 0.85");
+    }
+
+    // ── OpenAIOracle unit tests ───────────────────────────────────────────────
+
+    #[test]
+    fn test_openai_oracle_creation() {
+        let oracle = OpenAIOracle::new("test-key");
+        assert_eq!(oracle.name(), "openai");
+        assert_eq!(oracle.model(), "gpt-4o-mini");
+        // "test-key" doesn't start with "sk-" → unavailable
+        assert!(!oracle.available());
+    }
+
+    #[test]
+    fn test_openai_oracle_with_model() {
+        let oracle = OpenAIOracle::new("sk-fake123456").with_model("gpt-4o");
+        assert_eq!(oracle.model(), "gpt-4o");
+        assert!(oracle.available()); // starts with "sk-"
+    }
+
+    #[test]
+    fn test_openai_cost_estimate_mini() {
+        let oracle = OpenAIOracle::new("sk-x").with_model("gpt-4o-mini");
+        let cost = oracle.cost_estimate();
+        // gpt-4o-mini: $0.15/MTok input = 0.00000015 per token
+        assert!(cost.per_input_token_usd < cost.per_output_token_usd);
+        assert!(cost.per_input_token_usd > 0.0);
+    }
+
+    #[test]
+    fn test_openai_cost_estimate_4o() {
+        let oracle = OpenAIOracle::new("sk-x").with_model("gpt-4o");
+        let cost = oracle.cost_estimate();
+        // gpt-4o should be more expensive than gpt-4o-mini
+        let mini = OpenAIOracle::new("sk-x").with_model("gpt-4o-mini").cost_estimate();
+        assert!(cost.per_input_token_usd > mini.per_input_token_usd);
+    }
+
+    #[test]
+    fn test_build_oracle_explicit_openai() {
+        let config = OracleConfig {
+            provider: Some("openai".to_string()),
+            model: "gpt-4o-mini".to_string(),
+            // Non-"env:"/non-"capsule:" values are used as the raw key
+            api_key_source: "sk-fake-openai-key-for-testing".to_string(),
+            ..OracleConfig::default()
+        };
+        let engine = OracleEngine::new(config, OraclePatternMemory::new());
+        assert_eq!(engine.oracle_name(), "openai");
+        assert_eq!(engine.oracle_model(), "gpt-4o-mini");
+    }
+
+    #[test]
+    fn test_build_oracle_explicit_claude() {
+        let config = OracleConfig {
+            provider: Some("claude".to_string()),
+            // Non-"env:"/non-"capsule:" values are used as the raw key
+            api_key_source: "fake-anthropic-key-for-testing".to_string(),
+            ..OracleConfig::default()
+        };
+        let engine = OracleEngine::new(config, OraclePatternMemory::new());
+        assert_eq!(engine.oracle_name(), "ClaudeOracle");
     }
 }
