@@ -1,0 +1,863 @@
+%%% =======================================================================
+%%% ISLS Extension Phase 8 v1.0.0
+%%% C27: The Foundry — Closed-Loop Software Fabrication
+%%% Compile-Test-Fix Pipeline + Workspace Intelligence
+%%% Author: Sebastian Klemm
+%%% Date: 18 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{algorithm,algorithmic}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{titlesec}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{axiom}{Axiom}[section]
+\newtheorem{requirement}{Requirement}[section]
+\newtheorem{invariant}{Invariant}[section]
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\ISLS}{\textsf{ISLS}}
+\newcommand{\FOUNDRY}{\textsf{FOUNDRY}}
+
+\definecolor{sec-color}{HTML}{1e3a5f}
+
+\titleformat{\section}
+  {\Large\bfseries\color{sec-color}}
+  {\thesection}{1em}{}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Extension Phase 8 v1.0.0}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Phase 8 — The Foundry},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+{\Huge\bfseries \ISLS{} Extension Phase~8\\[0.3cm]
+v1.0.0}\\[1.5cm]
+{\Large C27: The \FOUNDRY{}}\\[1cm]
+{\large Closed-Loop Software Fabrication\\[0.3cm]
+Compile $\to$ Test $\to$ Fix $\to$ Until It Works\\[0.3cm]
++ Workspace Intelligence}\\[0.5cm]
+{\normalsize The crate that makes the Forge\\
+actually produce working software.}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 18 March 2026}\\[1.5cm]
+
+\begin{abstract}
+\noindent
+This document specifies \texttt{isls-foundry} (C27), the closed-loop
+fabrication engine that bridges the gap between ``the Forge generates
+code strings'' and ``the operator has a working, compilable, tested
+software project on disk.''
+
+The Foundry wraps the entire Forge pipeline (C21--C26) in a
+build-test-fix loop: generated code is written to a real project
+directory, compiled by the real toolchain (\texttt{cargo}), tested
+by the real test runner, and --- if compilation or tests fail --- the
+error output is fed back to the Oracle (C25) as a correction prompt.
+The loop iterates until the project compiles cleanly, tests pass, or
+the retry budget is exhausted.
+
+Additionally, the Foundry provides Workspace Intelligence: the
+ability to understand an existing codebase, identify what exists,
+what is missing, and generate code that fits into the existing
+project rather than creating a new one from scratch. This enables
+incremental development: ``add an endpoint,'' ``implement this trait,''
+``fix this module'' --- not just ``generate a whole new project.''
+
+The Foundry is the layer that turns \ISLS{} from a formal system
+that happens to generate code into a practical software development
+tool.
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Parent:} ISLS v1.0.0 + Extensions Phase 1--7.\\
+\textbf{Depends on:} C23 (Forge), C24 (Compose), C25 (Oracle),
+  C26 (Templates).
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+%%% =====================================================================
+\part{Why This Changes Everything}\label{part:why}
+
+\section{The Gap}\label{sec:gap}
+
+Without the Foundry, the Forge pipeline is:
+\begin{lstlisting}
+DecisionSpec -> PMHD -> ArtifactIR -> Oracle -> String -> Crystal
+\end{lstlisting}
+
+The output is a string that \emph{claims} to be Rust code. But nobody
+checked. The string might have syntax errors, missing imports, wrong
+types, incompatible trait bounds, or simply not compile. The 8-gate
+cascade validates the crystal's \emph{formal} properties (hash
+integrity, evidence chain, etc.), not the \emph{semantic} correctness
+of the code inside it.
+
+With the Foundry, the pipeline becomes:
+\begin{lstlisting}
+DecisionSpec -> PMHD -> ArtifactIR -> Oracle -> String
+  -> Write to disk
+  -> cargo check        (does it compile?)
+  -> cargo test         (do tests pass?)
+  -> cargo clippy       (is it idiomatic?)
+  -> IF FAIL: feed error to Oracle, iterate
+  -> IF PASS: Crystal (now proven to compile and test)
+\end{lstlisting}
+
+The crystal now means: ``this code compiles, its tests pass, and it
+has been formally validated.'' That is a qualitatively different
+guarantee.
+
+
+\section{Axioms}\label{sec:axioms}
+
+\begin{axiom}[Compilation is Validation]\label{ax:compile}
+A code artifact that does not compile is not valid, regardless of
+its formal crystal properties. The Foundry adds \texttt{cargo check}
+as a \emph{ninth gate} for Rust artifacts. An artifact that passes
+the 8 formal gates but fails compilation is rejected.
+\end{axiom}
+
+\begin{axiom}[Tests are Proof]\label{ax:tests}
+Generated code \textbf{MUST} include tests. A code artifact without
+tests is structurally incomplete. The Foundry requires at least one
+test per public function/method and verifies that all generated tests
+pass.
+\end{axiom}
+
+\begin{axiom}[Errors are Feedback]\label{ax:feedback}
+Compiler errors and test failures are not terminal — they are
+information. The Foundry feeds error output back to the Oracle as
+structured correction prompts. Each retry cycle narrows the error
+space.
+\end{axiom}
+
+\begin{axiom}[Workspace is Context]\label{ax:workspace}
+The Forge does not operate in a vacuum. It operates in the context
+of a real project directory with existing code, existing types,
+existing tests. The Foundry provides this context to the Oracle
+so that generated code fits into what already exists.
+\end{axiom}
+
+
+%%% =====================================================================
+\part{The Build-Test-Fix Loop}\label{part:loop}
+
+\section{Loop Architecture}\label{sec:looparch}
+
+\begin{algorithm}[H]
+\caption{\textsc{Foundry\_Fabricate}: Closed-loop fabrication}
+\label{alg:foundry}
+\begin{algorithmic}[1]
+\REQUIRE ForgeResult $F$ (from C23), ProjectDir $D$, Config $\theta$
+\ENSURE FabricationResult (success with working project, or failure with diagnostics)
+\STATE $\mathrm{attempt} \gets 0$
+\STATE $\mathrm{errors} \gets []$
+\REPEAT
+  \STATE $\mathrm{attempt} \gets \mathrm{attempt} + 1$
+  \STATE \textit{// Step 1: Write files to project directory}
+  \STATE $\textsc{WriteProject}(F, D)$
+  \STATE \textit{// Step 2: Compile}
+  \STATE $\mathrm{compile} \gets \textsc{CargoCheck}(D)$
+  \IF{$\mathrm{compile.failed}$}
+    \STATE $\mathrm{errors} \gets \mathrm{compile.stderr}$
+    \STATE $F \gets \textsc{OracleCorrect}(F, \mathrm{errors}, \text{``compile''})$
+    \STATE \textbf{continue}
+  \ENDIF
+  \STATE \textit{// Step 3: Lint}
+  \STATE $\mathrm{lint} \gets \textsc{CargoClippy}(D)$
+  \IF{$\mathrm{lint.warnings} > 0$}
+    \STATE $F \gets \textsc{OracleCorrect}(F, \mathrm{lint.output}, \text{``lint''})$
+    \STATE \textit{// lint warnings don't block, but attempt correction}
+  \ENDIF
+  \STATE \textit{// Step 4: Test}
+  \STATE $\mathrm{test} \gets \textsc{CargoTest}(D)$
+  \IF{$\mathrm{test.failed}$}
+    \STATE $\mathrm{errors} \gets \mathrm{test.stderr}$
+    \STATE $F \gets \textsc{OracleCorrect}(F, \mathrm{errors}, \text{``test''})$
+    \STATE \textbf{continue}
+  \ENDIF
+  \STATE \textit{// Step 5: All passed}
+  \RETURN $\textsc{FabricationSuccess}(D, F, \mathrm{attempt})$
+\UNTIL{$\mathrm{attempt} \ge \theta.\mathrm{max\_attempts}$}
+\RETURN $\textsc{FabricationFailure}(D, \mathrm{errors}, \mathrm{attempt})$
+\end{algorithmic}
+\end{algorithm}
+
+
+\section{Correction Prompts}\label{sec:correction}
+
+\begin{definition}[Correction Prompt]\label{def:correction}
+When compilation or tests fail, the Foundry constructs a correction
+prompt that includes:
+\begin{enumerate}[nosep]
+  \item The original code that was generated.
+  \item The exact compiler/test error output.
+  \item The specific file and line where the error occurred.
+  \item The error type classification:
+        \begin{itemize}[nosep]
+          \item \texttt{syntax}: parse error, missing semicolons, brackets
+          \item \texttt{type}: type mismatch, wrong generics, missing From impl
+          \item \texttt{import}: missing use statements, wrong module paths
+          \item \texttt{trait}: missing trait implementation, wrong bounds
+          \item \texttt{lifetime}: borrow checker errors
+          \item \texttt{test}: assertion failure, panic in test
+          \item \texttt{logic}: test passes but wrong output
+        \end{itemize}
+  \item How many attempts remain (creates urgency for the Oracle to
+        get it right).
+\end{enumerate}
+\begin{lstlisting}
+pub struct CorrectionPrompt {
+    pub original_code: String,
+    pub error_output: String,
+    pub error_file: String,
+    pub error_line: Option<usize>,
+    pub error_class: ErrorClass,
+    pub attempt: usize,
+    pub max_attempts: usize,
+    pub context: WorkspaceContext, // what else exists in the project
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Error-Aware Oracle Call]\label{def:errorcall}
+The Oracle (C25) receives the correction prompt as an extended
+synthesis request:
+\begin{lstlisting}
+System: "You previously generated code that failed to compile.
+Fix the error. Return ONLY the corrected complete file.
+Do not explain. Do not apologize. Just fix it."
+
+User: "File: src/handlers.rs
+Error (attempt 2/5):
+error[E0277]: the trait bound `User: Serialize` is not satisfied
+  --> src/handlers.rs:42:5
+  |
+42 |     Json(user)
+  |     ^^^^ the trait `Serialize` is not implemented for `User`
+
+Original code:
+<full file content>
+
+Context:
+<workspace summary showing User struct in models.rs without #[derive(Serialize)]>"
+\end{lstlisting}
+\end{definition}
+
+\begin{remark}
+The correction prompt is maximally specific. It does not say ``the
+code has errors.'' It says exactly what is wrong, exactly where, and
+provides the full context needed to fix it. This dramatically reduces
+the Oracle's failure rate on retries. Empirically, most compilation
+errors are fixed within 1--2 correction cycles.
+\end{remark}
+
+
+\section{Toolchain Integration}\label{sec:toolchain}
+
+\begin{definition}[Toolchain Executor]\label{def:toolchain}
+The Foundry shells out to real toolchain commands:
+\begin{lstlisting}
+pub struct ToolchainExecutor {
+    pub cargo_path: String,         // default: "cargo"
+    pub rustfmt_path: String,       // default: "rustfmt"
+    pub timeout_seconds: u64,       // default: 120
+}
+
+pub struct ToolchainResult {
+    pub success: bool,
+    pub exit_code: i32,
+    pub stdout: String,
+    pub stderr: String,
+    pub duration_ms: u64,
+}
+
+impl ToolchainExecutor {
+    pub fn cargo_check(&self, dir: &Path) -> ToolchainResult;
+    pub fn cargo_build(&self, dir: &Path) -> ToolchainResult;
+    pub fn cargo_test(&self, dir: &Path) -> ToolchainResult;
+    pub fn cargo_clippy(&self, dir: &Path) -> ToolchainResult;
+    pub fn cargo_fmt_check(&self, dir: &Path) -> ToolchainResult;
+    pub fn cargo_fmt(&self, dir: &Path) -> ToolchainResult;
+    pub fn cargo_doc(&self, dir: &Path) -> ToolchainResult;
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{requirement}[Toolchain Availability]\label{req:toolchain}
+The Foundry \textbf{MUST} check toolchain availability at startup.
+If \texttt{cargo} is not found, the Foundry operates in
+\emph{dry-run mode}: it writes files and skips compilation. The user
+is informed that compilation verification is disabled.
+\end{requirement}
+
+
+%%% =====================================================================
+\part{Project Scaffolding}\label{part:scaffold}
+
+\section{Complete Project Generation}\label{sec:projgen}
+
+\begin{definition}[ProjectScaffold]\label{def:scaffold}
+When the Foundry generates a new project, it produces a complete,
+runnable Cargo project:
+\begin{lstlisting}
+project-name/
+  Cargo.toml              # workspace or single crate
+  .gitignore              # Rust-standard gitignore
+  README.md               # generated from DecisionSpec
+  src/
+    main.rs or lib.rs     # entry point
+    <module>.rs            # one file per atom
+  tests/
+    integration.rs         # integration tests
+  examples/                # usage examples (if applicable)
+  migrations/              # SQL migrations (if DB template)
+  .env.example             # environment variables
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Cargo.toml Generation]\label{def:cargotoml}
+The Foundry generates \texttt{Cargo.toml} from the template's
+dependency list and the Oracle's output:
+\begin{lstlisting}
+pub struct CargoTomlBuilder;
+
+impl CargoTomlBuilder {
+    pub fn build(
+        name: &str,
+        template: &ArchitectureTemplate,
+        atoms: &[AtomArtifact],
+    ) -> String {
+        // - Package metadata from DecisionSpec
+        // - Dependencies from template + Oracle hints
+        // - Features from template configuration
+        // - Workspace structure if multi-crate
+    }
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[README Generation]\label{def:readme}
+A README.md is generated from the DecisionSpec and composition tree:
+\begin{lstlisting}
+# {project-name}
+
+{spec.description}
+
+## Architecture
+
+{composition tree as markdown}
+
+## Getting Started
+
+```
+cargo build
+cargo test
+cargo run  # (if binary)
+```
+
+## Modules
+
+{for each atom: name, purpose, public API summary}
+
+## Generated by ISLS Forge
+
+Crystal ID: {crystal_id}
+Template: {template_name}
+Generated: {timestamp}
+\end{lstlisting}
+\end{definition}
+
+
+%%% =====================================================================
+\part{Workspace Intelligence}\label{part:workspace}
+
+\section{Understanding Existing Code}\label{sec:understand}
+
+\begin{definition}[WorkspaceAnalyzer]\label{def:analyzer}
+The WorkspaceAnalyzer scans an existing project directory and builds
+a model of what exists:
+\begin{lstlisting}
+pub struct WorkspaceAnalyzer;
+
+impl WorkspaceAnalyzer {
+    pub fn analyze(dir: &Path) -> Result<WorkspaceModel>;
+}
+
+pub struct WorkspaceModel {
+    pub project_name: String,
+    pub crate_type: CrateType,         // bin, lib, workspace
+    pub modules: Vec<ModuleInfo>,
+    pub types: Vec<TypeInfo>,
+    pub traits: Vec<TraitInfo>,
+    pub functions: Vec<FunctionInfo>,
+    pub dependencies: Vec<DepInfo>,
+    pub test_count: usize,
+    pub loc: usize,                    // lines of code
+    pub file_tree: Vec<String>,
+}
+
+pub struct ModuleInfo {
+    pub name: String,
+    pub path: String,
+    pub public_items: Vec<String>,     // pub fn, pub struct, pub trait
+    pub imports: Vec<String>,
+    pub loc: usize,
+}
+
+pub struct TypeInfo {
+    pub name: String,
+    pub kind: TypeKind,                // struct, enum, type alias
+    pub fields: Vec<String>,
+    pub derives: Vec<String>,
+    pub module: String,
+}
+
+pub struct TraitInfo {
+    pub name: String,
+    pub methods: Vec<String>,
+    pub implementors: Vec<String>,
+    pub module: String,
+}
+
+pub struct FunctionInfo {
+    pub name: String,
+    pub signature: String,
+    pub is_public: bool,
+    pub has_test: bool,
+    pub module: String,
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Workspace Context for Oracle]\label{def:wscontext}
+When the Oracle synthesizes code for an existing project, it receives
+a WorkspaceContext:
+\begin{lstlisting}
+pub struct WorkspaceContext {
+    pub summary: String,               // "Axum REST API, 5 modules, 23 types"
+    pub relevant_types: Vec<TypeInfo>,  // types the new code needs
+    pub relevant_traits: Vec<TraitInfo>,
+    pub relevant_imports: Vec<String>,  // import paths for above
+    pub existing_patterns: Vec<String>, // code patterns already used
+    pub file_being_modified: Option<String>, // current file content
+}
+\end{lstlisting}
+The Oracle prompt includes the workspace context so it generates code
+that uses existing types, follows existing patterns, and imports from
+existing modules --- not code that reinvents what already exists.
+\end{definition}
+
+
+\section{Incremental Operations}\label{sec:incremental}
+
+\begin{definition}[Incremental Forge Operations]\label{def:incremental}
+The Foundry supports incremental operations on existing projects:
+\begin{lstlisting}
+pub enum FoundryOperation {
+    /// Generate a complete new project from DecisionSpec
+    NewProject {
+        spec: DecisionSpec,
+        output_dir: PathBuf,
+    },
+
+    /// Add a new module/component to an existing project
+    AddComponent {
+        project_dir: PathBuf,
+        spec: String,           // "add a user authentication module"
+        target_module: Option<String>, // where to add it
+    },
+
+    /// Implement a trait for an existing type
+    Implement {
+        project_dir: PathBuf,
+        trait_name: String,
+        type_name: String,
+        hints: Option<String>,
+    },
+
+    /// Add an endpoint to an existing API
+    AddEndpoint {
+        project_dir: PathBuf,
+        method: String,         // GET, POST, PUT, DELETE
+        path: String,           // "/users/{id}"
+        description: String,
+    },
+
+    /// Fix a specific file (rewrite with corrections)
+    Fix {
+        project_dir: PathBuf,
+        file_path: String,
+        issue: String,          // "doesn't compile", "test fails", etc.
+    },
+
+    /// Generate tests for existing code
+    GenerateTests {
+        project_dir: PathBuf,
+        target: Option<String>, // specific module or all
+    },
+
+    /// Refactor a module
+    Refactor {
+        project_dir: PathBuf,
+        target: String,
+        instruction: String,
+    },
+
+    /// Generate documentation
+    Document {
+        project_dir: PathBuf,
+        target: Option<String>,
+    },
+}
+\end{lstlisting}
+\end{definition}
+
+
+%%% =====================================================================
+\part{Quality Gates}\label{part:gates}
+
+\section{The Extended Validation Pipeline}\label{sec:extval}
+
+\begin{definition}[Foundry Validation Pipeline]\label{def:foundryval}
+For code artifacts, the validation pipeline extends beyond the 8
+formal gates:
+\begin{lstlisting}
+pub struct FoundryValidation {
+    // Standard 8-gate (from C5)
+    pub formal: FormalValidationResult,     // 8/8 checks
+
+    // Foundry-specific gates
+    pub compiles: bool,                     // cargo check passes
+    pub tests_pass: bool,                   // cargo test passes
+    pub test_count: usize,                  // number of tests
+    pub warnings: usize,                    // cargo clippy warnings
+    pub formatted: bool,                    // rustfmt check passes
+    pub docs_build: bool,                   // cargo doc succeeds
+
+    // Metrics
+    pub loc: usize,                         // lines of code
+    pub test_coverage_estimate: f64,        // tests/public_functions
+    pub compilation_attempts: usize,        // how many tries needed
+    pub oracle_tokens_used: usize,
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{requirement}[Minimum Quality for Crystallization]\label{req:minqual}
+A code artifact is crystallized only if:
+\begin{enumerate}[nosep]
+  \item All 8 formal gates pass.
+  \item \texttt{cargo check} succeeds (zero compile errors).
+  \item \texttt{cargo test} succeeds (all tests pass).
+  \item At least one test exists per public function.
+  \item Zero Clippy errors (warnings are tolerated).
+\end{enumerate}
+Artifacts that compile but have failing tests are \emph{not}
+crystallized --- they remain as ``draft'' artifacts in the project
+directory.
+\end{requirement}
+
+
+%%% =====================================================================
+\part{Fabrication Modes}\label{part:modes}
+
+\section{Interactive Mode}\label{sec:interactive}
+
+\begin{lstlisting}[title={Interactive fabrication session}]
+$ isls foundry new --domain rust
+ISLS Foundry v1.0.0
+> What do you want to build?
+REST API for a bookmark manager with tags and search
+
+> Template matched: T01 (REST API Service)
+> Decomposing into 9 atoms across 3 molecules...
+> Forging atom 1/9: router... [Oracle] ... OK (1.2s)
+> Forging atom 2/9: middleware... [Memory] ... OK (0.01s)
+> Forging atom 3/9: error_handler... [Oracle] ... OK (0.8s)
+> Forging atom 4/9: models... [Oracle] ... OK (1.5s)
+> Forging atom 5/9: service... [Oracle] ... OK (2.1s)
+> Forging atom 6/9: dto... [Derive] ... OK (0.1s)
+> Forging atom 7/9: database... [Oracle] ... OK (1.8s)
+> Forging atom 8/9: config... [Static] ... OK (0.01s)
+> Forging atom 9/9: main... [Static] ... OK (0.01s)
+
+> Writing project to ./bookmark-api/
+> Running cargo check... FAIL (attempt 1/5)
+  error[E0599]: no method named `fetch_all` on `SqlitePool`
+> Feeding error to Oracle... corrected.
+> Running cargo check... OK
+> Running cargo test... 12 tests, 12 passed
+> Running cargo clippy... 0 errors, 2 warnings
+> Running cargo fmt... formatted
+
+> Fabrication complete.
+  Project: ./bookmark-api/
+  Crystal: a7b3c9...
+  Files: 12  |  LOC: 847  |  Tests: 12
+  Attempts: 2  |  Tokens: 8,420
+  Template: T01 (REST API)
+  Autonomy: 33% (3/9 from memory/static)
+\end{lstlisting}
+
+\section{Batch Mode}\label{sec:batch}
+
+\begin{lstlisting}
+# Generate from a DecisionSpec file
+isls foundry new --spec bookmark-api.json --output ./bookmark-api/
+
+# Add to existing project
+isls foundry add --project ./bookmark-api/ \
+  --spec "add a /search endpoint with full-text search on title and tags"
+
+# Fix existing code
+isls foundry fix --project ./bookmark-api/ \
+  --file src/database.rs --issue "add pagination to list_bookmarks"
+
+# Generate tests for untested code
+isls foundry test --project ./bookmark-api/
+
+# Refactor
+isls foundry refactor --project ./bookmark-api/ \
+  --target src/service.rs --instruction "extract validation into a separate module"
+\end{lstlisting}
+
+
+\section{Headless Mode (for automation)}\label{sec:headless}
+
+\begin{lstlisting}
+# JSON in, JSON out (for CI/CD or other tools)
+echo '{"operation":"new","spec":{...},"output":"./out/"}' | \
+  isls foundry --json
+
+# Returns:
+{
+  "success": true,
+  "project_dir": "./out/",
+  "crystal_id": "a7b3c9...",
+  "files": 12,
+  "loc": 847,
+  "tests": 12,
+  "attempts": 2,
+  "tokens": 8420
+}
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Rust API}\label{part:api}
+
+\begin{lstlisting}
+// isls-foundry/src/lib.rs
+
+pub struct Foundry {
+    forge: ForgeEngine,
+    oracle: OracleEngine,
+    catalog: TemplateCatalog,
+    toolchain: ToolchainExecutor,
+    analyzer: WorkspaceAnalyzer,
+    config: FoundryConfig,
+}
+
+pub struct FoundryConfig {
+    pub max_attempts: usize,          // default: 5
+    pub require_tests: bool,          // default: true
+    pub require_clippy_clean: bool,   // default: false (warnings ok)
+    pub require_fmt: bool,            // default: true
+    pub auto_fmt: bool,               // default: true
+    pub generate_readme: bool,        // default: true
+    pub generate_gitignore: bool,     // default: true
+    pub dry_run: bool,                // skip compilation
+}
+
+pub struct FabricationResult {
+    pub success: bool,
+    pub project_dir: PathBuf,
+    pub crystal: Option<SemanticCrystal>,
+    pub files: Vec<GeneratedFile>,
+    pub validation: FoundryValidation,
+    pub attempts: usize,
+    pub tokens_used: usize,
+    pub duration_ms: u64,
+    pub template_used: Option<String>,
+    pub autonomy_ratio: f64,
+}
+
+pub struct GeneratedFile {
+    pub path: String,
+    pub content: String,
+    pub source: SynthesisSource,      // Oracle, Memory, Static, Derive
+    pub loc: usize,
+    pub test_count: usize,
+}
+
+impl Foundry {
+    pub fn new(config: FoundryConfig, forge: ForgeEngine,
+               oracle: OracleEngine, catalog: TemplateCatalog) -> Self;
+
+    /// Full fabrication: spec -> working project on disk
+    pub fn fabricate(
+        &mut self, op: FoundryOperation
+    ) -> Result<FabricationResult>;
+
+    /// Analyze an existing workspace
+    pub fn analyze(&self, dir: &Path) -> Result<WorkspaceModel>;
+
+    /// Check if toolchain is available
+    pub fn toolchain_available(&self) -> bool;
+}
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Gateway Integration}\label{part:gateway}
+
+\begin{lstlisting}[title={New Gateway Endpoints}]
+POST /foundry/new         Body: {spec, domain, output_dir}
+                          -> FabricationResult
+
+POST /foundry/add         Body: {project_dir, spec}
+                          -> FabricationResult (incremental)
+
+POST /foundry/fix         Body: {project_dir, file, issue}
+                          -> FabricationResult (fix)
+
+POST /foundry/test        Body: {project_dir, target?}
+                          -> FabricationResult (test generation)
+
+GET  /foundry/analyze     Params: ?dir=path
+                          -> WorkspaceModel
+
+GET  /foundry/status      -> current fabrication progress
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Acceptance Tests}\label{part:tests}
+
+\begin{longtable}{l l p{5.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-FD1 & New project compiles & Fabricate REST API from spec; verify
+  \texttt{cargo check} passes. \\
+AT-FD2 & Tests pass & Fabricate project; verify \texttt{cargo test}
+  passes with $\ge 1$ test per public fn. \\
+AT-FD3 & Compile-fix loop & Mock Oracle to return code with missing
+  import on first call, fixed on second; verify 2 attempts,
+  success. \\
+AT-FD4 & Budget exhaustion & Set max\_attempts=1; mock Oracle to
+  return broken code; verify failure with diagnostics. \\
+AT-FD5 & Workspace analysis & Create a Rust project with 3 modules;
+  run analyzer; verify correct module/type/function counts. \\
+AT-FD6 & Incremental add & Create project; add endpoint via Foundry;
+  verify new route in router and \texttt{cargo check} still passes. \\
+AT-FD7 & Fix operation & Create project with compile error; run
+  fix; verify error resolved. \\
+AT-FD8 & Test generation & Create project with untested functions;
+  run test generation; verify tests created and passing. \\
+AT-FD9 & Scaffold completeness & Fabricate project; verify Cargo.toml,
+  README.md, .gitignore, src/, tests/ all present. \\
+AT-FD10 & Dry run mode & Fabricate with dry\_run=true; verify files
+  written but no cargo commands executed. \\
+AT-FD11 & Workspace context & Add endpoint to existing project;
+  verify Oracle prompt includes existing types and imports. \\
+AT-FD12 & Crystal contains validation & Fabricate project; inspect
+  crystal; verify it records compilation\_attempts and
+  test\_count. \\
+AT-FD13 & Formatted output & Fabricate project; verify all .rs files
+  pass \texttt{rustfmt --check}. \\
+AT-FD14 & README generated & Fabricate project; verify README.md
+  contains project description, architecture, and getting started. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Handoff}\label{part:handoff}
+
+\section{Test Count}
+
+\begin{tabular}{l r r}
+\toprule
+\textbf{Phase} & \textbf{New Tests} & \textbf{Cumulative} \\
+\midrule
+Phase 1--7 + Genesis & 265 & 265 \\
+Phase 8 (C27) & 14 & $\ge$ 279 \\
+\bottomrule
+\end{tabular}
+
+\section{Completion Criteria}
+
+\begin{enumerate}[nosep]
+  \item Fabricating a new project from DecisionSpec produces a
+        directory with Cargo.toml, src/, tests/, README.md.
+  \item Generated code compiles (\texttt{cargo check} passes).
+  \item Generated tests pass (\texttt{cargo test} passes).
+  \item Compile-fix loop works: Oracle corrects errors on retry.
+  \item Workspace analyzer correctly models existing projects.
+  \item Incremental operations (add, fix, test, refactor) work
+        on existing projects.
+  \item Crystal records compilation status and test count.
+  \item Dry-run mode works without \texttt{cargo} installed.
+  \item Total tests $\ge 279$, zero warnings.
+  \item \textbf{27 Crates. The Forge that compiles its own output.}
+\end{enumerate}
+
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} Extension Phase 8 v1.0.0.\\
+The Oracle generates. The compiler verifies. The loop closes.\\
+Code that doesn't compile is not a crystal. Code that doesn't test\\
+is not complete. Code that doesn't fit is not useful.\\[0.3cm]
+The Foundry makes all three guarantees.}
+\end{center}
+
+\end{document}
