@@ -1386,11 +1386,13 @@ fn cmd_bench_suite(suite: &str) {
         }
     };
 
+    let history_path = isls_dir().join("metrics/bench_history.jsonl");
     println!("{:<6} {:<35} {:>14} {:<15}", "ID", "Metric", "Value", "Unit");
     println!("{}", "-".repeat(75));
     for result in &results {
         println!("{:<6} {:<35} {:>14.3} {:<15}",
             result.bench_id, result.metric_name, result.metric_value, result.metric_unit);
+        append_jsonl(&history_path, &serde_json::to_string(result).unwrap_or_default());
     }
     println!("\n{} benchmark(s) completed.", results.len());
 }
