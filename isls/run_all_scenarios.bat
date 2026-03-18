@@ -91,7 +91,7 @@ for /L %%i in (0,1,4) do (
     %ISLS% ingest --adapter synthetic --scenario !S! 2>nul
 
     echo   [!N!/5] !S!: running !T! ticks...
-    %ISLS% run --mode shadow --ticks !T! 2>nul
+    %ISLS% run --mode shadow --ticks !T! --project !S! 2>nul
 
     echo   [!N!/5] !S!: validating...
     %ISLS% validate --formal 2>nul > "%RESULTS_DIR%\!S!-validate.txt"

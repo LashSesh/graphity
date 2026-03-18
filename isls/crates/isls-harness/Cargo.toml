@@ -21,7 +21,7 @@ isls-store = { path = "../isls-store" }
 isls-scale = { path = "../isls-scale" }
 isls-pmhd = { path = "../isls-pmhd" }
 isls-artifact-ir = { path = "../isls-artifact-ir" }
-isls-oracle = { path = "../isls-oracle" }
+isls-oracle = { path = "../isls-oracle", features = ["llm"] }
 isls-forge = { path = "../isls-forge" }
 isls-templates = { path = "../isls-templates" }
 isls-multilang = { path = "../isls-multilang" }
