@@ -179,8 +179,11 @@ printf "  execute-mode crystals: %s, pass: %s\n" "${EXECUTE_CRYSTALS}" "${EXECUT
 echo ""
 
 # ── Step 3: benchmarks ────────────────────────────────────────────────────────
-echo "[BENCH] Running benchmarks B01-B15..."
-isls bench
+echo "[BENCH] Running core benchmarks B01-B15..."
+isls bench --suite core
+
+echo "[BENCH] Running generative pipeline benchmarks B16-B24..."
+isls bench --suite generative
 
 echo ""
 
