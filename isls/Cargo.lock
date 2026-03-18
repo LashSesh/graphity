@@ -687,6 +687,7 @@ dependencies = [
  "isls-archive",
  "isls-artifact-ir",
  "isls-capsule",
+ "isls-compose",
  "isls-engine",
  "isls-forge",
  "isls-harness",
@@ -694,10 +695,12 @@ dependencies = [
  "isls-observe",
  "isls-oracle",
  "isls-persist",
+ "isls-pmhd",
  "isls-registry",
  "isls-scale",
  "isls-scheduler",
  "isls-store",
+ "isls-templates",
  "isls-topology",
  "isls-types",
  "serde",
@@ -925,6 +928,21 @@ dependencies = [
  "isls-archive",
  "isls-types",
  "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "isls-templates"
+version = "1.0.0"
+dependencies = [
+ "isls-artifact-ir",
+ "isls-compose",
+ "isls-forge",
+ "isls-pmhd",
+ "isls-types",
  "serde",
  "serde_json",
  "sha2",

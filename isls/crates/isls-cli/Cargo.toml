@@ -25,6 +25,9 @@ isls-scale = { path = "../isls-scale" }
 isls-oracle = { path = "../isls-oracle" }
 isls-artifact-ir = { path = "../isls-artifact-ir" }
 isls-forge = { path = "../isls-forge" }
+isls-templates = { path = "../isls-templates" }
+isls-compose = { path = "../isls-compose" }
+isls-pmhd = { path = "../isls-pmhd" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

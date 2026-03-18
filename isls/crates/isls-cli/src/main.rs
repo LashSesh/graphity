@@ -107,6 +107,12 @@ enum Command {
     OracleStatus,
     OracleMemory,
     OracleSealKey { key: String, lock_genesis: bool },
+    // C26 Template commands
+    TemplateList,
+    TemplateShow { name: String },
+    TemplateCreate { name: String, structure: String },
+    TemplateDistill { crystal_id: String, name: String },
+    TemplateCompose { name: String, includes: Vec<String> },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -204,6 +210,55 @@ fn parse_args(args: &[String]) -> Command {
                     _ => Command::OracleStatus,
                 }
             } else { Command::OracleStatus }
+        }
+        "template" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "list" => Command::TemplateList,
+                    "show" => {
+                        let name = args.get(3).cloned().unwrap_or_default();
+                        Command::TemplateShow { name }
+                    }
+                    "create" => {
+                        let name = args.iter().position(|a| a == "--name")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "custom".to_string());
+                        let structure = args.iter().position(|a| a == "--structure")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_default();
+                        Command::TemplateCreate { name, structure }
+                    }
+                    "distill" => {
+                        let crystal_id = args.iter().position(|a| a == "--crystal")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_default();
+                        let name = args.iter().position(|a| a == "--name")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "distilled".to_string());
+                        Command::TemplateDistill { crystal_id, name }
+                    }
+                    "compose" => {
+                        let name = args.iter().position(|a| a == "--name")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "composed".to_string());
+                        let mut includes = Vec::new();
+                        for (i, arg) in args.iter().enumerate() {
+                            if arg == "--include" {
+                                if let Some(val) = args.get(i + 1) {
+                                    includes.push(val.clone());
+                                }
+                            }
+                        }
+                        Command::TemplateCompose { name, includes }
+                    }
+                    _ => Command::TemplateList,
+                }
+            } else { Command::TemplateList }
         }
         "ingest" => {
             let adapter = args.iter().position(|a| a == "--adapter")
@@ -656,6 +711,134 @@ fn cmd_oracle_seal_key(key: &str, lock_genesis: bool) {
             println!("[oracle] The key is bound to run_id: {:02x?}...", &manifest.run_id[..4]);
         }
         Err(e) => eprintln!("[oracle] Failed to serialize capsule: {e}"),
+    }
+}
+
+// ─── C26 Template Commands ────────────────────────────────────────────────────
+
+fn cmd_template_list() {
+    use isls_templates::TemplateCatalog;
+
+    let catalog = TemplateCatalog::load_defaults();
+    println!("[templates] {} templates in catalog:\n", catalog.len());
+    for tmpl in catalog.list() {
+        println!(
+            "  {} {} ({} atoms, {} molecules) — {}",
+            tmpl.name,
+            tmpl.version,
+            tmpl.atom_count(),
+            tmpl.molecule_count(),
+            tmpl.description
+        );
+    }
+}
+
+fn cmd_template_show(name: &str) {
+    use isls_templates::TemplateCatalog;
+
+    if name.is_empty() {
+        eprintln!("[templates] Usage: isls template show <name>");
+        return;
+    }
+
+    let catalog = TemplateCatalog::load_defaults();
+    match catalog.get(name) {
+        Some(tmpl) => {
+            println!("[template] {} v{}", tmpl.name, tmpl.version);
+            println!("  Archetype:    {:?}", tmpl.archetype);
+            println!("  Domain:       {}", tmpl.domain);
+            println!("  Description:  {}", tmpl.description);
+            println!("  Tags:         {:?}", tmpl.tags);
+            println!("  Atoms:        {}", tmpl.atom_count());
+            println!("  Molecules:    {}", tmpl.molecule_count());
+            println!("  Interfaces:   {}", tmpl.interface_count());
+            println!("  Crystal ID:   {:02x?}...", &tmpl.crystal_id[..4]);
+            println!();
+            println!("  Composition Tree:");
+            for mol in &tmpl.molecules {
+                println!("    Molecule: {}", mol.name);
+                for atom in &mol.atoms {
+                    println!("      Atom: {} [{:?}]", atom.name, atom.fill_strategy);
+                }
+            }
+            println!();
+            println!("  Interfaces:");
+            for iface in &tmpl.interfaces {
+                println!("    {} -> {}: {}", iface.provider, iface.consumer, iface.contract);
+            }
+        }
+        None => eprintln!("[templates] Template '{name}' not found."),
+    }
+}
+
+fn cmd_template_create(name: &str, structure_path: &str) {
+    use isls_templates::{ArchitectureTemplate, TemplateCatalog};
+
+    if name.is_empty() || structure_path.is_empty() {
+        eprintln!("[templates] Usage: isls template create --name <name> --structure <path>");
+        return;
+    }
+
+    match std::fs::read_to_string(structure_path) {
+        Ok(json) => {
+            match serde_json::from_str::<ArchitectureTemplate>(&json) {
+                Ok(tmpl) => {
+                    let mut catalog = TemplateCatalog::load_defaults();
+                    match catalog.register(tmpl) {
+                        Ok(()) => println!("[templates] Template '{name}' created successfully."),
+                        Err(e) => eprintln!("[templates] Error registering template: {e}"),
+                    }
+                }
+                Err(e) => eprintln!("[templates] Error parsing structure file: {e}"),
+            }
+        }
+        Err(e) => eprintln!("[templates] Error reading structure file: {e}"),
+    }
+}
+
+fn cmd_template_distill(crystal_id: &str, name: &str) {
+    // Template distillation from crystal (placeholder)
+
+    if crystal_id.is_empty() {
+        eprintln!("[templates] Usage: isls template distill --crystal <id> --name <name>");
+        return;
+    }
+
+    println!("[templates] Distillation from crystal '{crystal_id}' is a placeholder.");
+    println!("[templates] In production, this reads the crystal's ArtifactIR from the store,");
+    println!("[templates] strips implementation code, and saves the structural skeleton.");
+    println!("[templates] Template name: {name}");
+}
+
+fn cmd_template_compose(name: &str, includes: &[String]) {
+    use isls_templates::{compose_templates, TemplateCatalog};
+
+    if includes.is_empty() {
+        eprintln!("[templates] Usage: isls template compose --name <name> --include <t1> --include <t2>");
+        return;
+    }
+
+    let catalog = TemplateCatalog::load_defaults();
+    let mut templates = Vec::new();
+    for inc in includes {
+        match catalog.get(inc.as_str()) {
+            Some(tmpl) => templates.push(tmpl),
+            None => {
+                eprintln!("[templates] Template '{inc}' not found.");
+                return;
+            }
+        }
+    }
+
+    match compose_templates(name, &templates) {
+        Ok(composed) => {
+            println!("[templates] Composed template '{}':", composed.name);
+            println!("  Atoms:      {}", composed.atom_count());
+            println!("  Molecules:  {}", composed.molecule_count());
+            println!("  Interfaces: {}", composed.interface_count());
+            println!("  Tags:       {:?}", composed.tags);
+        }
+        Err(e) => eprintln!("[templates] Composition failed: {e}"),
     }
 }
 
@@ -2368,6 +2551,19 @@ fn print_help() {
     println!("    --html                       Self-contained HTML dashboard");
     println!("  status                         One-line system health summary");
     println!();
+    println!("TEMPLATE COMMANDS (C26):");
+    println!("  template list                  List available templates");
+    println!("  template show <name>           Show template structure");
+    println!("  template create [options]      Create new template from structure file");
+    println!("    --name <name>                Template name");
+    println!("    --structure <path>           JSON structure file");
+    println!("  template distill [options]     Distill template from forge result");
+    println!("    --crystal <id>               Crystal ID to distill from");
+    println!("    --name <name>                Name for new template");
+    println!("  template compose [options]     Compose templates into new template");
+    println!("    --name <name>                Name for composed template");
+    println!("    --include <name>             Templates to include (repeat for each)");
+    println!();
     println!("EXAMPLES:");
     println!("  isls init");
     println!("  isls ingest --adapter synthetic --entities 500");
@@ -2424,6 +2620,11 @@ fn main() {
         Command::OracleStatus => cmd_oracle_status(),
         Command::OracleMemory => cmd_oracle_memory(),
         Command::OracleSealKey { key, lock_genesis } => cmd_oracle_seal_key(&key, lock_genesis),
+        Command::TemplateList => cmd_template_list(),
+        Command::TemplateShow { name } => cmd_template_show(&name),
+        Command::TemplateCreate { name, structure } => cmd_template_create(&name, &structure),
+        Command::TemplateDistill { crystal_id, name } => cmd_template_distill(&crystal_id, &name),
+        Command::TemplateCompose { name, includes } => cmd_template_compose(&name, &includes),
     }
 }
 
