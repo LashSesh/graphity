@@ -184,6 +184,23 @@ echo   execute-mode integration: done
 echo.
 
 :: ── Step 3: benchmarks ────────────────────────────────────────────────────────
+:: API-Key-Abfrage: nur wenn noch kein Key als Umgebungsvariable gesetzt ist.
+if not defined OPENAI_API_KEY (
+  if not defined ANTHROPIC_API_KEY (
+    echo.
+    echo [BENCH] Kein API-Key gefunden.
+    echo         Druecke ENTER ohne Eingabe, um Benchmarks ohne LLM-Aufruf zu ueberspringen.
+    echo.
+    set /p BENCH_PROVIDER="         Provider (openai / anthropic / leer fuer keinen): "
+    if /i "!BENCH_PROVIDER!"=="openai" (
+      set /p OPENAI_API_KEY="         OpenAI API-Key (sk-...): "
+    ) else if /i "!BENCH_PROVIDER!"=="anthropic" (
+      set /p ANTHROPIC_API_KEY="         Anthropic API-Key (sk-ant-...): "
+    )
+    echo.
+  )
+)
+
 echo [BENCH] Running core benchmarks B01-B15...
 %ISLS% bench --suite core 2>nul
 
