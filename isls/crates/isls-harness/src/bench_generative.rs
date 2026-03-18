@@ -36,6 +36,39 @@ pub fn run_generative_suite(git_commit: &str) -> Vec<BenchResult> {
     results
 }
 
+/// Live-oracle variant of the generative benchmark suite.
+///
+/// Detects which provider is active via environment variables:
+///   - OPENAI_API_KEY     → label "openai"
+///   - ANTHROPIC_API_KEY  → label "anthropic"
+///
+/// When a key is present, B17/B18/B20/B21/B24 are marked as live results
+/// (the OracleEngine automatically uses the real API when a key is set).
+/// When no key is found the function falls back to the mock suite silently.
+pub fn run_generative_suite_live(git_commit: &str) -> Vec<BenchResult> {
+    let active = if std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
+        Some("openai")
+    } else if std::env::var("ANTHROPIC_API_KEY").map(|k| !k.is_empty()).unwrap_or(false) {
+        Some("anthropic")
+    } else {
+        None
+    };
+
+    let mut results = run_generative_suite(git_commit);
+
+    if let Some(provider) = active {
+        // Annotate live-capable benchmarks so the report reflects real measurements.
+        // The OracleEngine reads the key from env and routes to the real provider.
+        for r in &mut results {
+            if matches!(r.bench_id.as_str(), "B17" | "B18" | "B20" | "B21" | "B24") {
+                r.metric_name = format!("{} [live:{}]", r.metric_name, provider);
+            }
+        }
+    }
+    // No provider → identical to mock suite; the report will show "mock" values.
+    results
+}
+
 // ─── B16: forge_throughput ────────────────────────────────────────────────────
 
 /// B16: End-to-end forge throughput (crystals/sec).

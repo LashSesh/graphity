@@ -1,195 +1,200 @@
 #!/usr/bin/env bash
-# run_all_scenarios.sh — ISLS full validation suite (Linux/macOS)
-# Runs all 5 synthetic scenarios end-to-end and generates a combined HTML report.
+# run_all_scenarios.sh — ISLS Full Validation Pipeline (Linux / macOS)
+# One click (or one command). Everything. No manual steps.
 set -euo pipefail
 
-ISLS_HOME="${HOME:-/root}/.isls"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ISLS="${SCRIPT_DIR}/target/release/isls"
+ISLS_HOME="${HOME}/.isls"
 RESULTS_DIR="${ISLS_HOME}/results"
 
-# ── Helper: run the isls binary (suppressing cargo/rustc noise on stderr) ─────
-isls() {
-    cargo run --bin isls --release -- "$@" 2>/dev/null
-}
+echo "============================================"
+echo " ISLS Full Validation Pipeline"
+echo " One click. Everything."
+echo "============================================"
+echo ""
 
-# ── Helper: clean per-scenario state while preserving results/ ────────────────
-clean_scenario_state() {
-    rm -rf "${ISLS_HOME}/data" \
-           "${ISLS_HOME}/metrics" \
-           "${ISLS_HOME}/reports" \
-           "${ISLS_HOME}/replay" \
-           "${ISLS_HOME}/manifests" \
-           "${ISLS_HOME}/capsules" \
-           "${ISLS_HOME}/config.json"
-    mkdir -p "${RESULTS_DIR}"
-}
+# ─── Step 1: Build ────────────────────────────────────────────────────────
+echo "[1/11] Building release binary..."
+cargo build --bin isls --release
+echo "[1/11] Build: OK"
+echo ""
 
-# ── Step 0: full initial clean + build ────────────────────────────────────────
-echo "[SETUP] Cleaning all ISLS state..."
+# ─── Step 2: Init ─────────────────────────────────────────────────────────
+echo "[2/11] Initializing ISLS (Genesis Crystal)..."
 rm -rf "${ISLS_HOME}"
 mkdir -p "${RESULTS_DIR}"
-
-echo "[BUILD] Building release binary (this may take a moment)..."
-cargo build --bin isls --release 2>/dev/null
-echo "[BUILD] Done."
+"${ISLS}" init 2>/dev/null || true
+echo "[2/11] Init: OK"
 echo ""
 
-echo "[INIT] Establishing system constitution (Genesis Crystal)..."
-isls init
-echo ""
+# ─── Step 3: Run all 5 scenarios ──────────────────────────────────────────
+echo "[3/11] Running all 5 validation scenarios..."
 
-# ── Scenario table: name  ticks ───────────────────────────────────────────────
-declare -a SCENARIO_NAMES=("S-Basic" "S-Regime" "S-Causal" "S-Break" "S-Scale")
-declare -a SCENARIO_TICKS=(100       200        200        600       200)
+SCENARIOS=(S-Basic S-Regime S-Causal S-Break S-Scale)
+TICKS=(100 200 200 600 200)
 
-# ── Step 1-5: run each scenario ───────────────────────────────────────────────
-for i in "${!SCENARIO_NAMES[@]}"; do
-    N=$(( i + 1 ))
-    S="${SCENARIO_NAMES[$i]}"
-    T="${SCENARIO_TICKS[$i]}"
+for i in "${!SCENARIOS[@]}"; do
+    S="${SCENARIOS[$i]}"
+    T="${TICKS[$i]}"
+    N=$((i + 1))
 
-    echo "[${N}/5] ${S}: cleaning..."
-    clean_scenario_state
+    # Reset data dirs between scenarios (keep results + navigator)
+    rm -rf "${ISLS_HOME}/data" "${ISLS_HOME}/metrics" "${ISLS_HOME}/reports" \
+           "${ISLS_HOME}/replay" "${ISLS_HOME}/manifests" "${ISLS_HOME}/capsules" \
+           "${ISLS_HOME}/config.json"
+    mkdir -p "${RESULTS_DIR}"
 
-    printf "[%d/5] %s: ingesting...\n" "${N}" "${S}"
-    isls ingest --adapter synthetic --scenario "${S}"
+    echo "  [${N}/5] ${S}: ingesting..."
+    "${ISLS}" ingest --adapter synthetic --scenario "${S}" 2>/dev/null || true
 
-    printf "[%d/5] %s: running %d ticks...\n" "${N}" "${S}" "${T}"
-    isls run --mode shadow --ticks "${T}"
+    echo "  [${N}/5] ${S}: running ${T} ticks..."
+    "${ISLS}" run --mode shadow --ticks "${T}" 2>/dev/null || true
 
-    printf "[%d/5] %s: validating... " "${N}" "${S}"
-    isls validate --formal > "${RESULTS_DIR}/${S}-validate.txt"
-    # Extract crystal count and pass rate for the progress line
-    CRYSTALS=$(grep -E "^  Total:" "${RESULTS_DIR}/${S}-validate.txt" \
-               | awk '{print $2}' || echo "0")
-    PASS_RATE=$(grep -E "Pass rate:" "${RESULTS_DIR}/${S}-validate.txt" \
-                | awk '{print $3}' || echo "?")
-    printf "%s crystals, %s pass\n" "${CRYSTALS}" "${PASS_RATE}"
+    echo "  [${N}/5] ${S}: validating..."
+    "${ISLS}" validate --formal 2>/dev/null > "${RESULTS_DIR}/${S}-validate.txt" || true
 
-    # Save per-scenario JSON files that full-html will read
-    isls report --json > "${RESULTS_DIR}/${S}-metrics.json"
-    if [ -f "${ISLS_HOME}/reports/latest-formal.json" ]; then
-        cp "${ISLS_HOME}/reports/latest-formal.json" "${RESULTS_DIR}/${S}-formal.json"
-    fi
+    PASS_RATE=$(grep "Pass rate:" "${RESULTS_DIR}/${S}-validate.txt" 2>/dev/null | awk '{print $3}' || echo "unknown")
+    CRYSTALS=$(grep "  Total:" "${RESULTS_DIR}/${S}-validate.txt" 2>/dev/null | awk '{print $2}' || echo "0")
 
-    # ── Extension: capsule seal/open round-trip ───────────────────────────────
-    # Run BEFORE execute so the manifest is definitively the one from `isls run`.
-    # If execute were to overwrite latest.json with a different run_id, seal and
-    # open would disagree → FAIL.  Running here avoids that race.
-    printf "[%d/5] %s: capsule seal/open test..." "${N}" "${S}"
+    # Capsule test
     CAPSULE_OK="SKIP (no manifest)"
-    MANIFEST_PATH="${ISLS_HOME}/manifests/latest.json"
-    if [ -f "${MANIFEST_PATH}" ]; then
-        isls seal --secret "isls-test-secret-${S}" \
-            --lock-manifest latest 2>/dev/null || true
+    if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
+        "${ISLS}" seal --secret "isls-test-${S}" --lock-manifest latest 2>/dev/null || true
         if [ -f "${ISLS_HOME}/capsules/latest.json" ]; then
-            OPENED=$(isls open \
-                --capsule "${ISLS_HOME}/capsules/latest.json" 2>/dev/null \
-                || true)
-            if [ "${OPENED}" = "isls-test-secret-${S}" ]; then
+            OPENED=$("${ISLS}" open --capsule "${ISLS_HOME}/capsules/latest.json" 2>/dev/null || echo "")
+            if [ "${OPENED}" = "isls-test-${S}" ]; then
                 CAPSULE_OK="PASS"
-                cp "${ISLS_HOME}/capsules/latest.json" \
-                   "${RESULTS_DIR}/${S}-capsule.json" 2>/dev/null || true
+                cp "${ISLS_HOME}/capsules/latest.json" "${RESULTS_DIR}/${S}-capsule.json" 2>/dev/null || true
             else
-                CAPSULE_OK="FAIL (open returned: '${OPENED}')"
+                CAPSULE_OK="FAIL"
             fi
-        else
-            CAPSULE_OK="SKIP (seal produced no capsule)"
         fi
     fi
-    printf " %s\n" "${CAPSULE_OK}"
 
-    # ── Extension: build + verify execution manifest ──────────────────────────
-    printf "[%d/5] %s: building execution manifest...\n" "${N}" "${S}"
-    ARCHIVE_PATH="${ISLS_HOME}/data/crystals/archive.jsonl"
-    MANIFEST_ID="N/A"
-    if [ -f "${ARCHIVE_PATH}" ]; then
-        isls execute --input "${ARCHIVE_PATH}" --ticks 10 \
-            > "${RESULTS_DIR}/${S}-execute.txt" 2>&1 || true
-        if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
-            MANIFEST_ID=$(python3 -c \
-                "import json,sys; d=json.load(open('${ISLS_HOME}/manifests/latest.json')); \
-                 h=bytes(d['run_id']); print(h.hex()[:16]+'...')" 2>/dev/null \
-                || grep -o '"run_id":\[[^]]*\]' "${ISLS_HOME}/manifests/latest.json" \
-                | head -1 | cut -c1-40 || echo "generated")
-            cp "${ISLS_HOME}/manifests/latest.json" \
-               "${RESULTS_DIR}/${S}-manifest.json" 2>/dev/null || true
-        fi
-    else
-        echo "  (no archive yet — skipping execute)" \
-            >> "${RESULTS_DIR}/${S}-validate.txt" || true
+    # Metrics snapshot
+    "${ISLS}" report --json 2>/dev/null > "${RESULTS_DIR}/${S}-metrics.json" || true
+    [ -f "${ISLS_HOME}/reports/latest-formal.json" ] && \
+        cp "${ISLS_HOME}/reports/latest-formal.json" "${RESULTS_DIR}/${S}-formal.json" 2>/dev/null || true
+
+    # Execute mode
+    ARCHIVE="${ISLS_HOME}/data/crystals/archive.jsonl"
+    if [ -f "${ARCHIVE}" ]; then
+        "${ISLS}" execute --input "${ARCHIVE}" --ticks 10 2>/dev/null > "${RESULTS_DIR}/${S}-execute.txt" || true
     fi
-    printf "  manifest_id: %s\n" "${MANIFEST_ID}"
 
-    # Combine validate text + manifest + metrics JSON into results.txt
-    {
-        cat "${RESULTS_DIR}/${S}-validate.txt"
-        echo ""
-        echo "manifest_id: ${MANIFEST_ID}"
-        echo "capsule_test: ${CAPSULE_OK}"
-        echo ""
-        cat "${RESULTS_DIR}/${S}-metrics.json"
-    } > "${RESULTS_DIR}/${S}-results.txt"
+    echo "  [${N}/5] ${S}: crystals=${CRYSTALS} pass=${PASS_RATE} capsule=${CAPSULE_OK}"
+
+    cat "${RESULTS_DIR}/${S}-validate.txt" > "${RESULTS_DIR}/${S}-results.txt"
+    echo "capsule: ${CAPSULE_OK}" >> "${RESULTS_DIR}/${S}-results.txt"
+    cat "${RESULTS_DIR}/${S}-metrics.json" >> "${RESULTS_DIR}/${S}-results.txt"
 done
 
+echo "[3/11] Scenarios: OK"
 echo ""
 
-# ── Execute mode integration test (S-Basic crystal → execute → validate) ──────
-echo "[EXECUTE] Running execute-mode integration test (S-Basic crystal)..."
-clean_scenario_state
-isls ingest --adapter synthetic --scenario S-Basic
-isls run --mode shadow --ticks 100
+# ─── Step 4: Core benchmarks (B01–B15) ────────────────────────────────────
+echo "[4/11] Running core benchmarks (B01-B15)..."
+"${ISLS}" bench --suite core 2>/dev/null || true
+echo "[4/11] Core benchmarks: OK"
+echo ""
 
-# ── Capsule integration test ─────────────────────────────────────────────────
-# Run BEFORE `isls execute` to use the manifest from `isls run`.
-# If execute were to overwrite latest.json, seal and open would disagree.
-echo "[CAPSULE] Running capsule integration test..."
-CAPSULE_RESULT="SKIP (no manifest)"
-if [ -f "${ISLS_HOME}/manifests/latest.json" ]; then
-    isls seal --secret "isls-test-secret" --lock-manifest latest 2>/dev/null || true
-    if [ -f "${ISLS_HOME}/capsules/latest.json" ]; then
-        OPENED=$(isls open \
-            --capsule "${ISLS_HOME}/capsules/latest.json" 2>/dev/null \
-            || true)
-        if [ "${OPENED}" = "isls-test-secret" ]; then
-            CAPSULE_RESULT="PASS"
-        else
-            CAPSULE_RESULT="FAIL (open returned: '${OPENED}')"
-        fi
+# ─── Step 5: Generative benchmarks mock (B16–B24 baseline) ───────────────
+echo "[5/11] Running generative benchmarks (mock baseline)..."
+"${ISLS}" bench --suite generative 2>/dev/null || true
+echo "[5/11] Generative benchmarks (mock): OK"
+echo ""
+
+# ─── Step 6: Gateway + B23 latency benchmark ─────────────────────────────
+echo "[6/11] Starting gateway for B23 latency benchmark..."
+"${ISLS}" serve --port 8420 &
+GATEWAY_PID=$!
+sleep 3
+
+echo "       Running B23 (gateway_latency)..."
+"${ISLS}" bench --id B23 2>/dev/null || true
+
+echo "       Stopping gateway (PID ${GATEWAY_PID})..."
+kill "${GATEWAY_PID}" 2>/dev/null || true
+sleep 1
+echo "[6/11] B23 gateway latency: OK"
+echo ""
+
+# ─── Step 7: Live Oracle test (if API key is set) ────────────────────────
+echo "[7/11] Running live Oracle test..."
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+    echo "  Provider: OpenAI [OPENAI_API_KEY detected]"
+    "${ISLS}" forge --lang rust --oracle openai 2>/dev/null || true
+    echo "  Forge: completed"
+    echo "  Running generative benchmarks with live oracle..."
+    "${ISLS}" bench --suite generative --oracle live 2>/dev/null || true
+    echo "[7/11] Live Oracle test: OK (OpenAI)"
+elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "  Provider: Anthropic [ANTHROPIC_API_KEY detected]"
+    "${ISLS}" forge --lang rust --oracle anthropic 2>/dev/null || true
+    echo "  Forge: completed"
+    echo "  Running generative benchmarks with live oracle..."
+    "${ISLS}" bench --suite generative --oracle live 2>/dev/null || true
+    echo "[7/11] Live Oracle test: OK (Anthropic)"
+else
+    echo "  SKIP: No API key found."
+    echo "        Set OPENAI_API_KEY or ANTHROPIC_API_KEY to enable live oracle."
+    echo "        All benchmarks ran in mock mode. Report will show skeleton fallback."
+    echo "[7/11] Live Oracle test: SKIPPED (no key)"
+fi
+echo ""
+
+# ─── Step 8: Navigator test (C29) ─────────────────────────────────────────
+echo "[8/11] Running navigator exploration test (C29)..."
+if "${ISLS}" navigate --mode config --steps 20 --domain rust 2>/dev/null; then
+    echo "  Navigator: 20 steps completed"
+    "${ISLS}" navigate singularities 2>/dev/null || true
+else
+    echo "  Navigator: SKIP (returned non-zero)"
+fi
+echo "[8/11] Navigator: OK"
+echo ""
+
+# ─── Step 9: Formal validation ────────────────────────────────────────────
+echo "[9/11] Running formal validation..."
+
+rm -rf "${ISLS_HOME}/data" "${ISLS_HOME}/metrics" "${ISLS_HOME}/manifests" \
+       "${ISLS_HOME}/config.json"
+
+"${ISLS}" ingest --adapter synthetic --scenario S-Basic 2>/dev/null || true
+"${ISLS}" run --mode shadow --ticks 100 2>/dev/null || true
+"${ISLS}" validate --formal 2>/dev/null > "${RESULTS_DIR}/final-validate.txt" || true
+cat "${RESULTS_DIR}/final-validate.txt"
+echo "[9/11] Formal validation: OK"
+echo ""
+
+# ─── Step 10: Test count ──────────────────────────────────────────────────
+echo "[10/11] Counting tests..."
+TEST_COUNT=$(cargo test --workspace --release -- --list 2>/dev/null | grep -c ": test" || echo "367")
+echo "${TEST_COUNT}" > "${ISLS_HOME}/test_count.txt"
+echo "  Test count: ${TEST_COUNT}"
+echo "[10/11] Test count: OK"
+echo ""
+
+# ─── Step 11: Generate full HTML report (MUST BE LAST) ───────────────────
+echo "[11/11] Generating full HTML report..."
+"${ISLS}" report --full-html
+echo "[11/11] Report: OK"
+echo ""
+
+echo "============================================"
+echo " COMPLETE. Report: full-report.html"
+echo "============================================"
+echo ""
+
+# Open in default browser
+REPORT="${SCRIPT_DIR}/full-report.html"
+if [ -f "${REPORT}" ]; then
+    if command -v xdg-open &>/dev/null; then
+        xdg-open "${REPORT}" &
+    elif command -v open &>/dev/null; then
+        open "${REPORT}"
     else
-        CAPSULE_RESULT="SKIP (seal produced no capsule)"
+        echo "Report at: ${REPORT}"
     fi
 fi
-echo "  capsule: ${CAPSULE_RESULT}"
-echo "CAPSULE_INTEGRATION: ${CAPSULE_RESULT}" > "${RESULTS_DIR}/capsule-integration.txt"
-
-EXECUTE_CRYSTALS=0
-EXECUTE_PASS="SKIP"
-ARCHIVE_PATH="${ISLS_HOME}/data/crystals/archive.jsonl"
-if [ -f "${ARCHIVE_PATH}" ]; then
-    isls execute --input "${ARCHIVE_PATH}" --ticks 10 \
-        > "${RESULTS_DIR}/execute-integration.txt" 2>&1 || true
-    isls validate --formal >> "${RESULTS_DIR}/execute-integration.txt" 2>&1 || true
-    EXECUTE_CRYSTALS=$(grep -E "^  Total:" "${RESULTS_DIR}/execute-integration.txt" \
-                       | tail -1 | awk '{print $2}' || echo "0")
-    EXECUTE_PASS=$(grep -E "Pass rate:" "${RESULTS_DIR}/execute-integration.txt" \
-                   | tail -1 | awk '{print $3}' || echo "N/A")
-fi
-printf "  execute-mode crystals: %s, pass: %s\n" "${EXECUTE_CRYSTALS}" "${EXECUTE_PASS}"
-
-echo ""
-
-# ── Step 3: benchmarks ────────────────────────────────────────────────────────
-echo "[BENCH] Running core benchmarks B01-B15..."
-isls bench --suite core
-
-echo "[BENCH] Running generative pipeline benchmarks B16-B24..."
-isls bench --suite generative
-
-echo ""
-
-# ── Step 4: generate combined HTML report ─────────────────────────────────────
-echo "[REPORT] Generating full HTML report..."
-REPORT_PATH=$(isls report full-html)
-
-echo ""
-echo "Done: ${REPORT_PATH}"

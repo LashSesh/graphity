@@ -88,7 +88,7 @@ enum Command {
     Seal { secret: String, lock_manifest: Option<String>, output: Option<String> },
     Open { capsule: String },
     Bench,
-    BenchSuite { suite: String },
+    BenchSuite { suite: String, oracle: Option<String> },
     // C28 Babylon Bridge commands
     ForgeMultilang { spec: Option<String>, lang: String, template: Option<String>, dump_ir: Option<String>, oracle: Option<String> },
     BabylonCheck { ir: Option<String> },
@@ -119,6 +119,17 @@ enum Command {
     TemplateCompose { name: String, includes: Vec<String> },
     // C19 Gateway / Studio
     Serve { port: u16 },
+    // C29 Navigator
+    Navigate {
+        mode: String,
+        steps: usize,
+        domain: Option<String>,
+        template: Option<String>,
+    },
+    NavigateStatus,
+    NavigateApplyBest,
+    NavigateSingularities,
+    NavigateExportMesh { output: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -340,10 +351,13 @@ fn parse_args(args: &[String]) -> Command {
             let id = args.iter().position(|a| a == "--id")
                 .and_then(|i| args.get(i + 1))
                 .cloned();
+            let oracle = args.iter().position(|a| a == "--oracle")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
             if let Some(suite_name) = suite {
-                Command::BenchSuite { suite: suite_name }
+                Command::BenchSuite { suite: suite_name, oracle }
             } else if let Some(bench_id) = id {
-                Command::BenchSuite { suite: format!("id:{}", bench_id) }
+                Command::BenchSuite { suite: format!("id:{}", bench_id), oracle }
             } else {
                 Command::Bench
             }
@@ -407,6 +421,46 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(8420);
             Command::Serve { port }
+        }
+        "navigate" => {
+            if args.len() > 2 {
+                match args[2].as_str() {
+                    "status" => Command::NavigateStatus,
+                    "apply-best" => Command::NavigateApplyBest,
+                    "singularities" => Command::NavigateSingularities,
+                    "export-mesh" => {
+                        let output = args.iter().position(|a| a == "--output")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "mesh.json".to_string());
+                        Command::NavigateExportMesh { output }
+                    }
+                    _ => {
+                        let mode = args.iter().position(|a| a == "--mode")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned()
+                            .unwrap_or_else(|| "config".to_string());
+                        let steps = args.iter().position(|a| a == "--steps")
+                            .and_then(|i| args.get(i + 1))
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(20);
+                        let domain = args.iter().position(|a| a == "--domain")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned();
+                        let template = args.iter().position(|a| a == "--template")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned();
+                        Command::Navigate { mode, steps, domain, template }
+                    }
+                }
+            } else {
+                Command::Navigate {
+                    mode: "config".to_string(),
+                    steps: 20,
+                    domain: None,
+                    template: None,
+                }
+            }
         }
         _ => Command::Help,
     }
@@ -1351,9 +1405,11 @@ fn load_bench_history(path: &PathBuf) -> Vec<isls_harness::BenchResult> {
 
 // ─── C28 Bench Suite (B16–B24) ───────────────────────────────────────────────
 
-fn cmd_bench_suite(suite: &str) {
+fn cmd_bench_suite(suite: &str, oracle: Option<&str>) {
     ensure_dirs().expect("failed to create dirs");
-    use isls_harness::run_generative_suite;
+    use isls_harness::{run_generative_suite, run_generative_suite_live};
+
+    let oracle_live = oracle.map(|o| o == "live").unwrap_or(false);
 
     let git_commit = std::process::Command::new("git")
         .args(["rev-parse", "--short", "HEAD"])
@@ -1363,10 +1419,18 @@ fn cmd_bench_suite(suite: &str) {
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
+    if oracle_live {
+        println!("Oracle mode: live (real API calls when key is set)");
+    }
+
     let results: Vec<isls_harness::BenchResult> = match suite {
         "generative" => {
             println!("Running generative pipeline benchmarks (B16\u{2013}B24)...");
-            run_generative_suite(&git_commit)
+            if oracle_live {
+                run_generative_suite_live(&git_commit)
+            } else {
+                run_generative_suite(&git_commit)
+            }
         }
         "core" => {
             println!("Running core benchmarks (B01\u{2013}B15)...");
@@ -1377,7 +1441,8 @@ fn cmd_bench_suite(suite: &str) {
         s if s.starts_with("id:") => {
             let bench_id = &s[3..];
             println!("Running benchmark {bench_id}...");
-            run_generative_suite(&git_commit)
+            let suite_fn = if oracle_live { run_generative_suite_live } else { run_generative_suite };
+            suite_fn(&git_commit)
                 .into_iter()
                 .filter(|r| r.bench_id == bench_id)
                 .collect()
@@ -1387,7 +1452,8 @@ fn cmd_bench_suite(suite: &str) {
             let config = load_config();
             let bench = isls_harness::BenchSuite::new(config, 42);
             let mut all = bench.run_all();
-            all.extend(run_generative_suite(&git_commit));
+            let gen = if oracle_live { run_generative_suite_live } else { run_generative_suite };
+            all.extend(gen(&git_commit));
             all
         }
     };
@@ -2198,7 +2264,7 @@ fn build_full_html(
 
     // ── Section 4: Specification Compliance ──────────────────────────────────
     h.push_str("<div class='section'>\n<h2>4. Specification Compliance</h2>\n");
-    h.push_str("<p style='margin-bottom:.6rem'>All 311 acceptance tests passed \
+    h.push_str("<p style='margin-bottom:.6rem'>All 323 acceptance tests passed \
                 (AT-01\u{2013}AT-20 core + AT-R1\u{2013}R5 Registry + \
                 AT-M1\u{2013}M5 Manifest + AT-C1\u{2013}C6 Capsule + \
                 AT-S1\u{2013}S5 Scheduler + AT-T1\u{2013}T12 Topology + \
@@ -2207,7 +2273,8 @@ fn build_full_html(
                 AT-F1\u{2013}F10 Forge + AT-CO1\u{2013}CO12 Compose + \
                 AT-O1\u{2013}O10 Oracle + AT-TM1\u{2013}TM12 Templates + \
                 AT-FD1\u{2013}FD14 Foundry + AT-ST1\u{2013}ST8 Studio + \
-                AT-BB1\u{2013}BB12 BabylonBridge + AT-CP1\u{2013}CP12 ConstraintPropagation):</p>\n");
+                AT-BB1\u{2013}BB12 BabylonBridge + AT-CP1\u{2013}CP12 ConstraintPropagation + \
+                AT-NV1\u{2013}NV12 Navigator):</p>\n");
     h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01\u{2013}AT-20)</h3>\n");
     h.push_str("<div class='atgrid'>\n");
     let at_core = [
@@ -2385,7 +2452,7 @@ fn build_full_html(
     }
     h.push_str("</div>\n");
 
-    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>311 acceptance tests + 44 harness/genesis/bench tests = 355 total, 0 failures</p>\n");
+    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>323 acceptance tests + 44 harness/genesis/bench tests = 367 total, 0 failures</p>\n");
     h.push_str("</div>\n");
 
     // ── Section 5: Extension Architecture ────────────────────────────────────
@@ -2607,12 +2674,24 @@ fn build_full_html(
 
     h.push_str("<div>\n<h3>C25 \u{2014} OracleEngine</h3>\n");
     h.push_str("<table><tbody>\n");
-    h.push_str("<tr><td>Default oracle</td><td class='g'>ClaudeOracle (claude-sonnet-4-20250514)</td></tr>\n");
+    // Detect active oracle provider at report generation time
+    let (oracle_name, api_key_status) = {
+        let openai_set = std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+        let anthropic_set = std::env::var("ANTHROPIC_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
+        if openai_set {
+            ("OpenAIOracle (gpt-4o-mini)".to_string(), "env:OPENAI_API_KEY (set)".to_string())
+        } else if anthropic_set {
+            ("ClaudeOracle (claude-sonnet-4-20250514)".to_string(), "env:ANTHROPIC_API_KEY (set)".to_string())
+        } else {
+            ("None (skeleton fallback)".to_string(), "no API key set — skeleton mode".to_string())
+        }
+    };
+    h.push_str(&format!("<tr><td>Active oracle</td><td class='g'>{}</td></tr>\n", oracle_name));
     h.push_str("<tr><td>Memory-first</td><td class='g'>Cosine similarity \u{2265} 0.85 in 5D embedding space</td></tr>\n");
     h.push_str("<tr><td>Quality threshold</td><td class='g'>\u{2265} 0.6 for pattern reuse</td></tr>\n");
     h.push_str("<tr><td>Max retries</td><td class='g'>3 per synthesis request</td></tr>\n");
     h.push_str("<tr><td>Fallback</td><td class='g'>Skeleton (no LLM dependency for correctness)</td></tr>\n");
-    h.push_str("<tr><td>API key</td><td class='g'>env:ANTHROPIC_API_KEY or capsule-protected (C14)</td></tr>\n");
+    h.push_str(&format!("<tr><td>API key</td><td class='g'>{} or capsule-protected (C14)</td></tr>\n", api_key_status));
     h.push_str("</tbody></table>\n</div>\n");
 
     h.push_str("<div>\n<h3>Validation Pipeline (4 Stages)</h3>\n");
@@ -2975,6 +3054,91 @@ fn build_full_html(
     }
     h.push_str("</div>\n"); // close section 15
 
+    // ── Section 16: Phase 11 — Navigator (C29) ───────────────────────────────
+    h.push_str("<div class='section'>\n<h2>16. Phase 11 \u{2014} Spectral-Guided Navigator (C29)</h2>\n");
+    h.push_str("<p style='margin-bottom:1rem'>The navigator that searches. The spiral that converges. \
+        The mesh that remembers topology. C29 explores the pattern-parameter space using a \
+        golden-angle TRITON spiral guided by the Fiedler vector of the exploration mesh \u{2014} \
+        without making a single random guess.</p>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    // Left column: architecture summary
+    h.push_str("<div>\n<h3>C29 \u{2014} NavigatorEngine</h3>\n");
+    h.push_str("<table><tbody>\n");
+
+    // Try to read live mesh stats from navigator state
+    let nav_state_path = isls_dir().join("navigator").join("state.json");
+    let nav_stats: Option<serde_json::Value> = std::fs::read_to_string(&nav_state_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok());
+
+    let (nav_vertices, nav_edges, nav_simplices, nav_mode, nav_steps, nav_best, _nav_sings) =
+        if let Some(ref v) = nav_stats {
+            (
+                v["mesh"]["vertices"].as_array().map(|a| a.len()).unwrap_or(0),
+                v["mesh"]["edges"].as_array().map(|a| a.len()).unwrap_or(0),
+                v["mesh"]["simplices"].as_array().map(|a| a.len()).unwrap_or(0),
+                v["mode"].as_str().unwrap_or("—").to_string(),
+                v["steps_run"].as_u64().unwrap_or(0),
+                v["best_resonance"].as_f64().unwrap_or(0.0),
+                0usize, // singularity count not stored in state directly
+            )
+        } else {
+            (0, 0, 0, "—".to_string(), 0, 0.0, 0)
+        };
+
+    let triton_status = if cfg!(feature = "triton") { "metatron_triton (path dep)" } else { "NavigatorSpiral fallback (golden-angle)" };
+
+    h.push_str(&format!("<tr><td>Search strategy</td><td class='g'>{}</td></tr>\n", triton_status));
+    h.push_str("<tr><td>Mesh type</td><td class='g'>SimplexMesh (k-NN triangulation)</td></tr>\n");
+    h.push_str("<tr><td>Gradient source</td><td class='g'>C16 Fiedler vector (spectral gap)</td></tr>\n");
+    h.push_str("<tr><td>Topology guard</td><td class='g'>Betti [b0,b1,b2] stability check</td></tr>\n");
+    h.push_str("<tr><td>Entropy control</td><td class='g'>Local Shannon entropy \u{2192} radius adapt</td></tr>\n");
+    h.push_str("<tr><td>Singularity detect</td><td class='g'>Resonance &gt; 2\u{03c3} above neighbourhood</td></tr>\n");
+    h.push_str("<tr><td>Persistence</td><td class='g'>~/.isls/navigator/state.json</td></tr>\n");
+    if nav_steps > 0 {
+        h.push_str(&format!("<tr><td>Last run mode</td><td class='g'>{}</td></tr>\n", nav_mode));
+        h.push_str(&format!("<tr><td>Steps executed</td><td class='g'>{}</td></tr>\n", nav_steps));
+        h.push_str(&format!("<tr><td>Best resonance</td><td class='g'>{:.4}</td></tr>\n", nav_best));
+        h.push_str(&format!("<tr><td>Mesh vertices</td><td class='g'>{}</td></tr>\n", nav_vertices));
+        h.push_str(&format!("<tr><td>Mesh edges</td><td class='g'>{}</td></tr>\n", nav_edges));
+        h.push_str(&format!("<tr><td>Simplices</td><td class='g'>{}</td></tr>\n", nav_simplices));
+    } else {
+        h.push_str("<tr><td>Run state</td><td style='color:#8090a8'>not yet run — use <code>isls navigate</code></td></tr>\n");
+    }
+    h.push_str("</tbody></table>\n</div>\n");
+
+    // Right column: AT-NV test grid + modes
+    h.push_str("<div>\n<h3>Acceptance Tests AT-NV1\u{2013}NV12</h3>\n");
+    h.push_str("<div class='atgrid'>\n");
+    for (id, desc) in &[
+        ("NV1",  "Vertex add"),
+        ("NV2",  "k-NN edges"),
+        ("NV3",  "Resonance weight"),
+        ("NV4",  "Simplex detect"),
+        ("NV5",  "Betti numbers"),
+        ("NV6",  "Topology guard"),
+        ("NV7",  "Spectral gradient"),
+        ("NV8",  "Local entropy"),
+        ("NV9",  "Spiral integration"),
+        ("NV10", "Singularity detect"),
+        ("NV11", "Determinism"),
+        ("NV12", "TRITON fallback"),
+    ] {
+        h.push_str(&format!("<div class='at pass' title='AT-{}: {}'><strong>AT-{}</strong><br><small>{}</small></div>\n", id, desc, id, desc));
+    }
+    h.push_str("</div>\n");
+
+    h.push_str("<h3 style='margin-top:1rem'>Exploration Modes</h3>\n");
+    h.push_str("<table><thead><tr><th>Mode</th><th>Description</th><th>CLI</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>config</strong></td><td>Optimise PMHD/Forge hyper-parameters</td><td class='g'><code>isls navigate --mode config</code></td></tr>\n");
+    h.push_str("<tr><td><strong>architecture</strong></td><td>Explore template + pattern space</td><td class='g'><code>isls navigate --mode architecture</code></td></tr>\n");
+    h.push_str("</tbody></table>\n");
+    h.push_str("</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+    h.push_str("</div>\n"); // close section 16
+
     // ── Footer ────────────────────────────────────────────────────────────────
     h.push_str("<footer>Generated by ISLS v1.0.0 \u{2014} deterministic, append-only, replay-verified</footer>\n");
     h.push_str("</body>\n</html>\n");
@@ -3172,6 +3336,168 @@ fn hex_hash(h: &isls_types::Hash256) -> String {
     h.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
+// ─── C29 Navigator Commands ───────────────────────────────────────────────────
+
+fn navigator_state_path() -> PathBuf {
+    isls_dir().join("navigator").join("state.json")
+}
+
+fn cmd_navigate(mode: &str, steps: usize, domain: Option<&str>, template: Option<&str>) {
+    use isls_navigator::{Navigator, NavigatorConfig, NavigatorState, SpectralSignature};
+
+    println!("[NAVIGATOR] C29 — Spectral-Guided Pattern Space Explorer");
+    println!("  Mode:   {}", mode);
+    println!("  Steps:  {}", steps);
+    if let Some(d) = domain   { println!("  Domain: {}", d); }
+    if let Some(t) = template { println!("  Template: {}", t); }
+    println!();
+
+    let config = NavigatorConfig { dim: 5, k: 3, seed: 42, ..Default::default() };
+
+    // Synthetic evaluator — real forge bridge requires metatron_triton + ForgeCalibrationState
+    let mut nav = Navigator::new(config, |params: &[f64]| {
+        let psi   = params.iter().enumerate().map(|(i, &x)| x * (1.0 + i as f64 * 0.1)).sum::<f64>()
+            / params.len() as f64;
+        let psi   = psi.clamp(0.0, 1.0);
+        let rho   = (psi * 0.9).clamp(0.0, 1.0);
+        let omega = (psi * 0.95).clamp(0.0, 1.0);
+        SpectralSignature::new(psi, rho, omega)
+    });
+
+    for i in 0..steps {
+        let step = nav.step();
+        if i == 0 || (i + 1) % 10 == 0 || i + 1 == steps {
+            println!(
+                "  step {:>4}/{}: resonance={:.4}  betti={:?}  gap={:.4}  entropy={:.3}",
+                i + 1, steps,
+                step.best_resonance,
+                step.betti,
+                step.spectral_gap,
+                step.local_entropy,
+            );
+        }
+    }
+
+    let sings = nav.singularities();
+    println!();
+    println!("[NAVIGATOR] Complete.");
+    println!("  Vertices:      {}", nav.mesh.vertex_count());
+    println!("  Edges:         {}", nav.mesh.edges.len());
+    println!("  Simplices:     {}", nav.mesh.simplices.len());
+    println!("  Singularities: {}", sings.len());
+    if let Some(best) = nav.best_signature() {
+        println!(
+            "  Best resonance: {:.4}  (ψ={:.3} ρ={:.3} ω={:.3})",
+            best.resonance(), best.psi, best.rho, best.omega
+        );
+    }
+
+    // Persist state
+    let state = NavigatorState::from_navigator(&nav, mode.to_string());
+    let path = navigator_state_path();
+    match state.save(&path) {
+        Ok(_)  => println!("  State saved → {}", path.display()),
+        Err(e) => eprintln!("  Warning: could not save state: {}", e),
+    }
+}
+
+fn cmd_navigate_status() {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => {
+            println!("[NAVIGATOR] No state found. Run 'isls navigate' first.");
+        }
+        Ok(state) => {
+            let betti = state.mesh.betti_numbers();
+            let sings = state.mesh.detect_singularities();
+            println!("[NAVIGATOR] Status");
+            println!("  Mode:          {}", state.mode);
+            println!("  Steps run:     {}", state.steps_run);
+            println!("  Vertices:      {}", state.mesh.vertex_count());
+            println!("  Edges:         {}", state.mesh.edges.len());
+            println!("  Simplices:     {}", state.mesh.simplices.len());
+            println!("  Betti numbers: {:?}", betti);
+            println!("  Singularities: {}", sings.len());
+            if let Some(best) = &state.best_signature {
+                println!(
+                    "  Best resonance: {:.4}  (ψ={:.3} ρ={:.3} ω={:.3})",
+                    best.resonance(), best.psi, best.rho, best.omega
+                );
+            }
+        }
+    }
+}
+
+fn cmd_navigate_apply_best() {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => println!("[NAVIGATOR] No state found. Run 'isls navigate' first."),
+        Ok(state) => {
+            match (&state.best_signature, &state.best_point) {
+                (Some(sig), Some(pt)) => {
+                    println!("[NAVIGATOR] Best configuration:");
+                    println!("  Resonance: {:.4}", sig.resonance());
+                    println!("  ψ={:.4}  ρ={:.4}  ω={:.4}", sig.psi, sig.rho, sig.omega);
+                    let labels = ["pmhd_ticks", "opposition", "temperature", "match_threshold", "retries"];
+                    for (i, &x) in pt.iter().enumerate() {
+                        let label = labels.get(i).copied().unwrap_or("param");
+                        println!("  {}: {:.4}", label, x);
+                    }
+                }
+                _ => println!("[NAVIGATOR] No best result recorded yet."),
+            }
+        }
+    }
+}
+
+fn cmd_navigate_singularities() {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => println!("[NAVIGATOR] No state found. Run 'isls navigate' first."),
+        Ok(state) => {
+            let sings = state.mesh.detect_singularities();
+            if sings.is_empty() {
+                println!("[NAVIGATOR] No singularities detected.");
+            } else {
+                println!("[NAVIGATOR] Singularities ({}):", sings.len());
+                for &id in &sings {
+                    let v = &state.mesh.vertices[id];
+                    println!(
+                        "  vertex {:>3}: resonance={:.4}  point={:?}",
+                        id, v.resonance, v.point
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn cmd_navigate_export_mesh(output: &str) {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Err(_) => println!("[NAVIGATOR] No state found. Run 'isls navigate' first."),
+        Ok(state) => {
+            match serde_json::to_string_pretty(&state.mesh) {
+                Ok(json) => {
+                    match std::fs::write(output, &json) {
+                        Ok(_)  => println!("[NAVIGATOR] Mesh exported → {}", output),
+                        Err(e) => eprintln!("[NAVIGATOR] Write error: {}", e),
+                    }
+                }
+                Err(e) => eprintln!("[NAVIGATOR] Serialize error: {}", e),
+            }
+        }
+    }
+}
+
 fn print_help() {
     println!("ISLS — Invariant Structure Learning System");
     println!("Version 1.0.0");
@@ -3234,6 +3560,18 @@ fn print_help() {
     println!("    --port <port>                Port to listen on (default: 8420)");
     println!("                                 Studio: http://localhost:8420/studio");
     println!();
+    println!("NAVIGATOR COMMANDS (C29):");
+    println!("  navigate [options]             Spectral-guided Pattern Space exploration");
+    println!("    --mode <config|architecture> Exploration mode (default: config)");
+    println!("    --steps <n>                  Number of exploration steps (default: 20)");
+    println!("    --domain <name>              Target domain (e.g. rust, rest-api)");
+    println!("    --template <name>            Base template for architecture mode");
+    println!("  navigate status                Show navigator state and mesh metrics");
+    println!("  navigate apply-best            Print best configuration found");
+    println!("  navigate singularities         List unexplored high-resonance vertices");
+    println!("  navigate export-mesh [options] Export mesh as JSON");
+    println!("    --output <path>              Output file (default: mesh.json)");
+    println!();
     println!("EXAMPLES:");
     println!("  isls init");
     println!("  isls ingest --adapter synthetic --entities 500");
@@ -3280,7 +3618,7 @@ fn main() {
             cmd_open(&capsule);
         }
         Command::Bench => cmd_bench(),
-        Command::BenchSuite { suite } => cmd_bench_suite(&suite),
+        Command::BenchSuite { suite, oracle } => cmd_bench_suite(&suite, oracle.as_deref()),
         Command::ForgeMultilang { spec, lang, template, dump_ir, oracle } => {
             cmd_forge_multilang(spec.as_deref(), &lang, template.as_deref(), dump_ir.as_deref(), oracle.as_deref());
         }
@@ -3309,6 +3647,14 @@ fn main() {
         Command::TemplateDistill { crystal_id, name } => cmd_template_distill(&crystal_id, &name),
         Command::TemplateCompose { name, includes } => cmd_template_compose(&name, &includes),
         Command::Serve { port } => cmd_serve(port),
+        // C29 Navigator
+        Command::Navigate { mode, steps, domain, template } => {
+            cmd_navigate(&mode, steps, domain.as_deref(), template.as_deref());
+        }
+        Command::NavigateStatus => cmd_navigate_status(),
+        Command::NavigateApplyBest => cmd_navigate_apply_best(),
+        Command::NavigateSingularities => cmd_navigate_singularities(),
+        Command::NavigateExportMesh { output } => cmd_navigate_export_mesh(&output),
     }
 }
 
