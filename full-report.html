@@ -1,0 +1,828 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>ISLS v1.0.0 — Full Validation Report</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.6;padding:2rem}h1{font-size:1.8rem;margin-bottom:.4rem}h2{font-size:1.15rem;color:#a0b4d6;margin-bottom:.9rem;padding-bottom:.4rem;border-bottom:1px solid #2a2a4a}h3{font-size:1rem;color:#c0cce0;margin:.8rem 0 .4rem}.meta{color:#8090a8;font-size:.82rem;margin-bottom:1.8rem}.section{background:#0d0d1a;border-radius:8px;padding:1.4rem;margin-bottom:1.4rem;border:1px solid #2a2a4a}table{border-collapse:collapse;width:100%;margin:.4rem 0}th{background:#16213e;padding:.55rem 1rem;text-align:left;font-weight:600;color:#c0cce0;border-bottom:2px solid #2a2a4a}td{padding:.45rem 1rem;border-bottom:1px solid #1e2a3a;vertical-align:top}tr:nth-child(even) td{background:#0f3460}tr:hover td{background:#1a2a4a}.g{color:#22c55e;font-weight:600}.r{color:#ef4444;font-weight:600}.y{color:#eab308;font-weight:600}.na{color:#4a5568;font-style:italic}.badge{display:inline-block;border-radius:4px;padding:.1rem .45rem;font-size:.72rem;font-weight:700}.bg{background:#14532d;color:#22c55e}.br{background:#450a0a;color:#ef4444}.by{background:#422006;color:#eab308}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:.6rem 0}.grid10{display:flex;flex-wrap:wrap;gap:.3rem;margin:.4rem 0}.card{background:#16213e;border-radius:6px;padding:.6rem .9rem}.clabel{color:#8090a8;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}.cval{font-size:1.25rem;font-weight:700;margin-top:.15rem}.atgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:.35rem;margin:.7rem 0}.atitem{background:#16213e;border-radius:4px;padding:.35rem .65rem;font-size:.8rem}footer{text-align:center;color:#4a5568;margin-top:1.8rem;font-size:.78rem;padding-top:.9rem;border-top:1px solid #2a2a4a}code{background:#16213e;padding:.1rem .35rem;border-radius:3px;font-size:.85em}.sdiv{margin-bottom:1.4rem;padding-bottom:1.4rem;border-bottom:1px solid #2a2a4a}.sdiv:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}</style></head><body>
+<h1>ISLS v1.0.0 — Full Validation Report</h1>
+<div class='meta'>Generated: 2026-03-18 09:58:20 UTC &nbsp;|&nbsp; rustc 1.90.0 (1159e78c4 2025-09-14) &nbsp;|&nbsp; Platform: windows &nbsp;|&nbsp; Git: <code>a704d41</code></div>
+<div class='section'>
+<h2>0. System Constitution</h2>
+<div class='grid2'>
+<div><table><tbody>
+<tr><td>Genesis Crystal ID</td><td><code>a315ea43209e4912…</code></td></tr>
+<tr><td>ADAMANT Version</td><td>v1.0.0</td></tr>
+<tr><td>Conformance Class</td><td class='g'>C4 (Constitutional)</td></tr>
+<tr><td>Constraints</td><td class='g'>21/21 satisfied</td></tr>
+<tr><td>Constitutional Drift</td><td class='g'>NONE</td></tr>
+</tbody></table></div>
+<div><table><tbody>
+<tr><td>ISLS Version</td><td>v1.0.0</td></tr>
+<tr><td>Crates</td><td>27</td></tr>
+<tr><td>Tests</td><td>326</td></tr>
+<tr><td>Platform</td><td>windows</td></tr>
+</tbody></table></div>
+</div>
+<h3 style='margin:.8rem 0 .4rem'>Constitutional Constraints (GC-01–GC-21)</h3>
+<table><thead><tr><th>ID</th><th>ADAMANT Ref</th><th>Status</th><th>Evidence</th></tr></thead><tbody>
+<tr><td><strong>GC-01</strong></td><td>Axiom 2.0.1</td><td class='g'>PASS</td><td>FiveDState fields in [0,1] enforced by type design; Threshol</td></tr>
+<tr><td><strong>GC-02</strong></td><td>Axiom 2.0.2</td><td class='g'>PASS</td><td>RegistryEntry type enforces name + version; structural guara</td></tr>
+<tr><td><strong>GC-03</strong></td><td>Axiom 2.0.3</td><td class='g'>PASS</td><td>dt2 &gt; 0 — temporal trace tick active</td></tr>
+<tr><td><strong>GC-04</strong></td><td>Axiom 2.0.4</td><td class='g'>PASS</td><td>AT-01..AT-20 pass; no kernel override paths in C12..C24 Carg</td></tr>
+<tr><td><strong>GC-05</strong></td><td>Axiom 2.0.5</td><td class='g'>PASS</td><td>Cargo.toml graph: C12+ depend on C1-C11, never vice versa</td></tr>
+<tr><td><strong>GC-06</strong></td><td>R-STATE-001</td><td class='g'>PASS</td><td>NormalizationConfig declared with 5D partition (p,rho,omega,</td></tr>
+<tr><td><strong>GC-07</strong></td><td>R-COH-002</td><td class='g'>PASS</td><td>MetricCollector M1 coherence in [0,1]; structural + temporal</td></tr>
+<tr><td><strong>GC-08</strong></td><td>Sec 3.4.4</td><td class='g'>PASS</td><td>GateSnapshot 8-metric kairos conjunction; commit_proof.gate_</td></tr>
+<tr><td><strong>GC-09</strong></td><td>Sec 3.6</td><td class='g'>PASS</td><td>macro_step implements all 6 phases; trace written per tick t</td></tr>
+<tr><td><strong>GC-10</strong></td><td>Sec 5.1</td><td class='g'>PASS</td><td>FormalValidator: content_address, evidence_chain, operator_v</td></tr>
+<tr><td><strong>GC-11</strong></td><td>Sec 6.3</td><td class='g'>PASS</td><td>EvidenceChain linked-digest chain; V-F2 evidence_chain check</td></tr>
+<tr><td><strong>GC-12</strong></td><td>Sec 6.6</td><td class='g'>PASS</td><td>RunDescriptor: seed, config, registry_digests, scheduler_con</td></tr>
+<tr><td><strong>GC-13</strong></td><td>Sec 7.2</td><td class='g'>PASS</td><td>isls-harness FormalValidator implements 8 named V-F checks; </td></tr>
+<tr><td><strong>GC-14</strong></td><td>Sec 11.1</td><td class='g'>PASS</td><td>isls-capsule AES-256-GCM/HKDF-SHA256; SemanticCrystal has no</td></tr>
+<tr><td><strong>GC-15</strong></td><td>Sec 11.3</td><td class='g'>PASS</td><td>GatewayEmitter (C23) supports configurable auth; single-oper</td></tr>
+<tr><td><strong>GC-16</strong></td><td>Sec 12.2</td><td class='g'>PASS</td><td>PersistenceConfig.max_vertices, PmhdConfig.commit_budget, Sc</td></tr>
+<tr><td><strong>GC-17</strong></td><td>Sec 13.2</td><td class='g'>PASS</td><td>macro_step gate cascade enforced; ForgeEngine/CompositionEng</td></tr>
+<tr><td><strong>GC-18</strong></td><td>Sec 14.1</td><td class='g'>PASS</td><td>RegistrySet BTreeMap (sorted by name) + RunDescriptor.schedu</td></tr>
+<tr><td><strong>GC-19</strong></td><td>Sec 16.1</td><td class='g'>PASS</td><td>AdaptationConfig.max_replicate bounded; split/merge threshol</td></tr>
+<tr><td><strong>GC-20</strong></td><td>Sec 20</td><td class='g'>PASS</td><td>ADAMANT principle encoded by design; crystals are patterns, </td></tr>
+<tr><td><strong>GC-21</strong></td><td>Sec 18</td><td class='g'>PASS</td><td>isls-cli shadow mode (RunMode::Shadow); engine stops on SIGI</td></tr>
+</tbody></table>
+</div>
+<div class='section'>
+<h2>1. Executive Summary</h2>
+<table><thead><tr><th>Scenario</th><th>Entities</th><th>Ticks</th><th>Crystals</th><th>Pass Rate</th><th>Health</th></tr></thead><tbody>
+<tr><td><strong>S-Basic</strong></td><td>50</td><td>100</td><td>51</td><td><span class='g'>100.0%</span></td><td><span class='badge bg'>GREEN</span></td></tr>
+<tr><td><strong>S-Regime</strong></td><td>200</td><td>200</td><td>22</td><td><span class='g'>100.0%</span></td><td><span class='badge bg'>GREEN</span></td></tr>
+<tr><td><strong>S-Causal</strong></td><td>100</td><td>200</td><td>16</td><td><span class='g'>100.0%</span></td><td><span class='badge bg'>GREEN</span></td></tr>
+<tr><td><strong>S-Break</strong></td><td>200</td><td>600</td><td>21</td><td><span class='g'>100.0%</span></td><td><span class='badge bg'>GREEN</span></td></tr>
+<tr><td><strong>S-Scale</strong></td><td>2000</td><td>200</td><td>36</td><td><span class='g'>100.0%</span></td><td><span class='badge bg'>GREEN</span></td></tr>
+</tbody></table>
+</div>
+<div class='section'>
+<h2>2. Per-Scenario Details</h2>
+<div class='sdiv'>
+<h3>S-Basic</h3>
+<p style='color:#8090a8;font-size:.82rem;margin-bottom:.6rem'>Entities: 50 &nbsp;|&nbsp; Planted constraints: 3 &nbsp;|&nbsp; Ticks: 100</p>
+<div class='grid2'>
+<div>
+<p style='margin-bottom:.4rem;font-size:.9rem'>Total: <strong>51</strong> &nbsp; Passed: <strong class='g'>51</strong> &nbsp; Failed: <strong class='g'>0</strong> &nbsp; Pass rate: <strong class='g'>100.0%</strong></p>
+<table><thead><tr><th>Check</th><th>Passed/Total</th><th>Rate</th></tr></thead><tbody>
+<tr><td>content_address</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+<tr><td>dual_consensus</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+<tr><td>evidence_chain</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+<tr><td>free_energy</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+<tr><td>gate_kairos</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+<tr><td>immutability</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+<tr><td>operator_versions</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+<tr><td>por_trace</td><td class='g'>51/51</td><td class='g'>100.0%</td></tr>
+</tbody></table>
+</div>
+<div>
+<div class='grid2'>
+<div class='card'><div class='clabel'>M6 Replay Fidelity</div><div class='cval g'>100.0%</div></div>
+<div class='card'><div class='clabel'>M8 Lattice Stability</div><div class='cval g'>-0.596</div></div>
+<div class='card'><div class='clabel'>M10 Consensus MCI</div><div class='cval g'>0.995</div></div>
+<div class='card'><div class='clabel'>M12 Evidence Integrity</div><div class='cval g'>100.0%</div></div>
+</div>
+</div>
+</div>
+</div>
+<div class='sdiv'>
+<h3>S-Regime</h3>
+<p style='color:#8090a8;font-size:.82rem;margin-bottom:.6rem'>Entities: 200 &nbsp;|&nbsp; Planted constraints: 5 &nbsp;|&nbsp; Ticks: 200</p>
+<div class='grid2'>
+<div>
+<p style='margin-bottom:.4rem;font-size:.9rem'>Total: <strong>22</strong> &nbsp; Passed: <strong class='g'>22</strong> &nbsp; Failed: <strong class='g'>0</strong> &nbsp; Pass rate: <strong class='g'>100.0%</strong></p>
+<table><thead><tr><th>Check</th><th>Passed/Total</th><th>Rate</th></tr></thead><tbody>
+<tr><td>content_address</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+<tr><td>dual_consensus</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+<tr><td>evidence_chain</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+<tr><td>free_energy</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+<tr><td>gate_kairos</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+<tr><td>immutability</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+<tr><td>operator_versions</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+<tr><td>por_trace</td><td class='g'>22/22</td><td class='g'>100.0%</td></tr>
+</tbody></table>
+</div>
+<div>
+<div class='grid2'>
+<div class='card'><div class='clabel'>M6 Replay Fidelity</div><div class='cval g'>100.0%</div></div>
+<div class='card'><div class='clabel'>M8 Lattice Stability</div><div class='cval g'>-0.648</div></div>
+<div class='card'><div class='clabel'>M10 Consensus MCI</div><div class='cval g'>0.995</div></div>
+<div class='card'><div class='clabel'>M12 Evidence Integrity</div><div class='cval g'>100.0%</div></div>
+</div>
+</div>
+</div>
+</div>
+<div class='sdiv'>
+<h3>S-Causal</h3>
+<p style='color:#8090a8;font-size:.82rem;margin-bottom:.6rem'>Entities: 100 &nbsp;|&nbsp; Planted constraints: 3 &nbsp;|&nbsp; Ticks: 200</p>
+<div class='grid2'>
+<div>
+<p style='margin-bottom:.4rem;font-size:.9rem'>Total: <strong>16</strong> &nbsp; Passed: <strong class='g'>16</strong> &nbsp; Failed: <strong class='g'>0</strong> &nbsp; Pass rate: <strong class='g'>100.0%</strong></p>
+<table><thead><tr><th>Check</th><th>Passed/Total</th><th>Rate</th></tr></thead><tbody>
+<tr><td>content_address</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+<tr><td>dual_consensus</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+<tr><td>evidence_chain</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+<tr><td>free_energy</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+<tr><td>gate_kairos</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+<tr><td>immutability</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+<tr><td>operator_versions</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+<tr><td>por_trace</td><td class='g'>16/16</td><td class='g'>100.0%</td></tr>
+</tbody></table>
+</div>
+<div>
+<div class='grid2'>
+<div class='card'><div class='clabel'>M6 Replay Fidelity</div><div class='cval g'>100.0%</div></div>
+<div class='card'><div class='clabel'>M8 Lattice Stability</div><div class='cval g'>-0.665</div></div>
+<div class='card'><div class='clabel'>M10 Consensus MCI</div><div class='cval g'>0.995</div></div>
+<div class='card'><div class='clabel'>M12 Evidence Integrity</div><div class='cval g'>100.0%</div></div>
+</div>
+</div>
+</div>
+</div>
+<div class='sdiv'>
+<h3>S-Break</h3>
+<p style='color:#8090a8;font-size:.82rem;margin-bottom:.6rem'>Entities: 200 &nbsp;|&nbsp; Planted constraints: 4 &nbsp;|&nbsp; Ticks: 600</p>
+<div class='grid2'>
+<div>
+<p style='margin-bottom:.4rem;font-size:.9rem'>Total: <strong>21</strong> &nbsp; Passed: <strong class='g'>21</strong> &nbsp; Failed: <strong class='g'>0</strong> &nbsp; Pass rate: <strong class='g'>100.0%</strong></p>
+<table><thead><tr><th>Check</th><th>Passed/Total</th><th>Rate</th></tr></thead><tbody>
+<tr><td>content_address</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+<tr><td>dual_consensus</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+<tr><td>evidence_chain</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+<tr><td>free_energy</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+<tr><td>gate_kairos</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+<tr><td>immutability</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+<tr><td>operator_versions</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+<tr><td>por_trace</td><td class='g'>21/21</td><td class='g'>100.0%</td></tr>
+</tbody></table>
+</div>
+<div>
+<div class='grid2'>
+<div class='card'><div class='clabel'>M6 Replay Fidelity</div><div class='cval g'>100.0%</div></div>
+<div class='card'><div class='clabel'>M8 Lattice Stability</div><div class='cval g'>-0.650</div></div>
+<div class='card'><div class='clabel'>M10 Consensus MCI</div><div class='cval g'>0.995</div></div>
+<div class='card'><div class='clabel'>M12 Evidence Integrity</div><div class='cval g'>100.0%</div></div>
+</div>
+</div>
+</div>
+</div>
+<div class='sdiv'>
+<h3>S-Scale</h3>
+<p style='color:#8090a8;font-size:.82rem;margin-bottom:.6rem'>Entities: 2000 &nbsp;|&nbsp; Planted constraints: 20 &nbsp;|&nbsp; Ticks: 200</p>
+<div class='grid2'>
+<div>
+<p style='margin-bottom:.4rem;font-size:.9rem'>Total: <strong>36</strong> &nbsp; Passed: <strong class='g'>36</strong> &nbsp; Failed: <strong class='g'>0</strong> &nbsp; Pass rate: <strong class='g'>100.0%</strong></p>
+<table><thead><tr><th>Check</th><th>Passed/Total</th><th>Rate</th></tr></thead><tbody>
+<tr><td>content_address</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+<tr><td>dual_consensus</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+<tr><td>evidence_chain</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+<tr><td>free_energy</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+<tr><td>gate_kairos</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+<tr><td>immutability</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+<tr><td>operator_versions</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+<tr><td>por_trace</td><td class='g'>36/36</td><td class='g'>100.0%</td></tr>
+</tbody></table>
+</div>
+<div>
+<div class='grid2'>
+<div class='card'><div class='clabel'>M6 Replay Fidelity</div><div class='cval g'>100.0%</div></div>
+<div class='card'><div class='clabel'>M8 Lattice Stability</div><div class='cval g'>-0.615</div></div>
+<div class='card'><div class='clabel'>M10 Consensus MCI</div><div class='cval g'>0.995</div></div>
+<div class='card'><div class='clabel'>M12 Evidence Integrity</div><div class='cval g'>100.0%</div></div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class='section'>
+<h2>3. Benchmark Results</h2>
+<p class='na'>No benchmark data. Run <code>isls bench</code> first.</p>
+</div>
+<div class='section'>
+<h2>4. Specification Compliance</h2>
+<p style='margin-bottom:.6rem'>All 287 acceptance tests passed (AT-01–AT-20 core + AT-R1–R5 Registry + AT-M1–M5 Manifest + AT-C1–C6 Capsule + AT-S1–S5 Scheduler + AT-T1–T12 Topology + AT-D1–D8 Store + AT-SC1–SC15 Scale + AT-P1–P8 PMHD + AT-IR1–IR4 ArtifactIR + AT-F1–F10 Forge + AT-CO1–CO12 Compose + AT-O1–O10 Oracle + AT-TM1–TM12 Templates + AT-FD1–FD14 Foundry + AT-ST1–ST8 Studio):</p>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01–AT-20)</h3>
+<div class='atgrid'>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-01</strong>: Idempotent Ingestion</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-02</strong>: Append-Only</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-03</strong>: Replay Determinism</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-04</strong>: Read-Only Extraction</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-05</strong>: Constraint Convergence</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-06</strong>: Provenance Completeness</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-07</strong>: Threshold Gated Reject</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-08</strong>: Positive Commit</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-09</strong>: Storage Corruption</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-10</strong>: Non-Retroactivity</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-11</strong>: Operator Drift</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-12</strong>: Resource Bound</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-13</strong>: Dual Consensus</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-14</strong>: PoR FSM</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-15</strong>: Carrier Migration</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-16</strong>: Kairos Gate</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-17</strong>: Null Center Stateless</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-18</strong>: Tri-Temporal Ordering</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-19</strong>: Content Addressing</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-20</strong>: Symmetry Restoration</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Registry C12 (AT-R1–R5)</h3>
+<div class='atgrid'>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-R1</strong>: Content Address</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-R2</strong>: Drift Detection</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-R3</strong>: RD Binding</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-R4</strong>: Append-Only</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-R5</strong>: Det. Digest</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Manifest C13 (AT-M1–M5)</h3>
+<div class='atgrid'>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-M1</strong>: Content Address</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-M2</strong>: Verification MV1-6</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-M3</strong>: Tamper Detection</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-M4</strong>: Replay Pack</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-M5</strong>: Trace Determinism</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Capsule C14 (AT-C1–C6)</h3>
+<div class='atgrid'>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-C1</strong>: Seal-Open Roundtrip</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-C2</strong>: Policy Rejection</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-C3</strong>: Tamper Detection</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-C4</strong>: Expiry Enforcement</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-C5</strong>: Replay Stability</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-C6</strong>: Wrong Manifest</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Scheduler C15 (AT-S1–S5)</h3>
+<div class='atgrid'>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-S1</strong>: Disabled Passthrough</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-S2</strong>: Adaptive Scaling</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-S3</strong>: Determinism</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-S4</strong>: Extrinsic Invariance</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-S5</strong>: Backward Compat.</div>
+</div>
+<h3>AT-T1–T12 (C16 Topology)</h3>
+<div class='grid10'>
+<span class='badge bg'>AT-T1</span>
+<span class='badge bg'>AT-T2</span>
+<span class='badge bg'>AT-T3</span>
+<span class='badge bg'>AT-T4</span>
+<span class='badge bg'>AT-T5</span>
+<span class='badge bg'>AT-T6</span>
+<span class='badge bg'>AT-T7</span>
+<span class='badge bg'>AT-T8</span>
+<span class='badge bg'>AT-T9</span>
+<span class='badge bg'>AT-T10</span>
+<span class='badge bg'>AT-T11</span>
+<span class='badge bg'>AT-T12</span>
+</div>
+<h3>AT-D1–D8 (C17 Store)</h3>
+<div class='grid10'>
+<span class='badge bg'>AT-D1</span>
+<span class='badge bg'>AT-D2</span>
+<span class='badge bg'>AT-D3</span>
+<span class='badge bg'>AT-D4</span>
+<span class='badge bg'>AT-D5</span>
+<span class='badge bg'>AT-D6</span>
+<span class='badge bg'>AT-D7</span>
+<span class='badge bg'>AT-D8</span>
+</div>
+<h3>AT-SC1–SC15 (C18 Scale)</h3>
+<div class='grid10'>
+<span class='badge bg'>AT-SC1</span>
+<span class='badge bg'>AT-SC2</span>
+<span class='badge bg'>AT-SC3</span>
+<span class='badge bg'>AT-SC4</span>
+<span class='badge bg'>AT-SC5</span>
+<span class='badge bg'>AT-SC6</span>
+<span class='badge bg'>AT-SC7</span>
+<span class='badge bg'>AT-SC8</span>
+<span class='badge bg'>AT-SC9</span>
+<span class='badge bg'>AT-SC10</span>
+<span class='badge bg'>AT-SC11</span>
+<span class='badge bg'>AT-SC12</span>
+<span class='badge bg'>AT-SC13</span>
+<span class='badge bg'>AT-SC14</span>
+<span class='badge bg'>AT-SC15</span>
+</div>
+<h3>AT-P1–P8 (C21 PMHD)</h3>
+<div class='grid10'>
+<span class='badge bg'>AT-P1</span>
+<span class='badge bg'>AT-P2</span>
+<span class='badge bg'>AT-P3</span>
+<span class='badge bg'>AT-P4</span>
+<span class='badge bg'>AT-P5</span>
+<span class='badge bg'>AT-P6</span>
+<span class='badge bg'>AT-P7</span>
+<span class='badge bg'>AT-P8</span>
+</div>
+<h3>AT-IR1–IR4 (C22 ArtifactIR)</h3>
+<div class='grid10'>
+<span class='badge bg'>AT-IR1</span>
+<span class='badge bg'>AT-IR2</span>
+<span class='badge bg'>AT-IR3</span>
+<span class='badge bg'>AT-IR4</span>
+</div>
+<h3>AT-F1–F10 (C23 Forge)</h3>
+<div class='grid10'>
+<span class='badge bg'>AT-F1</span>
+<span class='badge bg'>AT-F2</span>
+<span class='badge bg'>AT-F3</span>
+<span class='badge bg'>AT-F4</span>
+<span class='badge bg'>AT-F5</span>
+<span class='badge bg'>AT-F6</span>
+<span class='badge bg'>AT-F7</span>
+<span class='badge bg'>AT-F8</span>
+<span class='badge bg'>AT-F9</span>
+<span class='badge bg'>AT-F10</span>
+</div>
+<h3>AT-CO1–CO12 (C24 Compose)</h3>
+<div class='grid10'>
+<span class='badge bg'>AT-CO1</span>
+<span class='badge bg'>AT-CO2</span>
+<span class='badge bg'>AT-CO3</span>
+<span class='badge bg'>AT-CO4</span>
+<span class='badge bg'>AT-CO5</span>
+<span class='badge bg'>AT-CO6</span>
+<span class='badge bg'>AT-CO7</span>
+<span class='badge bg'>AT-CO8</span>
+<span class='badge bg'>AT-CO9</span>
+<span class='badge bg'>AT-CO10</span>
+<span class='badge bg'>AT-CO11</span>
+<span class='badge bg'>AT-CO12</span>
+</div>
+<p style='color:#8090a8;margin-top:.6rem'>287 acceptance tests + 39 harness/genesis tests = 326 total, 0 failures</p>
+</div>
+<div class='section'>
+<h2>5. Extension Architecture (v1.0.0)</h2>
+<div class='grid2'>
+<div>
+<h3>C12 — Registry</h3>
+<table><tbody>
+<tr><td>Operator registry</td><td class='g'>Active</td></tr>
+<tr><td>Profile registry</td><td class='g'>Active</td></tr>
+<tr><td>Obligation registry</td><td class='g'>Active</td></tr>
+<tr><td>Macro registry</td><td class='g'>Active</td></tr>
+<tr><td>Drift detection</td><td class='g'>Enabled</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>C13 — Manifest</h3>
+<table><tbody>
+<tr><td>Latest run_id</td><td><code>3b3bcfe075d12c3a…</code></td></tr>
+<tr><td>Crystal count</td><td>51</td></tr>
+<tr><td>Trace entries</td><td>100</td></tr>
+<tr><td>Verification</td><td class='g'>PASS</td></tr>
+</tbody></table>
+</div>
+</div>
+<div class='grid2' style='margin-top:.6rem'>
+<div>
+<h3>C14 — Capsule (OLP)</h3>
+<table><tbody>
+<tr><td>Algorithm</td><td>AES-256-GCM</td></tr>
+<tr><td>Key derivation</td><td>HKDF-SHA256</td></tr>
+<tr><td>Seal/open test</td><td class='r'>SKIP (seal produced no capsule)</td></tr>
+<tr><td>Tamper evidence</td><td class='g'>AAD-bound</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>C15 — Spiral Scheduler</h3>
+<table><tbody>
+<tr><td>Default strategy</td><td>max_pressure</td></tr>
+<tr><td>n_min</td><td>1</td></tr>
+<tr><td>n_max</td><td>10</td></tr>
+<tr><td>Default state</td><td>disabled (flat ticks)</td></tr>
+<tr><td>Backward compat.</td><td class='g'>n_k=1 when disabled</td></tr>
+</tbody></table>
+</div>
+</div>
+</div>
+<div class='section'>
+<h2>6. Phase 2 Extension Architecture (v1.0.0)</h2>
+<div class='grid2'>
+<div>
+<h3>C16 — Topology (Orbit Core)</h3>
+<table><tbody>
+<tr><td>Spectral decomposition</td><td class='g'>Laplacian + nalgebra</td></tr>
+<tr><td>Spectral gap &Delta;</td><td class='g'>M25 — informational</td></tr>
+<tr><td>Cheeger estimate</td><td class='g'>&radic;(2&Delta;)</td></tr>
+<tr><td>CTQW propagation</td><td class='g'>Spectral truncation</td></tr>
+<tr><td>M26 Kuramoto r</td><td class='g'>Coherence metric</td></tr>
+<tr><td>M27 Mean prop. time</td><td class='g'>Informational</td></tr>
+<tr><td>DTL predicates</td><td class='g'>Connected, TreeLike, ...</td></tr>
+<tr><td>Fixpoint detection</td><td class='g'>Jaccard / consecutive</td></tr>
+<tr><td>Deduplication</td><td class='g'>Digest-based BTreeSet</td></tr>
+<tr><td>Crystal hardening</td><td class='g'>Every crystal enriched</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>C17 — Store (Persistence Layer)</h3>
+<table><tbody>
+<tr><td>Backend</td><td class='g'>SQLite (bundled)</td></tr>
+<tr><td>Projects</td><td class='g'>create / list / get</td></tr>
+<tr><td>Runs</td><td class='g'>create / finish / list</td></tr>
+<tr><td>Crystals</td><td class='g'>append-only (Inv I10)</td></tr>
+<tr><td>Traces</td><td class='g'>tick-ordered</td></tr>
+<tr><td>Manifests / Capsules</td><td class='g'>round-trip verified</td></tr>
+<tr><td>Metrics / Alerts</td><td class='g'>time-series</td></tr>
+<tr><td>Settings</td><td class='g'>key-value</td></tr>
+<tr><td>Migration framework</td><td class='g'>idempotent v1</td></tr>
+<tr><td>Export ZIP</td><td class='g'>manifest + crystals + traces</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3>New Metrics M25–M27 (Topology-Informational)</h3>
+<table><thead><tr><th>ID</th><th>Name</th><th>Formula</th><th>Alert Threshold</th></tr></thead><tbody>
+<tr><td>M25</td><td>Spectral Gap</td><td>&Delta;<sub>k</sub></td><td>&Delta; &lt; 0.01 (disconnection risk)</td></tr>
+<tr><td>M26</td><td>Kuramoto Coherence</td><td>r<sub>k</sub></td><td>r &lt; 0.1 (no synchronization)</td></tr>
+<tr><td>M27</td><td>Mean Propagation Time</td><td>t&#x0305;<sub>prop,k</sub></td><td>&gt; 100 (signals too slow)</td></tr>
+</tbody></table>
+<p style='color:#8090a8;margin-top:.4rem'>M25–M27 are informational only. They enrich crystal topology signatures and this dashboard. Not gate variables.</p>
+</div>
+<div class='section'>
+<h2>7. Phase 3 Extension Architecture (C18)</h2>
+<div class='grid2'>
+<div>
+<h3>C18 — Scale (Multi-Scale Observation Layer)</h3>
+<table><tbody>
+<tr><td>Micro Scale (S_μ)</td><td class='g'>Active</td></tr>
+<tr><td>Meso Scale (S_m)</td><td class='g'>Active</td></tr>
+<tr><td>Macro Scale (S_M)</td><td class='g'>Active</td></tr>
+<tr><td>HypercubeUniverses</td><td class='g'>5D AABB, split→32 children</td></tr>
+<tr><td>Bridges (directed)</td><td class='g'>Delay + phase offset</td></tr>
+<tr><td>Ladders</td><td class='g'>Lift micro→meso→macro</td></tr>
+<tr><td>Spectral bisection</td><td class='g'>Fiedler clustering</td></tr>
+<tr><td>Kuramoto clustering</td><td class='g'>Phase-based groups</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>New Metrics M28–M32 (Scale Layer)</h3>
+<table><thead><tr><th>ID</th><th>Name</th><th>Symbol</th><th>Alert Condition</th></tr></thead><tbody>
+<tr><td>M28</td><td>Cluster Count</td><td>K<sub>m</sub></td><td>K &gt; 50 (fragmentation)</td></tr>
+<tr><td>M29</td><td>Bridge Activity</td><td>&beta;<sub>B</sub></td><td>&beta; &lt; 0.1 (no coupling)</td></tr>
+<tr><td>M30</td><td>Scale Coherence</td><td>r<sub>s</sub></td><td>r &lt; 0.05 (incoherent)</td></tr>
+<tr><td>M31</td><td>Lift Compression</td><td>&gamma;<sub>L</sub></td><td>&gamma; &gt; 0.9 (no reduction)</td></tr>
+<tr><td>M32</td><td>Cross-Scale Crystal Rate</td><td>&rho;<sub>CS</sub></td><td>&rho; = 0 (no cross-scale commits)</td></tr>
+</tbody></table>
+<p style='color:#8090a8;margin-top:.4rem'>M28–M32 are informational. They enrich multi-scale analysis. Not gate variables.</p>
+</div>
+</div>
+</div>
+<div class='section'>
+<h2>8. Phase 5 — Generative Forge (C21–C23)</h2>
+<div class='grid2'>
+<div>
+<h3>C21 — PMHD (Drill Engine)</h3>
+<table><tbody>
+<tr><td>Drill strategies</td><td class='g'>Greedy, Stochastic, Beam, Evolutionary, Hybrid</td></tr>
+<tr><td>Quality axes</td><td class='g'>coherence, robustness, coverage, stability, quality_score, impact</td></tr>
+<tr><td>Commit gate</td><td class='g'>8-gate PoR (all thresholds configurable, default 0.0)</td></tr>
+<tr><td>PRNG</td><td class='g'>xorshift64, deterministic from seed</td></tr>
+<tr><td>Hypothesis ID</td><td class='g'>SHA-256(claim &#x7c;&#x7c; sorted_assumptions)</td></tr>
+<tr><td>Pattern memory</td><td class='g'>In-memory, grows per drill tick</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>C22 — ArtifactIR (Intermediate Representation)</h3>
+<table><tbody>
+<tr><td>Components</td><td class='g'>Derived from PmhdMonolith hypotheses</td></tr>
+<tr><td>Interfaces</td><td class='g'>From DecisionSpec.interfaces</td></tr>
+<tr><td>Component ID</td><td class='g'>SHA-256 content-addressed</td></tr>
+<tr><td>FiveD signature</td><td class='g'>Dual SHA-256 (h1=id, h2=sig bytes)</td></tr>
+<tr><td>Provenance link</td><td class='g'>monolith_id + spec_id + layer tag</td></tr>
+<tr><td>Serde</td><td class='g'>JSON round-trip verified</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3>C23 — Forge Engine</h3>
+<div class='grid2'>
+<div><table><tbody>
+<tr><td>Matrices available</td><td class='g'>RustModule, HttpApi, Workflow, Schema</td></tr>
+<tr><td>Synthesizer</td><td class='g'>DefaultSynthesizer (JCS-canonicalized)</td></tr>
+<tr><td>Evaluators</td><td class='g'>ConstraintEvaluator, QualityBoundsEvaluator</td></tr>
+<tr><td>Emitters</td><td class='g'>File, Stdout, Gateway</td></tr>
+</tbody></table></div>
+<div><table><tbody>
+<tr><td>Pattern memory</td><td class='g'>Store-backed via IslandStore (C17)</td></tr>
+<tr><td>Forge crystal</td><td class='g'>scale_tag = forge:{domain}</td></tr>
+<tr><td>IMPOSSIBLE constraint</td><td class='g'>Detected by ConstraintEvaluator</td></tr>
+<tr><td>Gateway emitter</td><td class='g'>Constructs JSON payload, reports bytes_written</td></tr>
+</tbody></table></div>
+</div>
+</div>
+<div class='section'>
+<h2>9. Phase 5.1 — Recursive Composition (C24)</h2>
+<div class='grid2'>
+<div>
+<h3>C24 — CompositionEngine</h3>
+<table><tbody>
+<tr><td>Decomposition strategy</td><td class='g'>Midpoint goal-split, fully deterministic</td></tr>
+<tr><td>Atom threshold</td><td class='g'>atom_max_components (default 4 goals)</td></tr>
+<tr><td>Max recursion depth</td><td class='g'>max_depth (default 8)</td></tr>
+<tr><td>Scale hierarchy</td><td class='g'>Atoms → Micro, Molecules → Meso, System → Macro</td></tr>
+<tr><td>Interface contracts</td><td class='g'>Auto-generated left→right at each split</td></tr>
+<tr><td>Output</td><td class='g'>SystemArtifact + System Crystal</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Composition Validation (CV1–CV6)</h3>
+<table><thead><tr><th>Gate</th><th>Check</th><th>Status</th></tr></thead><tbody>
+<tr><td><strong>CV1</strong></td><td>Completeness — all atom crystals valid</td><td class='g'>Active</td></tr>
+<tr><td><strong>CV2</strong></td><td>Consistency — no unsatisfied interfaces</td><td class='g'>Active</td></tr>
+<tr><td><strong>CV3</strong></td><td>Composability — bindings present</td><td class='g'>Active</td></tr>
+<tr><td><strong>CV4</strong></td><td>Dependency order — topological sort valid</td><td class='g'>Active</td></tr>
+<tr><td><strong>CV5</strong></td><td>Coverage — &ge; 50% atoms covered</td><td class='g'>Active</td></tr>
+<tr><td><strong>CV6</strong></td><td>Stability — at least one molecule formed</td><td class='g'>Active</td></tr>
+</tbody></table>
+</div>
+</div>
+</div>
+<div class='section'>
+<h2>10. Phase 6 — Hybrid Synthesis Oracle (C25)</h2>
+<p style='margin-bottom:1rem'>The oracle that generates. The system that validates. The memory that learns.<br>Memory-first → LLM fallback → skeleton fallback. Every validated answer reduces the next question.</p>
+<div class='grid2'>
+<div>
+<h3>C25 — OracleEngine</h3>
+<table><tbody>
+<tr><td>Default oracle</td><td class='g'>ClaudeOracle (claude-sonnet-4-20250514)</td></tr>
+<tr><td>Memory-first</td><td class='g'>Cosine similarity ≥ 0.85 in 5D embedding space</td></tr>
+<tr><td>Quality threshold</td><td class='g'>≥ 0.6 for pattern reuse</td></tr>
+<tr><td>Max retries</td><td class='g'>3 per synthesis request</td></tr>
+<tr><td>Fallback</td><td class='g'>Skeleton (no LLM dependency for correctness)</td></tr>
+<tr><td>API key</td><td class='g'>env:ANTHROPIC_API_KEY or capsule-protected (C14)</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Validation Pipeline (4 Stages)</h3>
+<table><thead><tr><th>Stage</th><th>Check</th><th>Status</th></tr></thead><tbody>
+<tr><td><strong>V1 Parse</strong></td><td>Non-empty + format-valid (JSON/Rust/YAML/OpenAPI)</td><td class='g'>Active</td></tr>
+<tr><td><strong>V2 Constraints</strong></td><td>All required component names present</td><td class='g'>Active</td></tr>
+<tr><td><strong>V3 PMHD</strong></td><td>Mini-PMHD adversarial quality check</td><td class='g'>Active</td></tr>
+<tr><td><strong>V4 Gates</strong></td><td>8-gate quality threshold</td><td class='g'>Active</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3>Autonomy Metrics (M33, M34)</h3>
+<div class='grid2'>
+<div><table><thead><tr><th>Metric</th><th>Name</th><th>Formula</th><th>Goal</th></tr></thead><tbody>
+<tr><td><strong>M33</strong></td><td>Autonomy Ratio</td><td>memory_hits / total_requests</td><td class='g'>→ 1.0 (asymptotic)</td></tr>
+<tr><td><strong>M34</strong></td><td>Oracle Rejection Rate</td><td>oracle_rejections / oracle_calls</td><td class='g'>&lt; 0.1 (oracle aligned)</td></tr>
+</tbody></table></div>
+<div><table><thead><tr><th>Budget Control</th><th>Default</th></tr></thead><tbody>
+<tr><td>max_calls_per_run</td><td class='g'>100</td></tr>
+<tr><td>max_tokens_per_run</td><td class='g'>500,000</td></tr>
+<tr><td>max_cost_per_run</td><td class='g'>$10.00</td></tr>
+<tr><td>max_calls_per_day</td><td class='g'>1,000</td></tr>
+</tbody></table></div>
+</div>
+<h3>Acceptance Tests (AT-O1–AT-O10)</h3>
+<div class='grid10'>
+<div class='gate-box'><strong>AT-O1</strong><br><small>MemoryHit</small></div>
+<div class='gate-box'><strong>AT-O2</strong><br><small>LlmFallback</small></div>
+<div class='gate-box'><strong>AT-O3</strong><br><small>ValidationRej</small></div>
+<div class='gate-box'><strong>AT-O4</strong><br><small>PromptDet</small></div>
+<div class='gate-box'><strong>AT-O5</strong><br><small>Budget</small></div>
+<div class='gate-box'><strong>AT-O6</strong><br><small>Autonomy</small></div>
+<div class='gate-box'><strong>AT-O7</strong><br><small>Crystallize</small></div>
+<div class='gate-box'><strong>AT-O8</strong><br><small>Graceful</small></div>
+<div class='gate-box'><strong>AT-O9</strong><br><small>NoLeak</small></div>
+<div class='gate-box'><strong>AT-O10</strong><br><small>CapsuleKey</small></div>
+</div>
+</div>
+<div class='section'>
+<h2>11. Phase 4 — Gateway &amp; Adapters (C19–C20)</h2>
+<div class='grid2'>
+<div>
+<h3>C19 — ISLS Gateway</h3>
+<table><tbody>
+<tr><td>Server framework</td><td class='g'>Axum (async, Tower middleware)</td></tr>
+<tr><td>REST endpoints</td><td class='g'>26 routes (health, crystals, run, validate, forge, compose, oracle, studio …)</td></tr>
+<tr><td>WebSocket endpoint</td><td class='g'>GET /ws — real-time crystal/gate/alert stream</td></tr>
+<tr><td>Auth config</td><td class='g'>Optional Bearer token via GatewayConfig::auth_token</td></tr>
+<tr><td>CORS</td><td class='g'>Configurable allow-origin list</td></tr>
+<tr><td>Port</td><td class='g'>Default 8080, overridable via config</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>C20 — Adapters</h3>
+<table><thead><tr><th>Adapter</th><th>Direction</th><th>Description</th></tr></thead><tbody>
+<tr><td>synthetic</td><td class='g'>Ingestion</td><td>Deterministic scenario generator (S-Basic … S-Scale)</td></tr>
+<tr><td>file-csv</td><td class='g'>Ingestion</td><td>CSV row → Observation batch</td></tr>
+<tr><td>file-jsonl</td><td class='g'>Ingestion</td><td>JSONL stream → typed Observations</td></tr>
+<tr><td>http-poll</td><td class='g'>Ingestion</td><td>Periodic HTTP GET → Observation</td></tr>
+<tr><td>ws-stream</td><td class='g'>Ingestion</td><td>WebSocket frame → Observation</td></tr>
+<tr><td>syslog</td><td class='g'>Ingestion</td><td>UDP syslog (RFC 5424) → Observation</td></tr>
+<tr><td>stdin</td><td class='g'>Ingestion</td><td>Line-delimited stdin → Observation</td></tr>
+<tr><td>replay</td><td class='g'>Ingestion</td><td>Replays archive.jsonl for deterministic retesting</td></tr>
+<tr><td>file-watcher</td><td class='g'>Ingestion</td><td>inotify/FSEvents file-change → Observation</td></tr>
+<tr><td>file</td><td class='y'>Emission</td><td>Writes crystals to JSONL file</td></tr>
+<tr><td>gateway</td><td class='y'>Emission</td><td>POST crystal to remote ISLS gateway</td></tr>
+<tr><td>stdout</td><td class='y'>Emission</td><td>Pretty-prints crystal to stdout</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-GW / AT-AD)</h3>
+<div class='atgrid'>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW1</strong>: HealthEndpoint</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW2</strong>: CrystalList</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW3</strong>: RunShadow</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW4</strong>: ValidateFormal</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW5</strong>: WebSocketStream</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW6</strong>: AuthReject</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW7</strong>: CORSHeaders</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW8</strong>: StudioServe</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD1</strong>: SyntheticScenario</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD2</strong>: CsvIngestion</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD3</strong>: JsonlIngestion</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD4</strong>: ReplayDeterminism</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD5</strong>: FileEmit</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD6</strong>: StdoutEmit</div>
+</div>
+</div>
+<div class='section'>
+<h2>12. Phase 7 — Architecture Templates (C26)</h2>
+<p style='margin-bottom:1rem'>Pattern-driven code generation. Every archetype encodes the shape of a well-formed component — atoms, molecules, interfaces, and fill strategy.</p>
+<h3>Built-in Templates (T01–T10)</h3>
+<table><thead><tr><th>ID</th><th>Name</th><th>Atoms</th><th>Molecules</th></tr></thead><tbody>
+<tr><td><strong>T01</strong></td><td>Microservice</td><td>4</td><td>2</td></tr>
+<tr><td><strong>T02</strong></td><td>EventProcessor</td><td>3</td><td>1</td></tr>
+<tr><td><strong>T03</strong></td><td>DataPipeline</td><td>5</td><td>3</td></tr>
+<tr><td><strong>T04</strong></td><td>ApiGateway</td><td>4</td><td>2</td></tr>
+<tr><td><strong>T05</strong></td><td>StorageLayer</td><td>3</td><td>2</td></tr>
+<tr><td><strong>T06</strong></td><td>AuthService</td><td>4</td><td>2</td></tr>
+<tr><td><strong>T07</strong></td><td>MessageBroker</td><td>3</td><td>1</td></tr>
+<tr><td><strong>T08</strong></td><td>MonitoringService</td><td>3</td><td>2</td></tr>
+<tr><td><strong>T09</strong></td><td>CacheLayer</td><td>2</td><td>1</td></tr>
+<tr><td><strong>T10</strong></td><td>WorkflowEngine</td><td>5</td><td>3</td></tr>
+</tbody></table>
+<div class='grid2' style='margin-top:1rem'>
+<div>
+<h3>Template Matching (priority order)</h3>
+<table><thead><tr><th>Strategy</th><th>Criterion</th></tr></thead><tbody>
+<tr><td>1. Archetype</td><td>Exact archetype name match</td></tr>
+<tr><td>2. Tag overlap</td><td>Most tags in common with request</td></tr>
+<tr><td>3. Domain</td><td>Domain field equality</td></tr>
+<tr><td>4. Keywords</td><td>Name/description substring match</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Fill Strategies</h3>
+<table><thead><tr><th>Strategy</th><th>Behaviour</th></tr></thead><tbody>
+<tr><td><strong>Oracle</strong></td><td>Delegates to C25 OracleEngine for LLM-generated content</td></tr>
+<tr><td><strong>Pattern</strong></td><td>Nearest-neighbour from pattern memory (cosine ≥ 0.85)</td></tr>
+<tr><td><strong>Static</strong></td><td>Fixed placeholder code, always deterministic</td></tr>
+<tr><td><strong>Derive</strong></td><td>Derives implementation from component interfaces</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem'>Template Lifecycle</h3>
+<table><thead><tr><th>Operation</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>create</strong></td><td>Instantiate a template into a concrete ForgeSpec</td></tr>
+<tr><td><strong>distill</strong></td><td>Extract a reusable template from an existing crystal</td></tr>
+<tr><td><strong>compose</strong></td><td>Merge two templates into a composite architecture</td></tr>
+</tbody></table>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-TM1–AT-TM12)</h3>
+<div class='grid10'>
+<div class='gate-box'><strong>AT-TM1</strong><br><small>ListTemplates</small></div>
+<div class='gate-box'><strong>AT-TM2</strong><br><small>GetTemplate</small></div>
+<div class='gate-box'><strong>AT-TM3</strong><br><small>ArchetypeMatch</small></div>
+<div class='gate-box'><strong>AT-TM4</strong><br><small>TagOverlapMatch</small></div>
+<div class='gate-box'><strong>AT-TM5</strong><br><small>DomainMatch</small></div>
+<div class='gate-box'><strong>AT-TM6</strong><br><small>KeywordMatch</small></div>
+<div class='gate-box'><strong>AT-TM7</strong><br><small>CreateInstance</small></div>
+<div class='gate-box'><strong>AT-TM8</strong><br><small>OracleFill</small></div>
+<div class='gate-box'><strong>AT-TM9</strong><br><small>PatternFill</small></div>
+<div class='gate-box'><strong>AT-TM10</strong><br><small>StaticFill</small></div>
+<div class='gate-box'><strong>AT-TM11</strong><br><small>Distill</small></div>
+<div class='gate-box'><strong>AT-TM12</strong><br><small>Compose</small></div>
+</div>
+</div>
+<div class='section'>
+<h2>13. Phase 8 — The Foundry (C27)</h2>
+<p style='margin-bottom:1rem'>Autonomous code generation with a build-test-fix loop. The Foundry writes, compiles, tests, and iterates until all quality gates pass — or budgets are exhausted.</p>
+<div class='grid2'>
+<div>
+<h3>Build-Test-Fix Loop</h3>
+<table><thead><tr><th>Step</th><th>Tool</th><th>On Failure</th></tr></thead><tbody>
+<tr><td>1. Write</td><td>Oracle / Pattern / Static</td><td>N/A (always produces output)</td></tr>
+<tr><td>2. cargo check</td><td>Rust compiler</td><td>Oracle correction → iterate</td></tr>
+<tr><td>3. cargo clippy</td><td>Clippy linter</td><td>Oracle correction → iterate</td></tr>
+<tr><td>4. cargo fmt</td><td>rustfmt</td><td>Auto-apply formatting</td></tr>
+<tr><td>5. cargo test</td><td>Test harness</td><td>Oracle correction → iterate</td></tr>
+<tr><td>6. Gate check</td><td>FoundryValidation</td><td>Fail if max_iterations exceeded</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>8 Foundry Operations</h3>
+<table><thead><tr><th>Operation</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>NewProject</strong></td><td>Scaffold a new Cargo workspace from a template</td></tr>
+<tr><td><strong>AddComponent</strong></td><td>Add a crate to an existing workspace</td></tr>
+<tr><td><strong>Implement</strong></td><td>Generate implementation for a ForgeSpec atom/molecule</td></tr>
+<tr><td><strong>AddEndpoint</strong></td><td>Add an Axum REST or WebSocket endpoint</td></tr>
+<tr><td><strong>Fix</strong></td><td>Repair a compilation or test failure using Oracle</td></tr>
+<tr><td><strong>GenerateTests</strong></td><td>Produce unit + integration tests for a component</td></tr>
+<tr><td><strong>Refactor</strong></td><td>Restructure code while preserving behaviour</td></tr>
+<tr><td><strong>Document</strong></td><td>Generate doc-comments and README sections</td></tr>
+</tbody></table>
+</div>
+</div>
+<div class='grid2' style='margin-top:1rem'>
+<div>
+<h3>FoundryValidation Gates</h3>
+<table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><strong>compiles</strong></td><td class='g'>cargo check exits 0</td></tr>
+<tr><td><strong>tests_pass</strong></td><td class='g'>cargo test exits 0</td></tr>
+<tr><td><strong>test_count</strong></td><td class='g'>Number of #[test] fns found</td></tr>
+<tr><td><strong>warnings</strong></td><td class='y'>Clippy warning count (goal: 0)</td></tr>
+<tr><td><strong>formatted</strong></td><td class='g'>rustfmt diff is empty</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Workspace Intelligence</h3>
+<table><tbody>
+<tr><td>Existing code analysis</td><td class='g'>Reads workspace members for Oracle context</td></tr>
+<tr><td>Dependency resolution</td><td class='g'>Parses Cargo.toml for crate graph</td></tr>
+<tr><td>Dry-run mode</td><td class='g'>Full pipeline without invoking cargo</td></tr>
+<tr><td>Max iterations</td><td class='g'>Configurable per operation (default 3)</td></tr>
+<tr><td>Pattern memory</td><td class='g'>Successful builds stored for reuse</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-FD1–AT-FD14)</h3>
+<div class='grid10'>
+<div class='gate-box'><strong>AT-FD1</strong><br><small>NewProject</small></div>
+<div class='gate-box'><strong>AT-FD2</strong><br><small>AddComponent</small></div>
+<div class='gate-box'><strong>AT-FD3</strong><br><small>Implement</small></div>
+<div class='gate-box'><strong>AT-FD4</strong><br><small>AddEndpoint</small></div>
+<div class='gate-box'><strong>AT-FD5</strong><br><small>Fix</small></div>
+<div class='gate-box'><strong>AT-FD6</strong><br><small>GenerateTests</small></div>
+<div class='gate-box'><strong>AT-FD7</strong><br><small>Refactor</small></div>
+<div class='gate-box'><strong>AT-FD8</strong><br><small>Document</small></div>
+<div class='gate-box'><strong>AT-FD9</strong><br><small>BuildLoop</small></div>
+<div class='gate-box'><strong>AT-FD10</strong><br><small>DryRun</small></div>
+<div class='gate-box'><strong>AT-FD11</strong><br><small>WorkspaceIntel</small></div>
+<div class='gate-box'><strong>AT-FD12</strong><br><small>PatternReuse</small></div>
+<div class='gate-box'><strong>AT-FD13</strong><br><small>BudgetExhaust</small></div>
+<div class='gate-box'><strong>AT-FD14</strong><br><small>ValidationGates</small></div>
+</div>
+</div>
+<div class='section'>
+<h2>14. Phase 9 — The Studio (C19 extension)</h2>
+<p style='margin-bottom:1rem'>Single-page developer UI served directly by the ISLS Gateway. Zero external dependencies — one self-contained HTML file at <code>GET /studio</code>.</p>
+<div class='grid2'>
+<div>
+<h3>7 Studio Views</h3>
+<table><thead><tr><th>View</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><strong>Dashboard</strong></td><td>Live crystal count, pass rate, health score, recent alerts</td></tr>
+<tr><td><strong>Forge</strong></td><td>Submit ForgeSpec, track generation progress via WebSocket</td></tr>
+<tr><td><strong>Explorer</strong></td><td>Browse, filter, and inspect the crystal archive</td></tr>
+<tr><td><strong>Monitor</strong></td><td>Real-time metric charts (M01–M34) and alert feed</td></tr>
+<tr><td><strong>Foundry</strong></td><td>Drive Foundry operations, view build-test-fix loop output</td></tr>
+<tr><td><strong>Oracle</strong></td><td>Interactive Oracle query + memory hit visualisation</td></tr>
+<tr><td><strong>Constitution</strong></td><td>Genesis Crystal constraints and conformance status</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>New API Endpoints</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead><tbody>
+<tr><td>GET</td><td><code>/studio</code></td><td>Serve self-contained Studio HTML</td></tr>
+<tr><td>GET</td><td><code>/api/dashboard</code></td><td>Aggregate dashboard metrics snapshot</td></tr>
+<tr><td>POST</td><td><code>/api/command</code></td><td>Command palette action dispatcher</td></tr>
+<tr><td>POST</td><td><code>/api/foundry/run</code></td><td>Trigger a Foundry operation</td></tr>
+<tr><td>GET</td><td><code>/api/foundry/status</code></td><td>Poll current Foundry job status</td></tr>
+<tr><td>GET</td><td><code>/ws</code></td><td>WebSocket: all real-time events</td></tr>
+</tbody></table>
+</div>
+</div>
+<div class='grid2' style='margin-top:1rem'>
+<div>
+<h3>WebSocket Event Types</h3>
+<table><thead><tr><th>Event</th><th>Payload</th></tr></thead><tbody>
+<tr><td><strong>tick</strong></td><td>Tick number + timestamp</td></tr>
+<tr><td><strong>crystal</strong></td><td>New crystal summary (id, scenario, pass_rate)</td></tr>
+<tr><td><strong>gate</strong></td><td>Gate open/close event with gate ID</td></tr>
+<tr><td><strong>alert</strong></td><td>Metric threshold breach (metric_id, severity)</td></tr>
+<tr><td><strong>forge_progress</strong></td><td>ForgeSpec step completion percentage</td></tr>
+<tr><td><strong>foundry_progress</strong></td><td>Build-test-fix iteration counter</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Keyboard Shortcuts</h3>
+<table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+<tr><td><kbd>Ctrl+K</kbd></td><td>Open command palette</td></tr>
+<tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>Switch to view 1–7</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Close modal / dismiss palette</td></tr>
+<tr><td><kbd>?</kbd></td><td>Show keyboard shortcut help</td></tr>
+<tr><td><kbd>R</kbd></td><td>Refresh current view data</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-ST1–AT-ST8)</h3>
+<div class='grid10'>
+<div class='gate-box'><strong>AT-ST1</strong><br><small>StudioServe</small></div>
+<div class='gate-box'><strong>AT-ST2</strong><br><small>DashboardApi</small></div>
+<div class='gate-box'><strong>AT-ST3</strong><br><small>CommandPalette</small></div>
+<div class='gate-box'><strong>AT-ST4</strong><br><small>WebSocketEvents</small></div>
+<div class='gate-box'><strong>AT-ST5</strong><br><small>ForgeView</small></div>
+<div class='gate-box'><strong>AT-ST6</strong><br><small>FoundryView</small></div>
+<div class='gate-box'><strong>AT-ST7</strong><br><small>OracleView</small></div>
+<div class='gate-box'><strong>AT-ST8</strong><br><small>ConstitutionView</small></div>
+</div>
+</div>
+<footer>Generated by ISLS v1.0.0 — deterministic, append-only, replay-verified</footer>
+</body>
+</html>
