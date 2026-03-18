@@ -1,6 +1,6 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>ISLS v1.0.0 — Full Validation Report</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#1a1a2e;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.6;padding:2rem}h1{font-size:1.8rem;margin-bottom:.4rem}h2{font-size:1.15rem;color:#a0b4d6;margin-bottom:.9rem;padding-bottom:.4rem;border-bottom:1px solid #2a2a4a}h3{font-size:1rem;color:#c0cce0;margin:.8rem 0 .4rem}.meta{color:#8090a8;font-size:.82rem;margin-bottom:1.8rem}.section{background:#0d0d1a;border-radius:8px;padding:1.4rem;margin-bottom:1.4rem;border:1px solid #2a2a4a}table{border-collapse:collapse;width:100%;margin:.4rem 0}th{background:#16213e;padding:.55rem 1rem;text-align:left;font-weight:600;color:#c0cce0;border-bottom:2px solid #2a2a4a}td{padding:.45rem 1rem;border-bottom:1px solid #1e2a3a;vertical-align:top}tr:nth-child(even) td{background:#0f3460}tr:hover td{background:#1a2a4a}.g{color:#22c55e;font-weight:600}.r{color:#ef4444;font-weight:600}.y{color:#eab308;font-weight:600}.na{color:#4a5568;font-style:italic}.badge{display:inline-block;border-radius:4px;padding:.1rem .45rem;font-size:.72rem;font-weight:700}.bg{background:#14532d;color:#22c55e}.br{background:#450a0a;color:#ef4444}.by{background:#422006;color:#eab308}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin:.6rem 0}.grid10{display:flex;flex-wrap:wrap;gap:.3rem;margin:.4rem 0}.card{background:#16213e;border-radius:6px;padding:.6rem .9rem}.clabel{color:#8090a8;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}.cval{font-size:1.25rem;font-weight:700;margin-top:.15rem}.atgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:.35rem;margin:.7rem 0}.atitem{background:#16213e;border-radius:4px;padding:.35rem .65rem;font-size:.8rem}footer{text-align:center;color:#4a5568;margin-top:1.8rem;font-size:.78rem;padding-top:.9rem;border-top:1px solid #2a2a4a}code{background:#16213e;padding:.1rem .35rem;border-radius:3px;font-size:.85em}.sdiv{margin-bottom:1.4rem;padding-bottom:1.4rem;border-bottom:1px solid #2a2a4a}.sdiv:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}</style></head><body>
 <h1>ISLS v1.0.0 — Full Validation Report</h1>
-<div class='meta'>Generated: 2026-03-17 15:27:34 UTC &nbsp;|&nbsp; rustc 1.90.0 (1159e78c4 2025-09-14) &nbsp;|&nbsp; Platform: windows &nbsp;|&nbsp; Git: <code>7698f0e</code></div>
+<div class='meta'>Generated: 2026-03-18 09:58:20 UTC &nbsp;|&nbsp; rustc 1.90.0 (1159e78c4 2025-09-14) &nbsp;|&nbsp; Platform: windows &nbsp;|&nbsp; Git: <code>a704d41</code></div>
 <div class='section'>
 <h2>0. System Constitution</h2>
 <div class='grid2'>
@@ -13,8 +13,8 @@
 </tbody></table></div>
 <div><table><tbody>
 <tr><td>ISLS Version</td><td>v1.0.0</td></tr>
-<tr><td>Crates</td><td>24</td></tr>
-<tr><td>Tests</td><td>253</td></tr>
+<tr><td>Crates</td><td>27</td></tr>
+<tr><td>Tests</td><td>326</td></tr>
 <tr><td>Platform</td><td>windows</td></tr>
 </tbody></table></div>
 </div>
@@ -193,27 +193,11 @@
 </div>
 <div class='section'>
 <h2>3. Benchmark Results</h2>
-<table><thead><tr><th>Benchmark</th><th>Metric</th><th>Value</th><th>Unit</th></tr></thead><tbody>
-<tr><td><strong>B01</strong></td><td>ingestion_throughput</td><td>234897.4284</td><td>obs/sec</td></tr>
-<tr><td><strong>B02</strong></td><td>graph_update_scaling</td><td>156.2264</td><td>us_per_update</td></tr>
-<tr><td><strong>B03</strong></td><td>extraction_scaling_n1000</td><td>103.0000</td><td>ms_per_scan</td></tr>
-<tr><td><strong>B04</strong></td><td>cascade_time_ms</td><td>0.0000</td><td>ms</td></tr>
-<tr><td><strong>B05</strong></td><td>dual_consensus_overhead_pct</td><td>133.3333</td><td>percent</td></tr>
-<tr><td><strong>B06</strong></td><td>crystal_serialization_us</td><td>54.8719</td><td>us_per_crystal</td></tr>
-<tr><td><strong>B07</strong></td><td>replay_speed</td><td>18111.0206</td><td>steps/sec</td></tr>
-<tr><td><strong>B08</strong></td><td>evidence_verification_us</td><td>4.9755</td><td>us_per_verify</td></tr>
-<tr><td><strong>B09</strong></td><td>memory_scaling_n5000</td><td>0.9920</td><td>MB</td></tr>
-<tr><td><strong>B10</strong></td><td>full_macro_step_ms</td><td>0.0000</td><td>ms</td></tr>
-<tr><td><strong>B11</strong></td><td>registry_resolution</td><td>0.0696</td><td>us_per_lookup</td></tr>
-<tr><td><strong>B12</strong></td><td>manifest_construction</td><td>4.0000</td><td>ms_per_manifest</td></tr>
-<tr><td><strong>B13</strong></td><td>manifest_verification</td><td>3.0000</td><td>ms_per_verify</td></tr>
-<tr><td><strong>B14</strong></td><td>capsule_roundtrip</td><td>10.0882</td><td>us_per_roundtrip</td></tr>
-<tr><td><strong>B15</strong></td><td>scheduler_overhead_pct</td><td>0.0000</td><td>overhead_pct</td></tr>
-</tbody></table>
+<p class='na'>No benchmark data. Run <code>isls bench</code> first.</p>
 </div>
 <div class='section'>
 <h2>4. Specification Compliance</h2>
-<p style='margin-bottom:.6rem'>All 243 acceptance tests passed (AT-01–AT-20 core + AT-R1–R5 Registry + AT-M1–M5 Manifest + AT-C1–C6 Capsule + AT-S1–S5 Scheduler + AT-T1–T12 Topology + AT-D1–D8 Store + AT-SC1–SC15 Scale + AT-P1–P8 PMHD + AT-IR1–IR4 ArtifactIR + AT-F1–F10 Forge + AT-CO1–CO12 Compose):</p>
+<p style='margin-bottom:.6rem'>All 287 acceptance tests passed (AT-01–AT-20 core + AT-R1–R5 Registry + AT-M1–M5 Manifest + AT-C1–C6 Capsule + AT-S1–S5 Scheduler + AT-T1–T12 Topology + AT-D1–D8 Store + AT-SC1–SC15 Scale + AT-P1–P8 PMHD + AT-IR1–IR4 ArtifactIR + AT-F1–F10 Forge + AT-CO1–CO12 Compose + AT-O1–O10 Oracle + AT-TM1–TM12 Templates + AT-FD1–FD14 Foundry + AT-ST1–ST8 Studio):</p>
 <h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01–AT-20)</h3>
 <div class='atgrid'>
 <div class='atitem'><span class='g'>&#10003;</span> <strong>AT-01</strong>: Idempotent Ingestion</div>
@@ -360,7 +344,7 @@
 <span class='badge bg'>AT-CO11</span>
 <span class='badge bg'>AT-CO12</span>
 </div>
-<p style='color:#8090a8;margin-top:.6rem'>243 unit + integration tests, 0 failures</p>
+<p style='color:#8090a8;margin-top:.6rem'>287 acceptance tests + 39 harness/genesis tests = 326 total, 0 failures</p>
 </div>
 <div class='section'>
 <h2>5. Extension Architecture (v1.0.0)</h2>
@@ -597,6 +581,246 @@
 <div class='gate-box'><strong>AT-O8</strong><br><small>Graceful</small></div>
 <div class='gate-box'><strong>AT-O9</strong><br><small>NoLeak</small></div>
 <div class='gate-box'><strong>AT-O10</strong><br><small>CapsuleKey</small></div>
+</div>
+</div>
+<div class='section'>
+<h2>11. Phase 4 — Gateway &amp; Adapters (C19–C20)</h2>
+<div class='grid2'>
+<div>
+<h3>C19 — ISLS Gateway</h3>
+<table><tbody>
+<tr><td>Server framework</td><td class='g'>Axum (async, Tower middleware)</td></tr>
+<tr><td>REST endpoints</td><td class='g'>26 routes (health, crystals, run, validate, forge, compose, oracle, studio …)</td></tr>
+<tr><td>WebSocket endpoint</td><td class='g'>GET /ws — real-time crystal/gate/alert stream</td></tr>
+<tr><td>Auth config</td><td class='g'>Optional Bearer token via GatewayConfig::auth_token</td></tr>
+<tr><td>CORS</td><td class='g'>Configurable allow-origin list</td></tr>
+<tr><td>Port</td><td class='g'>Default 8080, overridable via config</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>C20 — Adapters</h3>
+<table><thead><tr><th>Adapter</th><th>Direction</th><th>Description</th></tr></thead><tbody>
+<tr><td>synthetic</td><td class='g'>Ingestion</td><td>Deterministic scenario generator (S-Basic … S-Scale)</td></tr>
+<tr><td>file-csv</td><td class='g'>Ingestion</td><td>CSV row → Observation batch</td></tr>
+<tr><td>file-jsonl</td><td class='g'>Ingestion</td><td>JSONL stream → typed Observations</td></tr>
+<tr><td>http-poll</td><td class='g'>Ingestion</td><td>Periodic HTTP GET → Observation</td></tr>
+<tr><td>ws-stream</td><td class='g'>Ingestion</td><td>WebSocket frame → Observation</td></tr>
+<tr><td>syslog</td><td class='g'>Ingestion</td><td>UDP syslog (RFC 5424) → Observation</td></tr>
+<tr><td>stdin</td><td class='g'>Ingestion</td><td>Line-delimited stdin → Observation</td></tr>
+<tr><td>replay</td><td class='g'>Ingestion</td><td>Replays archive.jsonl for deterministic retesting</td></tr>
+<tr><td>file-watcher</td><td class='g'>Ingestion</td><td>inotify/FSEvents file-change → Observation</td></tr>
+<tr><td>file</td><td class='y'>Emission</td><td>Writes crystals to JSONL file</td></tr>
+<tr><td>gateway</td><td class='y'>Emission</td><td>POST crystal to remote ISLS gateway</td></tr>
+<tr><td>stdout</td><td class='y'>Emission</td><td>Pretty-prints crystal to stdout</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-GW / AT-AD)</h3>
+<div class='atgrid'>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW1</strong>: HealthEndpoint</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW2</strong>: CrystalList</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW3</strong>: RunShadow</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW4</strong>: ValidateFormal</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW5</strong>: WebSocketStream</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW6</strong>: AuthReject</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW7</strong>: CORSHeaders</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-GW8</strong>: StudioServe</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD1</strong>: SyntheticScenario</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD2</strong>: CsvIngestion</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD3</strong>: JsonlIngestion</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD4</strong>: ReplayDeterminism</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD5</strong>: FileEmit</div>
+<div class='atitem'><span class='g'>&#10003;</span> <strong>AT-AD6</strong>: StdoutEmit</div>
+</div>
+</div>
+<div class='section'>
+<h2>12. Phase 7 — Architecture Templates (C26)</h2>
+<p style='margin-bottom:1rem'>Pattern-driven code generation. Every archetype encodes the shape of a well-formed component — atoms, molecules, interfaces, and fill strategy.</p>
+<h3>Built-in Templates (T01–T10)</h3>
+<table><thead><tr><th>ID</th><th>Name</th><th>Atoms</th><th>Molecules</th></tr></thead><tbody>
+<tr><td><strong>T01</strong></td><td>Microservice</td><td>4</td><td>2</td></tr>
+<tr><td><strong>T02</strong></td><td>EventProcessor</td><td>3</td><td>1</td></tr>
+<tr><td><strong>T03</strong></td><td>DataPipeline</td><td>5</td><td>3</td></tr>
+<tr><td><strong>T04</strong></td><td>ApiGateway</td><td>4</td><td>2</td></tr>
+<tr><td><strong>T05</strong></td><td>StorageLayer</td><td>3</td><td>2</td></tr>
+<tr><td><strong>T06</strong></td><td>AuthService</td><td>4</td><td>2</td></tr>
+<tr><td><strong>T07</strong></td><td>MessageBroker</td><td>3</td><td>1</td></tr>
+<tr><td><strong>T08</strong></td><td>MonitoringService</td><td>3</td><td>2</td></tr>
+<tr><td><strong>T09</strong></td><td>CacheLayer</td><td>2</td><td>1</td></tr>
+<tr><td><strong>T10</strong></td><td>WorkflowEngine</td><td>5</td><td>3</td></tr>
+</tbody></table>
+<div class='grid2' style='margin-top:1rem'>
+<div>
+<h3>Template Matching (priority order)</h3>
+<table><thead><tr><th>Strategy</th><th>Criterion</th></tr></thead><tbody>
+<tr><td>1. Archetype</td><td>Exact archetype name match</td></tr>
+<tr><td>2. Tag overlap</td><td>Most tags in common with request</td></tr>
+<tr><td>3. Domain</td><td>Domain field equality</td></tr>
+<tr><td>4. Keywords</td><td>Name/description substring match</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Fill Strategies</h3>
+<table><thead><tr><th>Strategy</th><th>Behaviour</th></tr></thead><tbody>
+<tr><td><strong>Oracle</strong></td><td>Delegates to C25 OracleEngine for LLM-generated content</td></tr>
+<tr><td><strong>Pattern</strong></td><td>Nearest-neighbour from pattern memory (cosine ≥ 0.85)</td></tr>
+<tr><td><strong>Static</strong></td><td>Fixed placeholder code, always deterministic</td></tr>
+<tr><td><strong>Derive</strong></td><td>Derives implementation from component interfaces</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem'>Template Lifecycle</h3>
+<table><thead><tr><th>Operation</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>create</strong></td><td>Instantiate a template into a concrete ForgeSpec</td></tr>
+<tr><td><strong>distill</strong></td><td>Extract a reusable template from an existing crystal</td></tr>
+<tr><td><strong>compose</strong></td><td>Merge two templates into a composite architecture</td></tr>
+</tbody></table>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-TM1–AT-TM12)</h3>
+<div class='grid10'>
+<div class='gate-box'><strong>AT-TM1</strong><br><small>ListTemplates</small></div>
+<div class='gate-box'><strong>AT-TM2</strong><br><small>GetTemplate</small></div>
+<div class='gate-box'><strong>AT-TM3</strong><br><small>ArchetypeMatch</small></div>
+<div class='gate-box'><strong>AT-TM4</strong><br><small>TagOverlapMatch</small></div>
+<div class='gate-box'><strong>AT-TM5</strong><br><small>DomainMatch</small></div>
+<div class='gate-box'><strong>AT-TM6</strong><br><small>KeywordMatch</small></div>
+<div class='gate-box'><strong>AT-TM7</strong><br><small>CreateInstance</small></div>
+<div class='gate-box'><strong>AT-TM8</strong><br><small>OracleFill</small></div>
+<div class='gate-box'><strong>AT-TM9</strong><br><small>PatternFill</small></div>
+<div class='gate-box'><strong>AT-TM10</strong><br><small>StaticFill</small></div>
+<div class='gate-box'><strong>AT-TM11</strong><br><small>Distill</small></div>
+<div class='gate-box'><strong>AT-TM12</strong><br><small>Compose</small></div>
+</div>
+</div>
+<div class='section'>
+<h2>13. Phase 8 — The Foundry (C27)</h2>
+<p style='margin-bottom:1rem'>Autonomous code generation with a build-test-fix loop. The Foundry writes, compiles, tests, and iterates until all quality gates pass — or budgets are exhausted.</p>
+<div class='grid2'>
+<div>
+<h3>Build-Test-Fix Loop</h3>
+<table><thead><tr><th>Step</th><th>Tool</th><th>On Failure</th></tr></thead><tbody>
+<tr><td>1. Write</td><td>Oracle / Pattern / Static</td><td>N/A (always produces output)</td></tr>
+<tr><td>2. cargo check</td><td>Rust compiler</td><td>Oracle correction → iterate</td></tr>
+<tr><td>3. cargo clippy</td><td>Clippy linter</td><td>Oracle correction → iterate</td></tr>
+<tr><td>4. cargo fmt</td><td>rustfmt</td><td>Auto-apply formatting</td></tr>
+<tr><td>5. cargo test</td><td>Test harness</td><td>Oracle correction → iterate</td></tr>
+<tr><td>6. Gate check</td><td>FoundryValidation</td><td>Fail if max_iterations exceeded</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>8 Foundry Operations</h3>
+<table><thead><tr><th>Operation</th><th>Description</th></tr></thead><tbody>
+<tr><td><strong>NewProject</strong></td><td>Scaffold a new Cargo workspace from a template</td></tr>
+<tr><td><strong>AddComponent</strong></td><td>Add a crate to an existing workspace</td></tr>
+<tr><td><strong>Implement</strong></td><td>Generate implementation for a ForgeSpec atom/molecule</td></tr>
+<tr><td><strong>AddEndpoint</strong></td><td>Add an Axum REST or WebSocket endpoint</td></tr>
+<tr><td><strong>Fix</strong></td><td>Repair a compilation or test failure using Oracle</td></tr>
+<tr><td><strong>GenerateTests</strong></td><td>Produce unit + integration tests for a component</td></tr>
+<tr><td><strong>Refactor</strong></td><td>Restructure code while preserving behaviour</td></tr>
+<tr><td><strong>Document</strong></td><td>Generate doc-comments and README sections</td></tr>
+</tbody></table>
+</div>
+</div>
+<div class='grid2' style='margin-top:1rem'>
+<div>
+<h3>FoundryValidation Gates</h3>
+<table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody>
+<tr><td><strong>compiles</strong></td><td class='g'>cargo check exits 0</td></tr>
+<tr><td><strong>tests_pass</strong></td><td class='g'>cargo test exits 0</td></tr>
+<tr><td><strong>test_count</strong></td><td class='g'>Number of #[test] fns found</td></tr>
+<tr><td><strong>warnings</strong></td><td class='y'>Clippy warning count (goal: 0)</td></tr>
+<tr><td><strong>formatted</strong></td><td class='g'>rustfmt diff is empty</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Workspace Intelligence</h3>
+<table><tbody>
+<tr><td>Existing code analysis</td><td class='g'>Reads workspace members for Oracle context</td></tr>
+<tr><td>Dependency resolution</td><td class='g'>Parses Cargo.toml for crate graph</td></tr>
+<tr><td>Dry-run mode</td><td class='g'>Full pipeline without invoking cargo</td></tr>
+<tr><td>Max iterations</td><td class='g'>Configurable per operation (default 3)</td></tr>
+<tr><td>Pattern memory</td><td class='g'>Successful builds stored for reuse</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-FD1–AT-FD14)</h3>
+<div class='grid10'>
+<div class='gate-box'><strong>AT-FD1</strong><br><small>NewProject</small></div>
+<div class='gate-box'><strong>AT-FD2</strong><br><small>AddComponent</small></div>
+<div class='gate-box'><strong>AT-FD3</strong><br><small>Implement</small></div>
+<div class='gate-box'><strong>AT-FD4</strong><br><small>AddEndpoint</small></div>
+<div class='gate-box'><strong>AT-FD5</strong><br><small>Fix</small></div>
+<div class='gate-box'><strong>AT-FD6</strong><br><small>GenerateTests</small></div>
+<div class='gate-box'><strong>AT-FD7</strong><br><small>Refactor</small></div>
+<div class='gate-box'><strong>AT-FD8</strong><br><small>Document</small></div>
+<div class='gate-box'><strong>AT-FD9</strong><br><small>BuildLoop</small></div>
+<div class='gate-box'><strong>AT-FD10</strong><br><small>DryRun</small></div>
+<div class='gate-box'><strong>AT-FD11</strong><br><small>WorkspaceIntel</small></div>
+<div class='gate-box'><strong>AT-FD12</strong><br><small>PatternReuse</small></div>
+<div class='gate-box'><strong>AT-FD13</strong><br><small>BudgetExhaust</small></div>
+<div class='gate-box'><strong>AT-FD14</strong><br><small>ValidationGates</small></div>
+</div>
+</div>
+<div class='section'>
+<h2>14. Phase 9 — The Studio (C19 extension)</h2>
+<p style='margin-bottom:1rem'>Single-page developer UI served directly by the ISLS Gateway. Zero external dependencies — one self-contained HTML file at <code>GET /studio</code>.</p>
+<div class='grid2'>
+<div>
+<h3>7 Studio Views</h3>
+<table><thead><tr><th>View</th><th>Purpose</th></tr></thead><tbody>
+<tr><td><strong>Dashboard</strong></td><td>Live crystal count, pass rate, health score, recent alerts</td></tr>
+<tr><td><strong>Forge</strong></td><td>Submit ForgeSpec, track generation progress via WebSocket</td></tr>
+<tr><td><strong>Explorer</strong></td><td>Browse, filter, and inspect the crystal archive</td></tr>
+<tr><td><strong>Monitor</strong></td><td>Real-time metric charts (M01–M34) and alert feed</td></tr>
+<tr><td><strong>Foundry</strong></td><td>Drive Foundry operations, view build-test-fix loop output</td></tr>
+<tr><td><strong>Oracle</strong></td><td>Interactive Oracle query + memory hit visualisation</td></tr>
+<tr><td><strong>Constitution</strong></td><td>Genesis Crystal constraints and conformance status</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>New API Endpoints</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead><tbody>
+<tr><td>GET</td><td><code>/studio</code></td><td>Serve self-contained Studio HTML</td></tr>
+<tr><td>GET</td><td><code>/api/dashboard</code></td><td>Aggregate dashboard metrics snapshot</td></tr>
+<tr><td>POST</td><td><code>/api/command</code></td><td>Command palette action dispatcher</td></tr>
+<tr><td>POST</td><td><code>/api/foundry/run</code></td><td>Trigger a Foundry operation</td></tr>
+<tr><td>GET</td><td><code>/api/foundry/status</code></td><td>Poll current Foundry job status</td></tr>
+<tr><td>GET</td><td><code>/ws</code></td><td>WebSocket: all real-time events</td></tr>
+</tbody></table>
+</div>
+</div>
+<div class='grid2' style='margin-top:1rem'>
+<div>
+<h3>WebSocket Event Types</h3>
+<table><thead><tr><th>Event</th><th>Payload</th></tr></thead><tbody>
+<tr><td><strong>tick</strong></td><td>Tick number + timestamp</td></tr>
+<tr><td><strong>crystal</strong></td><td>New crystal summary (id, scenario, pass_rate)</td></tr>
+<tr><td><strong>gate</strong></td><td>Gate open/close event with gate ID</td></tr>
+<tr><td><strong>alert</strong></td><td>Metric threshold breach (metric_id, severity)</td></tr>
+<tr><td><strong>forge_progress</strong></td><td>ForgeSpec step completion percentage</td></tr>
+<tr><td><strong>foundry_progress</strong></td><td>Build-test-fix iteration counter</td></tr>
+</tbody></table>
+</div>
+<div>
+<h3>Keyboard Shortcuts</h3>
+<table><thead><tr><th>Key</th><th>Action</th></tr></thead><tbody>
+<tr><td><kbd>Ctrl+K</kbd></td><td>Open command palette</td></tr>
+<tr><td><kbd>1</kbd>–<kbd>7</kbd></td><td>Switch to view 1–7</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Close modal / dismiss palette</td></tr>
+<tr><td><kbd>?</kbd></td><td>Show keyboard shortcut help</td></tr>
+<tr><td><kbd>R</kbd></td><td>Refresh current view data</td></tr>
+</tbody></table>
+</div>
+</div>
+<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Acceptance Tests (AT-ST1–AT-ST8)</h3>
+<div class='grid10'>
+<div class='gate-box'><strong>AT-ST1</strong><br><small>StudioServe</small></div>
+<div class='gate-box'><strong>AT-ST2</strong><br><small>DashboardApi</small></div>
+<div class='gate-box'><strong>AT-ST3</strong><br><small>CommandPalette</small></div>
+<div class='gate-box'><strong>AT-ST4</strong><br><small>WebSocketEvents</small></div>
+<div class='gate-box'><strong>AT-ST5</strong><br><small>ForgeView</small></div>
+<div class='gate-box'><strong>AT-ST6</strong><br><small>FoundryView</small></div>
+<div class='gate-box'><strong>AT-ST7</strong><br><small>OracleView</small></div>
+<div class='gate-box'><strong>AT-ST8</strong><br><small>ConstitutionView</small></div>
 </div>
 </div>
 <footer>Generated by ISLS v1.0.0 — deterministic, append-only, replay-verified</footer>
