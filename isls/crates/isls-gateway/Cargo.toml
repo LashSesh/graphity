@@ -1,0 +1,26 @@
+[package]
+name = "isls-gateway"
+version = "1.0.0"
+edition = "2021"
+description = "ISLS Gateway — REST + WebSocket API and Studio web interface (C19)"
+
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-harness = { path = "../isls-harness" }
+isls-archive = { path = "../isls-archive" }
+isls-store = { path = "../isls-store" }
+isls-forge = { path = "../isls-forge" }
+isls-templates = { path = "../isls-templates" }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+axum = { workspace = true }
+tower-http = { workspace = true }
+futures = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true }

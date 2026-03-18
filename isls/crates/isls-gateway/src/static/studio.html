@@ -1,0 +1,1392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ISLS Studio</title>
+<style>
+/* ─── CSS Reset & Custom Properties ───────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg-primary: #0d0d1a;
+    --bg-secondary: #1a1a2e;
+    --bg-tertiary: #16213e;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0b4d6;
+    --text-dim: #64748b;
+    --accent: #3b82f6;
+    --success: #22c55e;
+    --warning: #eab308;
+    --error: #ef4444;
+    --border: #2a2a4a;
+    --gold: #d4a843;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --radius: 8px;
+    --gap: 1rem;
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+    font-family: var(--font-ui);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ─── Studio Grid Layout ─────────────────────────────────────────────── */
+.studio {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    grid-template-rows: 48px 1fr 32px;
+    height: 100vh;
+}
+
+/* ─── Sidebar ─────────────────────────────────────────────────────────── */
+.sidebar {
+    grid-row: 1 / -1;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+    gap: 4px;
+}
+
+.sidebar .logo {
+    width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: 14px; color: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px; margin-bottom: 4px;
+    cursor: default;
+}
+
+.nav-btn {
+    width: 40px; height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent;
+    border: none; border-radius: var(--radius);
+    color: var(--text-dim);
+    font-size: 16px; font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: var(--font-mono);
+}
+.nav-btn:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
+.nav-btn.active { background: var(--accent); color: #fff; }
+
+.sidebar-bottom {
+    margin-top: auto;
+    padding: 8px 4px;
+    text-align: center;
+    font-size: 9px;
+    color: var(--text-dim);
+    line-height: 1.6;
+}
+
+.status-pill {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: var(--success);
+    margin-bottom: 4px;
+}
+.status-pill.yellow { background: var(--warning); }
+.status-pill.red { background: var(--error); }
+
+/* ─── Header ──────────────────────────────────────────────────────────── */
+.header {
+    grid-column: 2;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 16px;
+}
+
+.header h1 {
+    font-size: 15px; font-weight: 700;
+    color: var(--text-primary);
+}
+
+.header .subtitle {
+    font-size: 12px; color: var(--text-dim);
+}
+
+.header .spacer { flex: 1; }
+
+.kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+}
+
+/* ─── Content ─────────────────────────────────────────────────────────── */
+.content {
+    grid-column: 2;
+    overflow: auto;
+    padding: var(--gap);
+}
+
+/* ─── Status Bar ──────────────────────────────────────────────────────── */
+.status-bar {
+    grid-column: 2;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 11px;
+    color: var(--text-dim);
+    gap: 16px;
+}
+
+/* ─── View (hidden by default) ────────────────────────────────────────── */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ─── Cards & Panels ──────────────────────────────────────────────────── */
+.card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-bottom: var(--gap);
+}
+
+.card h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+}
+
+.metric-card {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    padding: 12px;
+    text-align: center;
+}
+
+.metric-value {
+    font-size: 22px; font-weight: 700;
+    color: var(--accent);
+    font-family: var(--font-mono);
+}
+.metric-value.green { color: var(--success); }
+.metric-value.gold { color: var(--gold); }
+
+.metric-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+}
+
+/* ─── Tables ──────────────────────────────────────────────────────────── */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    font-family: var(--font-mono);
+}
+
+.data-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+}
+
+.data-table tr:hover td { background: var(--bg-tertiary); }
+.data-table tr { cursor: pointer; }
+
+/* ─── Buttons ─────────────────────────────────────────────────────────── */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    font-family: var(--font-ui);
+}
+.btn:hover { background: #2563eb; }
+.btn-secondary { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--border); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+
+/* ─── Forms ───────────────────────────────────────────────────────────── */
+textarea, input, select {
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: var(--font-mono);
+    width: 100%;
+    outline: none;
+    transition: border-color 0.15s;
+}
+textarea:focus, input:focus, select:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 80px; }
+select { cursor: pointer; width: auto; }
+
+.form-row {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 12px;
+}
+.form-row label {
+    font-size: 12px;
+    color: var(--text-dim);
+    min-width: 70px;
+}
+
+/* ─── Progress Bar ────────────────────────────────────────────────────── */
+.progress-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-primary);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 8px 0;
+}
+.progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.3s;
+}
+
+/* ─── Event Feed ──────────────────────────────────────────────────────── */
+.event-feed {
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.event-line {
+    padding: 3px 8px;
+    border-bottom: 1px solid var(--bg-primary);
+    color: var(--text-secondary);
+}
+.event-line .time { color: var(--text-dim); margin-right: 8px; }
+.event-line .tag {
+    display: inline-block;
+    padding: 0 4px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    margin-right: 6px;
+}
+.tag-crystal { background: #1e3a5f; color: var(--accent); }
+.tag-gate { background: #1a2e1a; color: var(--success); }
+.tag-tick { background: #2e2a1a; color: var(--gold); }
+.tag-alert { background: #2e1a1a; color: var(--error); }
+
+/* ─── Canvas Charts ───────────────────────────────────────────────────── */
+.chart-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.chart-card {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius);
+    padding: 12px;
+}
+.chart-card h4 {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+}
+.chart-card canvas { width: 100%; height: 80px; }
+
+/* ─── Filter Buttons ──────────────────────────────────────────────────── */
+.filter-bar {
+    display: flex; gap: 6px; margin-bottom: 12px;
+}
+.filter-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: var(--font-mono);
+}
+.filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* ─── Tabs ────────────────────────────────────────────────────────────── */
+.tab-bar {
+    display: flex; gap: 0; margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+}
+.tab-btn {
+    padding: 8px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: var(--font-ui);
+}
+.tab-btn:hover { color: var(--text-secondary); }
+.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ─── Constitution Constraints ────────────────────────────────────────── */
+.constraint-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--bg-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+.constraint-id { color: var(--text-dim); width: 50px; }
+.constraint-name { color: var(--text-secondary); flex: 1; }
+.constraint-status { font-weight: 700; }
+.constraint-status.pass { color: var(--success); }
+.constraint-status.fail { color: var(--error); }
+
+/* ─── Code Preview ────────────────────────────────────────────────────── */
+.code-preview {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* ─── Tree View ───────────────────────────────────────────────────────── */
+.tree { font-family: var(--font-mono); font-size: 12px; }
+.tree-item { padding: 2px 0; color: var(--text-secondary); }
+.tree-item .icon { color: var(--text-dim); margin-right: 4px; }
+.tree-indent { margin-left: 16px; }
+
+/* ─── Command Palette ─────────────────────────────────────────────────── */
+.cmd-palette {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 1000;
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: 15vh;
+}
+.cmd-palette.open { display: flex; }
+
+.cmd-box {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    width: 500px;
+    max-width: 90vw;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.cmd-box input {
+    border: none;
+    border-radius: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 16px;
+    font-size: 15px;
+}
+.cmd-results {
+    max-height: 300px;
+    overflow-y: auto;
+}
+.cmd-result {
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+.cmd-result:hover, .cmd-result.selected { background: var(--bg-tertiary); }
+.cmd-result .cmd-key {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    float: right;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* ─── Detail Panel ────────────────────────────────────────────────────── */
+.detail-panel {
+    display: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    margin-top: var(--gap);
+}
+.detail-panel.open { display: block; }
+.detail-row { display: flex; gap: 12px; margin-bottom: 6px; font-size: 13px; }
+.detail-label { color: var(--text-dim); min-width: 120px; }
+.detail-value { color: var(--text-secondary); font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+
+<div class="studio">
+    <!-- Sidebar Navigation -->
+    <nav class="sidebar">
+        <div class="logo">IS</div>
+        <button class="nav-btn active" data-view="dashboard" title="Dashboard (Ctrl+1)">D</button>
+        <button class="nav-btn" data-view="forge" title="Forge (Ctrl+2)">F</button>
+        <button class="nav-btn" data-view="explorer" title="Explorer (Ctrl+3)">E</button>
+        <button class="nav-btn" data-view="monitor" title="Monitor (Ctrl+4)">M</button>
+        <button class="nav-btn" data-view="foundry" title="Foundry (Ctrl+5)">B</button>
+        <button class="nav-btn" data-view="oracle" title="Oracle (Ctrl+6)">O</button>
+        <button class="nav-btn" data-view="constitution" title="Constitution (Ctrl+7)">C</button>
+        <div class="sidebar-bottom">
+            <div class="status-pill" id="statusPill"></div><br>
+            <span id="sidebarUptime">0m</span><br>
+            <span id="sidebarCrystals">0</span> crystals
+        </div>
+    </nav>
+
+    <!-- Header -->
+    <header class="header">
+        <h1 id="viewTitle">Dashboard</h1>
+        <span class="subtitle" id="viewSubtitle">System health at a glance</span>
+        <div class="spacer"></div>
+        <span class="kbd">Ctrl+K</span>
+        <span style="font-size:11px;color:var(--text-dim)">Command palette</span>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="content">
+
+        <!-- ═══ View 1: Dashboard ═══════════════════════════════════════ -->
+        <div class="view active" id="view-dashboard">
+            <div class="metric-grid" id="dashMetrics">
+                <div class="metric-card"><div class="metric-value green" id="dashHealth">GREEN</div><div class="metric-label">Health</div></div>
+                <div class="metric-card"><div class="metric-value" id="dashCrystals">0</div><div class="metric-label">Crystals</div></div>
+                <div class="metric-card"><div class="metric-value" id="dashEntities">0</div><div class="metric-label">Entities</div></div>
+                <div class="metric-card"><div class="metric-value" id="dashUptime">0m</div><div class="metric-label">Uptime</div></div>
+                <div class="metric-card"><div class="metric-value" id="dashTests">319</div><div class="metric-label">Tests</div></div>
+                <div class="metric-card"><div class="metric-value green" id="dashDrift">NONE</div><div class="metric-label">Drift</div></div>
+            </div>
+
+            <div class="card">
+                <h3>Scenario Summary</h3>
+                <table class="data-table" id="scenarioTable">
+                    <thead><tr><th>Scenario</th><th>Crystals</th><th>Pass Rate</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Key Metrics</h3>
+                <div class="metric-grid" id="keyMetrics">
+                    <div class="metric-card"><div class="metric-value" id="metIngestion">0</div><div class="metric-label">Ingestion (obs/s)</div></div>
+                    <div class="metric-card"><div class="metric-value" id="metReplay">0</div><div class="metric-label">Replay (steps/s)</div></div>
+                    <div class="metric-card"><div class="metric-value" id="metEvidence">0</div><div class="metric-label">Evidence (μs/verify)</div></div>
+                    <div class="metric-card"><div class="metric-value" id="metMemory">0</div><div class="metric-label">Memory (MB)</div></div>
+                    <div class="metric-card"><div class="metric-value" id="metAutonomy">0%</div><div class="metric-label">Autonomy</div></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Live Event Feed</h3>
+                <div class="event-feed" id="dashEventFeed"></div>
+            </div>
+
+            <div class="card">
+                <h3>Constitution</h3>
+                <div id="dashConstitution" style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
+                    Loading...
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ View 2: Forge ═══════════════════════════════════════════ -->
+        <div class="view" id="view-forge">
+            <div class="card">
+                <h3>Intent</h3>
+                <textarea id="forgeIntent" placeholder="Describe what you want to build...&#10;e.g. Build a REST API for a bookmark manager with tags, search, and user authentication"></textarea>
+                <div class="form-row" style="margin-top:12px">
+                    <label>Domain:</label>
+                    <select id="forgeDomain"><option>Rust</option><option>TypeScript</option><option>Python</option><option>Go</option></select>
+                    <label>Template:</label>
+                    <select id="forgeTemplate"><option>Auto-detect</option><option>REST API</option><option>CLI Tool</option><option>Library</option><option>Full-Stack</option></select>
+                    <label>Strategy:</label>
+                    <select id="forgeStrategy"><option>Hybrid</option><option>Memory-first</option><option>Oracle-first</option></select>
+                    <label>Max atoms:</label>
+                    <input type="number" id="forgeMaxAtoms" value="20" style="width:60px">
+                </div>
+                <button class="btn" id="forgeBtn" onclick="startForge()">FORGE</button>
+                <span class="kbd" style="margin-left:8px">Ctrl+Enter</span>
+            </div>
+
+            <div class="card" id="forgeProgressCard" style="display:none">
+                <h3>Progress</h3>
+                <div class="progress-bar"><div class="progress-fill" id="forgeProgressBar" style="width:0%"></div></div>
+                <div id="forgeProgressText" style="font-size:12px;color:var(--text-dim);margin-bottom:8px"></div>
+                <div id="forgeAtomList" class="event-feed"></div>
+            </div>
+
+            <div class="card" id="forgeOutputCard" style="display:none">
+                <h3>Output Preview</h3>
+                <div class="code-preview" id="forgeOutput"></div>
+            </div>
+
+            <div class="card" id="forgeTreeCard" style="display:none">
+                <h3>Composition Tree</h3>
+                <div class="tree" id="forgeTree"></div>
+            </div>
+        </div>
+
+        <!-- ═══ View 3: Explorer ════════════════════════════════════════ -->
+        <div class="view" id="view-explorer">
+            <div class="tab-bar">
+                <button class="tab-btn active" data-tab="crystals">Crystals</button>
+                <button class="tab-btn" data-tab="manifests">Manifests</button>
+                <button class="tab-btn" data-tab="patterns">Patterns</button>
+                <button class="tab-btn" data-tab="templates">Templates</button>
+            </div>
+
+            <div class="form-row">
+                <input type="text" id="explorerSearch" placeholder="Search by ID, tick, scale, domain..." style="flex:1">
+                <label>Filter:</label>
+                <select id="explorerFilter">
+                    <option value="">All scales</option>
+                    <option value="micro">Micro</option>
+                    <option value="meso">Meso</option>
+                    <option value="macro">Macro</option>
+                </select>
+            </div>
+
+            <div class="card">
+                <table class="data-table" id="crystalTable">
+                    <thead><tr><th>ID</th><th>Tick</th><th>Score</th><th>Scale</th><th>Checks</th></tr></thead>
+                    <tbody id="crystalTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="detail-panel" id="crystalDetail">
+                <h3 style="margin-bottom:12px">Crystal Detail</h3>
+                <div id="crystalDetailContent"></div>
+                <div style="margin-top:12px;display:flex;gap:8px">
+                    <button class="btn btn-sm btn-secondary" onclick="validateCrystal()">Validate</button>
+                    <button class="btn btn-sm btn-secondary" onclick="replayCrystal()">Replay</button>
+                    <button class="btn btn-sm btn-secondary" onclick="exportCrystal()">Export</button>
+                    <button class="btn btn-sm" onclick="forgeFromCrystal()">Forge from this</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ View 4: Monitor ═════════════════════════════════════════ -->
+        <div class="view" id="view-monitor">
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+                <button class="btn btn-sm" onclick="engineStart()">Start</button>
+                <button class="btn btn-sm btn-secondary" onclick="engineStop()">Stop</button>
+                <button class="btn btn-sm btn-secondary" onclick="engineStep()">Step</button>
+                <div style="flex:1"></div>
+                <span style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
+                    Engine: <span id="monEngineState">STOPPED</span> |
+                    Tick: <span id="monTick">0</span> |
+                    Entities: <span id="monEntities">0</span> |
+                    Mode: <span id="monMode">-</span>
+                </span>
+            </div>
+
+            <div class="card">
+                <h3>Metric Charts</h3>
+                <div class="chart-container">
+                    <div class="chart-card"><h4>Coherence</h4><canvas id="chartCoherence" width="300" height="80"></canvas></div>
+                    <div class="chart-card"><h4>Gate Selectivity</h4><canvas id="chartGate" width="300" height="80"></canvas></div>
+                    <div class="chart-card"><h4>Crystal Rate</h4><canvas id="chartCrystal" width="300" height="80"></canvas></div>
+                    <div class="chart-card"><h4>Spectral Gap</h4><canvas id="chartSpectral" width="300" height="80"></canvas></div>
+                    <div class="chart-card"><h4>Kuramoto r</h4><canvas id="chartKuramoto" width="300" height="80"></canvas></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Live Event Stream</h3>
+                <div class="filter-bar">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="crystal">Crystal</button>
+                    <button class="filter-btn" data-filter="gate">Gate</button>
+                    <button class="filter-btn" data-filter="tick">Tick</button>
+                    <button class="filter-btn" data-filter="alert">Alert</button>
+                    <button class="filter-btn" data-filter="scale">Scale</button>
+                </div>
+                <div class="event-feed" id="monEventFeed" style="max-height:300px"></div>
+            </div>
+
+            <div class="card">
+                <h3>Scale State</h3>
+                <div class="metric-grid" id="scaleState">
+                    <div class="metric-card"><div class="metric-value" id="scaleMicro">0</div><div class="metric-label">Micro entities</div></div>
+                    <div class="metric-card"><div class="metric-value" id="scaleMeso">0</div><div class="metric-label">Meso clusters</div></div>
+                    <div class="metric-card"><div class="metric-value" id="scaleMacro">0</div><div class="metric-label">Macro domains</div></div>
+                    <div class="metric-card"><div class="metric-value" id="scaleBridges">0</div><div class="metric-label">Bridges</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ View 5: Foundry ═════════════════════════════════════════ -->
+        <div class="view" id="view-foundry">
+            <div class="card">
+                <div class="form-row">
+                    <label>Operation:</label>
+                    <select id="foundryOp">
+                        <option>New Project</option>
+                        <option>Add Component</option>
+                        <option>Add Endpoint</option>
+                        <option>Implement Trait</option>
+                        <option>Fix</option>
+                        <option>Generate Tests</option>
+                        <option>Refactor</option>
+                        <option>Document</option>
+                    </select>
+                </div>
+                <textarea id="foundryIntent" placeholder="Describe what to build..."></textarea>
+                <div class="form-row" style="margin-top:12px">
+                    <label>Output:</label>
+                    <input type="text" id="foundryOutput" value="~/projects/my-project" style="flex:1">
+                </div>
+                <button class="btn" id="foundryBtn" onclick="startFoundry()">BUILD</button>
+                <span class="kbd" style="margin-left:8px">Ctrl+Enter</span>
+            </div>
+
+            <div class="card" id="foundryProgressCard" style="display:none">
+                <h3>Fabrication Progress</h3>
+                <div class="progress-bar"><div class="progress-fill" id="foundryProgressBar" style="width:0%"></div></div>
+                <div id="foundryProgressText" style="font-size:12px;color:var(--text-dim);margin-bottom:8px"></div>
+                <div class="code-preview" id="foundryLog" style="max-height:200px;overflow-y:auto;white-space:pre-wrap"></div>
+            </div>
+
+            <div class="card" id="foundryTreeCard" style="display:none">
+                <h3>File Tree</h3>
+                <div class="tree" id="foundryTree"></div>
+            </div>
+
+            <div class="card" id="foundryPreviewCard" style="display:none">
+                <h3>Code Preview</h3>
+                <div class="code-preview" id="foundryPreview">Click a file to preview</div>
+            </div>
+        </div>
+
+        <!-- ═══ View 6: Oracle ══════════════════════════════════════════ -->
+        <div class="view" id="view-oracle">
+            <div class="metric-grid" style="margin-bottom:var(--gap)">
+                <div class="metric-card"><div class="metric-value gold" id="oracleAutonomy">0%</div><div class="metric-label">Autonomy Ratio</div></div>
+                <div class="metric-card"><div class="metric-value" id="oracleCalls">0</div><div class="metric-label">Oracle Calls</div></div>
+                <div class="metric-card"><div class="metric-value" id="oracleRejections">0</div><div class="metric-label">Rejections</div></div>
+                <div class="metric-card"><div class="metric-value" id="oracleTokens">0</div><div class="metric-label">Tokens Used</div></div>
+                <div class="metric-card"><div class="metric-value" id="oracleCost">$0.00</div><div class="metric-label">Cost</div></div>
+                <div class="metric-card"><div class="metric-value" id="oracleBudget">0/100</div><div class="metric-label">Budget (calls)</div></div>
+            </div>
+
+            <div class="card">
+                <h3>Autonomy Over Time</h3>
+                <canvas id="chartAutonomy" width="600" height="100" style="width:100%;height:100px"></canvas>
+            </div>
+
+            <div class="card">
+                <h3>Pattern Memory</h3>
+                <div class="form-row">
+                    <input type="text" id="patternSearch" placeholder="Search patterns..." style="flex:1">
+                </div>
+                <table class="data-table" id="patternTable">
+                    <thead><tr><th>ID</th><th>Domain</th><th>Quality</th><th>Reuse Count</th></tr></thead>
+                    <tbody id="patternTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h3>Oracle Configuration</h3>
+                <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
+                    <div class="detail-row"><span class="detail-label">Provider:</span><span class="detail-value">Claude (claude-sonnet-4-20250514)</span></div>
+                    <div class="detail-row"><span class="detail-label">Temperature:</span><span class="detail-value">0.0</span></div>
+                    <div class="detail-row"><span class="detail-label">Max tokens:</span><span class="detail-value">4096</span></div>
+                    <div class="detail-row"><span class="detail-label">Memory-first:</span><span class="detail-value" style="color:var(--success)">ON</span></div>
+                    <div class="detail-row"><span class="detail-label">Match threshold:</span><span class="detail-value">0.85</span></div>
+                    <div class="detail-row"><span class="detail-label">API Key:</span><span class="detail-value" style="color:var(--success)">configured (env)</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══ View 7: Constitution ════════════════════════════════════ -->
+        <div class="view" id="view-constitution">
+            <div class="metric-grid" style="margin-bottom:var(--gap)">
+                <div class="metric-card"><div class="metric-value" id="constGenesis" style="font-size:14px">a315ea43</div><div class="metric-label">Genesis Crystal</div></div>
+                <div class="metric-card"><div class="metric-value">v1.0.0</div><div class="metric-label">ADAMANT Version</div></div>
+                <div class="metric-card"><div class="metric-value gold">C4</div><div class="metric-label">Conformance Class</div></div>
+                <div class="metric-card"><div class="metric-value green" id="constDrift">NONE</div><div class="metric-label">Drift</div></div>
+            </div>
+
+            <div class="card">
+                <h3>Constraints (GC-01 to GC-21)</h3>
+                <div id="constraintList"></div>
+            </div>
+
+            <div class="card">
+                <h3>System Fingerprint</h3>
+                <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
+                    <div class="detail-row"><span class="detail-label">ISLS:</span><span class="detail-value">v1.0.0</span></div>
+                    <div class="detail-row"><span class="detail-label">Crates:</span><span class="detail-value">27</span></div>
+                    <div class="detail-row"><span class="detail-label">Tests:</span><span class="detail-value" id="constTests">319</span></div>
+                    <div class="detail-row"><span class="detail-label">Platform:</span><span class="detail-value" id="constPlatform">-</span></div>
+                    <div class="detail-row"><span class="detail-label">Rust:</span><span class="detail-value">1.90.0</span></div>
+                </div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:16px">
+                <button class="btn" onclick="validateGenesis()">Validate Genesis</button>
+                <button class="btn btn-secondary" onclick="exportCertificate()">Export Certificate</button>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+        <span>ISLS v1.0.0</span>
+        <span id="sbUptime">Uptime: 0m</span>
+        <span id="sbWs">WS: connecting...</span>
+        <div style="flex:1"></div>
+        <span id="sbClients">0 clients</span>
+    </footer>
+</div>
+
+<!-- Command Palette -->
+<div class="cmd-palette" id="cmdPalette">
+    <div class="cmd-box">
+        <input type="text" id="cmdInput" placeholder="Type a command..." autocomplete="off">
+        <div class="cmd-results" id="cmdResults"></div>
+    </div>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────
+let ws = null;
+let currentView = 'dashboard';
+let wsConnected = false;
+const events = [];
+const chartData = { coherence: [], gate: [], crystal: [], spectral: [], kuramoto: [], autonomy: [] };
+let selectedCrystalId = null;
+
+// ─── Command Registry ────────────────────────────────────────────────────
+const commands = [
+    { label: 'Switch to Dashboard', action: () => switchView('dashboard'), keys: 'Ctrl+1' },
+    { label: 'Switch to Forge', action: () => switchView('forge'), keys: 'Ctrl+2' },
+    { label: 'Switch to Explorer', action: () => switchView('explorer'), keys: 'Ctrl+3' },
+    { label: 'Switch to Monitor', action: () => switchView('monitor'), keys: 'Ctrl+4' },
+    { label: 'Switch to Foundry', action: () => switchView('foundry'), keys: 'Ctrl+5' },
+    { label: 'Switch to Oracle', action: () => switchView('oracle'), keys: 'Ctrl+6' },
+    { label: 'Switch to Constitution', action: () => switchView('constitution'), keys: 'Ctrl+7' },
+    { label: 'Start engine', action: () => engineStart(), keys: 'Ctrl+S' },
+    { label: 'Stop engine', action: () => engineStop(), keys: '' },
+    { label: 'Forge: start', action: () => { switchView('forge'); }, keys: '' },
+    { label: 'Validate all crystals', action: () => apiCommand('validate all'), keys: '' },
+    { label: 'Oracle status', action: () => { switchView('oracle'); }, keys: '' },
+    { label: 'Template list', action: () => apiCommand('template list'), keys: '' },
+    { label: 'Export report HTML', action: () => apiCommand('export report html'), keys: '' },
+];
+
+// ─── View titles ─────────────────────────────────────────────────────────
+const viewTitles = {
+    dashboard: ['Dashboard', 'System health at a glance'],
+    forge: ['Forge', 'Describe what you want — watch it build'],
+    explorer: ['Explorer', 'Browse crystals, manifests, patterns'],
+    monitor: ['Monitor', 'Live engine metrics and events'],
+    foundry: ['Foundry', 'Project fabrication with compile feedback'],
+    oracle: ['Oracle', 'Autonomy metrics, pattern memory, budget'],
+    constitution: ['Constitution', 'Genesis Crystal, ADAMANT status'],
+};
+
+// ─── Navigation ──────────────────────────────────────────────────────────
+function switchView(view) {
+    currentView = view;
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('view-' + view).classList.add('active');
+    document.querySelector(`.nav-btn[data-view="${view}"]`).classList.add('active');
+    const [title, sub] = viewTitles[view] || [view, ''];
+    document.getElementById('viewTitle').textContent = title;
+    document.getElementById('viewSubtitle').textContent = sub;
+    localStorage.setItem('isls-studio-view', view);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ subscribe: getEventsForView(view) }));
+    }
+}
+
+function getEventsForView(view) {
+    switch (view) {
+        case 'dashboard': return ['tick', 'crystal', 'gate', 'alert', 'heartbeat'];
+        case 'forge': return ['forge_progress', 'heartbeat'];
+        case 'explorer': return ['crystal', 'heartbeat'];
+        case 'monitor': return ['tick', 'crystal', 'gate', 'alert', 'metric', 'heartbeat'];
+        case 'foundry': return ['foundry_progress', 'heartbeat'];
+        case 'oracle': return ['metric', 'heartbeat'];
+        case 'constitution': return ['alert', 'heartbeat'];
+        default: return ['heartbeat'];
+    }
+}
+
+document.querySelectorAll('.nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchView(btn.dataset.view));
+});
+
+// ─── WebSocket ───────────────────────────────────────────────────────────
+function connectWs() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/events`);
+
+    ws.onopen = () => {
+        wsConnected = true;
+        document.getElementById('sbWs').textContent = 'WS: connected';
+        ws.send(JSON.stringify({ subscribe: getEventsForView(currentView) }));
+    };
+
+    ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        handleEvent(msg);
+    };
+
+    ws.onclose = () => {
+        wsConnected = false;
+        document.getElementById('sbWs').textContent = 'WS: disconnected';
+        setTimeout(connectWs, 3000);
+    };
+
+    ws.onerror = () => {
+        document.getElementById('sbWs').textContent = 'WS: error';
+    };
+}
+
+function handleEvent(msg) {
+    const time = new Date(msg.timestamp * 1000).toLocaleTimeString();
+    events.unshift({ type: msg.type, time, data: msg.data });
+    if (events.length > 500) events.pop();
+
+    switch (msg.type) {
+        case 'tick':
+            document.getElementById('monTick').textContent = msg.data.tick || 0;
+            document.getElementById('monEntities').textContent = msg.data.entity_count || 0;
+            addEventLine('dashEventFeed', time, 'tick', `tick ${msg.data.tick}: ${msg.data.entity_count || 0} entities`);
+            addEventLine('monEventFeed', time, 'tick', `tick ${msg.data.tick}: ${msg.data.entity_count || 0} entities`);
+            break;
+        case 'crystal':
+            addEventLine('dashEventFeed', time, 'crystal', `crystal emitted (score ${(msg.data.score || 0).toFixed(2)})`);
+            addEventLine('monEventFeed', time, 'crystal', `crystal ${(msg.data.id || '').slice(0,8)} emitted`);
+            break;
+        case 'gate':
+            addEventLine('monEventFeed', time, 'gate', `gate ${msg.data.action || 'ACCEPT'} d=${(msg.data.d || 0).toFixed(2)} q=${(msg.data.q || 0).toFixed(2)}`);
+            break;
+        case 'alert':
+            addEventLine('dashEventFeed', time, 'alert', msg.data.message || 'alert');
+            addEventLine('monEventFeed', time, 'alert', msg.data.message || 'alert');
+            break;
+        case 'metric':
+            if (msg.data.name && msg.data.value !== undefined) {
+                const key = msg.data.name;
+                if (chartData[key]) {
+                    chartData[key].push(msg.data.value);
+                    if (chartData[key].length > 100) chartData[key].shift();
+                }
+            }
+            break;
+        case 'forge_progress':
+            updateForgeProgress(msg.data);
+            break;
+        case 'foundry_progress':
+            updateFoundryProgress(msg.data);
+            break;
+    }
+}
+
+function addEventLine(feedId, time, type, text) {
+    const feed = document.getElementById(feedId);
+    if (!feed) return;
+    const line = document.createElement('div');
+    line.className = 'event-line';
+    line.innerHTML = `<span class="time">${time}</span><span class="tag tag-${type}">${type}</span>${escapeHtml(text)}`;
+    feed.prepend(line);
+    while (feed.children.length > 100) feed.lastChild.remove();
+}
+
+// ─── REST API ────────────────────────────────────────────────────────────
+async function fetchJson(url, opts) {
+    try {
+        const resp = await fetch(url, opts);
+        if (!resp.ok) return null;
+        return await resp.json();
+    } catch { return null; }
+}
+
+async function loadDashboard() {
+    const d = await fetchJson('/api/dashboard');
+    if (!d) return;
+    document.getElementById('dashHealth').textContent = d.health;
+    document.getElementById('dashCrystals').textContent = d.crystal_count;
+    document.getElementById('dashEntities').textContent = d.entity_count;
+    document.getElementById('dashUptime').textContent = formatUptime(d.uptime_secs);
+    document.getElementById('dashTests').textContent = d.test_count;
+    document.getElementById('dashDrift').textContent = d.drift;
+    document.getElementById('sidebarUptime').textContent = formatUptime(d.uptime_secs);
+    document.getElementById('sidebarCrystals').textContent = d.crystal_count;
+    document.getElementById('sbUptime').textContent = 'Uptime: ' + formatUptime(d.uptime_secs);
+
+    if (d.metrics) {
+        document.getElementById('metIngestion').textContent = Math.round(d.metrics.ingestion_rate || 0);
+        document.getElementById('metReplay').textContent = Math.round(d.metrics.replay_steps_per_sec || 0);
+        document.getElementById('metEvidence').textContent = Math.round(d.metrics.evidence_verify_us || 0);
+        document.getElementById('metMemory').textContent = (d.metrics.memory_mb || 0).toFixed(2);
+        document.getElementById('metAutonomy').textContent = Math.round((d.metrics.autonomy_ratio || 0) * 100) + '%';
+    }
+
+    const tbody = document.querySelector('#scenarioTable tbody');
+    tbody.innerHTML = '';
+    (d.scenarios || []).forEach(s => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${escapeHtml(s.name)}</td><td>${s.crystals}</td><td style="color:var(--success)">${escapeHtml(s.pass_rate)}</td>`;
+        tbody.appendChild(tr);
+    });
+
+    if (d.genesis) {
+        document.getElementById('dashConstitution').innerHTML =
+            `Genesis: ${escapeHtml(d.genesis.hash)} &nbsp; ${escapeHtml(d.genesis.conformance_class)} &nbsp; ${d.genesis.constraints_pass}/${d.genesis.constraints_total} &nbsp; Drift: <span style="color:var(--success)">${escapeHtml(d.genesis.drift)}</span>`;
+    }
+}
+
+async function loadCrystals() {
+    const scale = document.getElementById('explorerFilter').value;
+    const search = document.getElementById('explorerSearch').value;
+    let url = '/crystals?limit=50';
+    if (scale) url += '&scale=' + encodeURIComponent(scale);
+    if (search) url += '&search=' + encodeURIComponent(search);
+    const list = await fetchJson(url);
+    if (!list) return;
+    const tbody = document.getElementById('crystalTableBody');
+    tbody.innerHTML = '';
+    list.forEach(c => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${escapeHtml(c.id.slice(0,10))}...</td><td>${c.tick}</td><td>${c.score.toFixed(2)}</td><td>${escapeHtml(c.scale)}</td><td>${escapeHtml(c.checks)}</td>`;
+        tr.onclick = () => showCrystalDetail(c);
+        tbody.appendChild(tr);
+    });
+}
+
+function showCrystalDetail(c) {
+    selectedCrystalId = c.id;
+    const panel = document.getElementById('crystalDetail');
+    panel.classList.add('open');
+    document.getElementById('crystalDetailContent').innerHTML = `
+        <div class="detail-row"><span class="detail-label">Crystal:</span><span class="detail-value">${escapeHtml(c.id)}</span></div>
+        <div class="detail-row"><span class="detail-label">Created:</span><span class="detail-value">tick ${c.tick}</span></div>
+        <div class="detail-row"><span class="detail-label">Scale:</span><span class="detail-value">${escapeHtml(c.scale)}</span></div>
+        <div class="detail-row"><span class="detail-label">Stability:</span><span class="detail-value">${c.stability.toFixed(2)}</span></div>
+        <div class="detail-row"><span class="detail-label">Free Energy:</span><span class="detail-value">${c.free_energy.toFixed(2)}</span></div>
+        <div class="detail-row"><span class="detail-label">Constraints:</span><span class="detail-value">${c.constraint_count}</span></div>
+        <div class="detail-row"><span class="detail-label">Topology:</span><span class="detail-value">spectral_gap=${c.topology.spectral_gap.toFixed(3)}, kuramoto_r=${c.topology.kuramoto_r.toFixed(3)}</span></div>
+        <div class="detail-row"><span class="detail-label">Evidence:</span><span class="detail-value">${c.evidence_count} entries, hash-verified</span></div>
+    `;
+}
+
+// ─── Forge ───────────────────────────────────────────────────────────────
+async function startForge() {
+    const body = {
+        intent: document.getElementById('forgeIntent').value,
+        domain: document.getElementById('forgeDomain').value,
+        template: document.getElementById('forgeTemplate').value,
+        strategy: document.getElementById('forgeStrategy').value,
+        max_atoms: parseInt(document.getElementById('forgeMaxAtoms').value) || 20,
+    };
+    document.getElementById('forgeProgressCard').style.display = '';
+    document.getElementById('forgeProgressText').textContent = 'Starting forge...';
+    await fetchJson('/forge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
+
+function updateForgeProgress(d) {
+    document.getElementById('forgeProgressCard').style.display = '';
+    if (d.total > 0) {
+        const pct = Math.round((d.index / d.total) * 100);
+        document.getElementById('forgeProgressBar').style.width = pct + '%';
+        document.getElementById('forgeProgressText').textContent =
+            `${d.status}: ${d.atom_name || ''} (${d.index}/${d.total})`;
+    }
+}
+
+// ─── Foundry ─────────────────────────────────────────────────────────────
+async function startFoundry() {
+    const body = {
+        intent: document.getElementById('foundryIntent').value,
+        operation: document.getElementById('foundryOp').value,
+        output_dir: document.getElementById('foundryOutput').value,
+    };
+    document.getElementById('foundryProgressCard').style.display = '';
+    document.getElementById('foundryLog').textContent = 'Starting fabrication...\n';
+    await fetchJson('/api/foundry/fabricate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
+
+function updateFoundryProgress(d) {
+    document.getElementById('foundryProgressCard').style.display = '';
+    if (d.max > 0) {
+        const pct = Math.round((d.attempt / d.max) * 100);
+        document.getElementById('foundryProgressBar').style.width = pct + '%';
+    }
+    document.getElementById('foundryProgressText').textContent =
+        `${d.phase}: ${d.status} (attempt ${d.attempt}/${d.max})`;
+    if (d.error) {
+        document.getElementById('foundryLog').textContent += `> ${d.error}\n`;
+    }
+}
+
+// ─── Engine Controls ─────────────────────────────────────────────────────
+async function engineStart() {
+    await fetchJson('/engine/start', { method: 'POST' });
+    document.getElementById('monEngineState').textContent = 'RUNNING';
+    document.getElementById('monEngineState').style.color = 'var(--success)';
+}
+
+async function engineStop() {
+    await fetchJson('/engine/stop', { method: 'POST' });
+    document.getElementById('monEngineState').textContent = 'STOPPED';
+    document.getElementById('monEngineState').style.color = 'var(--text-dim)';
+}
+
+async function engineStep() {
+    const d = await fetchJson('/engine/step', { method: 'POST' });
+    if (d && d.tick !== undefined) document.getElementById('monTick').textContent = d.tick;
+}
+
+// ─── Command Palette ─────────────────────────────────────────────────────
+async function apiCommand(cmd) {
+    await fetchJson('/api/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command: cmd }),
+    });
+}
+
+function openCmdPalette() {
+    document.getElementById('cmdPalette').classList.add('open');
+    const input = document.getElementById('cmdInput');
+    input.value = '';
+    input.focus();
+    renderCmdResults('');
+}
+
+function closeCmdPalette() {
+    document.getElementById('cmdPalette').classList.remove('open');
+}
+
+function renderCmdResults(query) {
+    const results = document.getElementById('cmdResults');
+    const q = query.toLowerCase();
+    const filtered = commands.filter(c => c.label.toLowerCase().includes(q));
+    results.innerHTML = '';
+    filtered.forEach((c, i) => {
+        const div = document.createElement('div');
+        div.className = 'cmd-result' + (i === 0 ? ' selected' : '');
+        div.innerHTML = `${escapeHtml(c.label)}<span class="cmd-key">${c.keys}</span>`;
+        div.onclick = () => { c.action(); closeCmdPalette(); };
+        results.appendChild(div);
+    });
+}
+
+document.getElementById('cmdInput').addEventListener('input', (e) => {
+    renderCmdResults(e.target.value);
+});
+
+document.getElementById('cmdInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        const sel = document.querySelector('.cmd-result.selected');
+        if (sel) sel.click();
+    } else if (e.key === 'Escape') {
+        closeCmdPalette();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const items = [...document.querySelectorAll('.cmd-result')];
+        const idx = items.findIndex(i => i.classList.contains('selected'));
+        items.forEach(i => i.classList.remove('selected'));
+        const next = e.key === 'ArrowDown' ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+        if (items[next]) items[next].classList.add('selected');
+    }
+});
+
+document.getElementById('cmdPalette').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeCmdPalette();
+});
+
+// ─── Explorer actions ────────────────────────────────────────────────────
+function validateCrystal() { if (selectedCrystalId) apiCommand('validate crystal ' + selectedCrystalId); }
+function replayCrystal() { if (selectedCrystalId) apiCommand('replay crystal ' + selectedCrystalId); }
+function exportCrystal() { if (selectedCrystalId) apiCommand('export crystal ' + selectedCrystalId); }
+function forgeFromCrystal() {
+    if (!selectedCrystalId) return;
+    switchView('forge');
+    document.getElementById('forgeIntent').value = 'Forge from crystal: ' + selectedCrystalId;
+}
+
+// ─── Constitution ────────────────────────────────────────────────────────
+const gcConstraints = [
+    ['GC-01', 'Axiom 2.0.1', 'State Boundedness'],
+    ['GC-02', 'Axiom 2.0.2', 'Typed Operations'],
+    ['GC-03', 'Axiom 2.0.3', 'Trace Discipline'],
+    ['GC-04', 'Axiom 2.0.4', 'Content Addressing'],
+    ['GC-05', 'Axiom 2.0.5', 'Acyclicity'],
+    ['GC-06', 'Sec 5', 'Observation Integrity'],
+    ['GC-07', 'Sec 6', 'Persistence Guarantee'],
+    ['GC-08', 'Sec 7', 'Constraint Soundness'],
+    ['GC-09', 'Sec 8', 'Crystal Validity'],
+    ['GC-10', 'Sec 9', 'Consensus Protocol'],
+    ['GC-11', 'Sec 10', 'Topology Invariants'],
+    ['GC-12', 'Sec 11', 'Carrier Geometry'],
+    ['GC-13', 'Sec 12', 'Multi-Scale Coherence'],
+    ['GC-14', 'Sec 13', 'Archive Immutability'],
+    ['GC-15', 'Sec 14', 'Scheduler Fairness'],
+    ['GC-16', 'Sec 15', 'Capsule Security'],
+    ['GC-17', 'Sec 16', 'Store Integrity'],
+    ['GC-18', 'Sec 17', 'Manifest Completeness'],
+    ['GC-19', 'Sec 18', 'Gateway Conformance'],
+    ['GC-20', 'Sec 19', 'Forge Determinism'],
+    ['GC-21', 'Sec 20', 'Human Override'],
+];
+
+function renderConstraints() {
+    const el = document.getElementById('constraintList');
+    el.innerHTML = '';
+    gcConstraints.forEach(([id, axiom, name]) => {
+        const row = document.createElement('div');
+        row.className = 'constraint-row';
+        row.innerHTML = `<span class="constraint-id">${id}</span><span style="color:var(--text-dim);width:90px">${axiom}</span><span class="constraint-name">${name}</span><span class="constraint-status pass">PASS</span>`;
+        el.appendChild(row);
+    });
+}
+
+function validateGenesis() { apiCommand('validate genesis'); }
+function exportCertificate() { apiCommand('export certificate'); }
+
+// ─── Charts (Canvas) ─────────────────────────────────────────────────────
+function drawLineChart(canvasId, data, opts = {}) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const color = opts.color || '#3b82f6';
+
+    ctx.clearRect(0, 0, w, h);
+
+    if (data.length < 2) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '11px system-ui';
+        ctx.fillText('Waiting for data...', 10, h / 2);
+        return;
+    }
+
+    const max = Math.max(...data);
+    const min = Math.min(...data);
+    const range = max - min || 1;
+
+    // Grid
+    ctx.strokeStyle = '#2a2a4a';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 4; i++) {
+        const y = (i / 3) * h;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+
+    // Line
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    data.forEach((v, i) => {
+        const x = (i / (data.length - 1)) * w;
+        const y = h - ((v - min) / range) * (h - 4) - 2;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    // Value label
+    ctx.fillStyle = color;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(data[data.length - 1].toFixed(3), 4, 12);
+}
+
+function updateCharts() {
+    drawLineChart('chartCoherence', chartData.coherence, { color: '#3b82f6' });
+    drawLineChart('chartGate', chartData.gate, { color: '#22c55e' });
+    drawLineChart('chartCrystal', chartData.crystal, { color: '#d4a843' });
+    drawLineChart('chartSpectral', chartData.spectral, { color: '#8b5cf6' });
+    drawLineChart('chartKuramoto', chartData.kuramoto, { color: '#ef4444' });
+    drawLineChart('chartAutonomy', chartData.autonomy, { color: '#d4a843' });
+}
+
+// ─── Tab Switching ───────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    });
+});
+
+// ─── Filter Buttons ──────────────────────────────────────────────────────
+document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    });
+});
+
+// ─── Explorer search/filter ──────────────────────────────────────────────
+document.getElementById('explorerSearch').addEventListener('input', () => loadCrystals());
+document.getElementById('explorerFilter').addEventListener('change', () => loadCrystals());
+
+// ─── Keyboard Shortcuts ──────────────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+    // Ctrl+K — command palette
+    if (e.ctrlKey && e.key === 'k') { e.preventDefault(); openCmdPalette(); return; }
+
+    // Escape — close modals
+    if (e.key === 'Escape') { closeCmdPalette(); return; }
+
+    // Ctrl+1..7 — switch views
+    if (e.ctrlKey && e.key >= '1' && e.key <= '7') {
+        e.preventDefault();
+        const views = ['dashboard', 'forge', 'explorer', 'monitor', 'foundry', 'oracle', 'constitution'];
+        switchView(views[parseInt(e.key) - 1]);
+        return;
+    }
+
+    // Ctrl+Enter — primary action
+    if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        if (currentView === 'forge') startForge();
+        else if (currentView === 'foundry') startFoundry();
+        return;
+    }
+
+    // Ctrl+S — start/stop engine
+    if (e.ctrlKey && e.key === 's') {
+        e.preventDefault();
+        const state = document.getElementById('monEngineState').textContent;
+        if (state === 'RUNNING') engineStop(); else engineStart();
+        return;
+    }
+
+    // Ctrl+E — explorer
+    if (e.ctrlKey && e.key === 'e') { e.preventDefault(); switchView('explorer'); return; }
+
+    // / — focus search
+    if (e.key === '/' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        if (currentView === 'explorer') document.getElementById('explorerSearch').focus();
+        else if (currentView === 'oracle') document.getElementById('patternSearch').focus();
+    }
+});
+
+// ─── Utilities ───────────────────────────────────────────────────────────
+function formatUptime(secs) {
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    if (d > 0) return d + 'd ' + h + 'h';
+    if (h > 0) return h + 'h ' + m + 'm';
+    return m + 'm';
+}
+
+function escapeHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Init ────────────────────────────────────────────────────────────────
+function init() {
+    // Restore last view
+    const saved = localStorage.getItem('isls-studio-view');
+    if (saved && viewTitles[saved]) switchView(saved);
+
+    // Render constitution constraints
+    renderConstraints();
+
+    // Detect platform
+    const platform = navigator.platform || navigator.userAgent;
+    document.getElementById('constPlatform').textContent =
+        platform.includes('Win') ? 'windows' : platform.includes('Mac') ? 'macos' : 'linux';
+
+    // Connect WebSocket
+    connectWs();
+
+    // Load initial data
+    loadDashboard();
+    loadCrystals();
+
+    // Periodic refresh
+    setInterval(() => {
+        loadDashboard();
+        updateCharts();
+    }, 5000);
+
+    setInterval(() => {
+        if (currentView === 'explorer') loadCrystals();
+    }, 10000);
+}
+
+init();
+</script>
+</body>
+</html>

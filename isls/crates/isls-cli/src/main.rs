@@ -113,6 +113,8 @@ enum Command {
     TemplateCreate { name: String, structure: String },
     TemplateDistill { crystal_id: String, name: String },
     TemplateCompose { name: String, includes: Vec<String> },
+    // C19 Gateway / Studio
+    Serve { port: u16 },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -341,6 +343,13 @@ fn parse_args(args: &[String]) -> Command {
             Command::Report { json, html, full_html }
         }
         "status" => Command::Status,
+        "serve" => {
+            let port = args.iter().position(|a| a == "--port")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(8420);
+            Command::Serve { port }
+        }
         _ => Command::Help,
     }
 }
@@ -2513,6 +2522,23 @@ fn cmd_open(capsule_path: &str) {
     }
 }
 
+fn cmd_serve(port: u16) {
+    println!("ISLS Gateway starting on port {}...", port);
+    println!("Studio available at http://localhost:{}/studio", port);
+    println!("API available at http://localhost:{}/", port);
+    println!("WebSocket events at ws://localhost:{}/events", port);
+    println!();
+
+    let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
+    rt.block_on(async {
+        let state = isls_gateway::AppState::new();
+        let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
+        if let Err(e) = isls_gateway::serve(state, addr).await {
+            eprintln!("Gateway error: {}", e);
+        }
+    });
+}
+
 fn hex_hash(h: &isls_types::Hash256) -> String {
     h.iter().map(|b| format!("{:02x}", b)).collect()
 }
@@ -2564,6 +2590,11 @@ fn print_help() {
     println!("    --name <name>                Name for composed template");
     println!("    --include <name>             Templates to include (repeat for each)");
     println!();
+    println!("GATEWAY COMMANDS (C19):");
+    println!("  serve [options]                Start the Gateway + Studio web interface");
+    println!("    --port <port>                Port to listen on (default: 8420)");
+    println!("                                 Studio: http://localhost:8420/studio");
+    println!();
     println!("EXAMPLES:");
     println!("  isls init");
     println!("  isls ingest --adapter synthetic --entities 500");
@@ -2576,6 +2607,8 @@ fn print_help() {
     println!("  isls report");
     println!("  isls report --html > report.html");
     println!("  isls status");
+    println!("  isls serve");
+    println!("  isls serve --port 9090");
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -2625,6 +2658,7 @@ fn main() {
         Command::TemplateCreate { name, structure } => cmd_template_create(&name, &structure),
         Command::TemplateDistill { crystal_id, name } => cmd_template_distill(&crystal_id, &name),
         Command::TemplateCompose { name, includes } => cmd_template_compose(&name, &includes),
+        Command::Serve { port } => cmd_serve(port),
     }
 }
 
@@ -2800,5 +2834,23 @@ mod tests {
     #[test]
     fn test_bench_command_runs() {
         cmd_bench();
+    }
+
+    #[test]
+    fn test_parse_serve() {
+        let cmd = parse_args(&args(&["isls", "serve"]));
+        match cmd {
+            Command::Serve { port } => assert_eq!(port, 8420),
+            _ => panic!("expected Serve"),
+        }
+    }
+
+    #[test]
+    fn test_parse_serve_port() {
+        let cmd = parse_args(&args(&["isls", "serve", "--port", "9090"]));
+        match cmd {
+            Command::Serve { port } => assert_eq!(port, 9090),
+            _ => panic!("expected Serve with port"),
+        }
     }
 }
