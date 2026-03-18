@@ -1127,7 +1127,58 @@ fn cmd_ingest(adapter_name: &str, path: Option<&str>, entities: Option<usize>, s
     }
 }
 
-fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&str>) {
+// ─── Scenario Result Saver ────────────────────────────────────────────────────
+
+/// Writes `results/{name}-formal.json` (FormalReport) and
+/// `results/{name}-metrics.json` (FullReport) so that
+/// `isls report --full-html` can display per-scenario data in Section 1 & 2.
+fn save_scenario_results(
+    name: &str,
+    archive: &Archive,
+    snap: &MetricSnapshot,
+    collector: &mut MetricCollector,
+    config: &Config,
+) {
+    let results_dir = isls_dir().join("results");
+    let _ = std::fs::create_dir_all(&results_dir);
+
+    // Formal validation report
+    let pinned = BTreeMap::new();
+    let formal = FormalValidator::validate(archive, &pinned);
+    if let Ok(s) = serde_json::to_string_pretty(&formal) {
+        let _ = std::fs::write(results_dir.join(format!("{}-formal.json", name)), s);
+    }
+
+    // Full metrics report (FullReport struct that report --full-html deserializes)
+    let alerts = collector.check_alerts(snap);
+    let health = MetricCollector::overall_health(snap);
+    let items = generate_iteration_guidance(snap, config);
+    let report = FullReport {
+        overview: SystemOverview {
+            version: "1.0.0".to_string(),
+            uptime_secs: 0,
+            entity_count: snap.m24_coverage_growth,
+            edge_count: 0,
+            crystal_count: archive.len(),
+            storage_bytes: 0,
+            generated_at: chrono::Utc::now(),
+        },
+        latest_metrics: snap.clone(),
+        alerts,
+        iteration_items: items,
+        health,
+        history_len: 0,
+        validation_html: String::new(),
+        generative_bench_results: vec![],
+    };
+    if let Ok(s) = serde_json::to_string_pretty(&report) {
+        let _ = std::fs::write(results_dir.join(format!("{}-metrics.json", name)), s);
+    }
+    println!("  Scenario '{}': results saved ({} crystals, {:.1}% pass rate)",
+        name, formal.total_crystals, formal.pass_rate() * 100.0);
+}
+
+fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, project: Option<&str>) {
     ensure_dirs().expect("failed to create dirs");
     let config = load_config();
 
@@ -1223,6 +1274,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&
 
     let mut prev_constraints: usize = 0;
     let mut constraint_first_seen_step: Option<usize> = None;
+    let mut last_snap: Option<MetricSnapshot> = None;
 
     for i in 0..steps {
         let obs_payloads = get_payloads(i);
@@ -1277,8 +1329,8 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&
         );
         let snap = build_snapshot_from_state(&state, &mut collector, basket_lift);
         append_jsonl(&metrics_path, &MetricCollector::to_jsonl(&snap));
-
         let alerts = collector.check_alerts(&snap);
+        last_snap = Some(snap);
         for alert in &alerts {
             append_jsonl(&alerts_path, &serde_json::to_string(alert).unwrap_or_default());
         }
@@ -1313,6 +1365,16 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, _project: Option<&
     }
 
     save_archive(&state.archive);
+
+    // Save per-scenario result files when --project <scenario-name> is given.
+    // These are read by `isls report --full-html` (cmd_report_full_html) from
+    // results/{name}-formal.json and results/{name}-metrics.json.
+    if let Some(name) = project {
+        let final_snap = last_snap.unwrap_or_else(|| {
+            build_snapshot_from_state(&state, &mut collector, 0.0)
+        });
+        save_scenario_results(name, &state.archive, &final_snap, &mut collector, &config);
+    }
 
     // Build and save execution manifest (C13 completion criterion 3)
     let manifest = build_manifest(&rd, &traces, &state.archive, &registries, "discovery", &obs_log);

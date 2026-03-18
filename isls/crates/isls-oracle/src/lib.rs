@@ -1098,6 +1098,18 @@ impl OracleEngine {
         }
     }
 
+    /// Send a raw `SynthesisPrompt` directly to the underlying oracle, bypassing
+    /// Pattern Memory and ArtifactIR. Used by live benchmark functions (B20, B21)
+    /// that need to send custom prompts for compile-rate and attempt-count testing.
+    pub fn synthesize_prompt(&self, prompt: &SynthesisPrompt) -> Result<OracleResponse> {
+        if !self.oracle.available() || !self.config.enabled {
+            return Err(OracleError::Unavailable(
+                "oracle not available (no API key or disabled)".to_string(),
+            ));
+        }
+        self.oracle.synthesize(prompt)
+    }
+
     pub fn oracle_available(&self) -> bool {
         self.oracle.available()
     }
