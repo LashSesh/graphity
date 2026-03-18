@@ -793,6 +793,7 @@ mod tests {
     fn test_oracle_config() -> OracleConfig {
         OracleConfig {
             enabled: false,
+            provider: None,
             model: "test".into(),
             endpoint: String::new(),
             api_key_source: String::new(),
