@@ -4,6 +4,7 @@
 
 pub mod metrics;
 pub mod bench;
+pub mod bench_generative;
 pub mod validate;
 pub mod synthetic;
 pub mod report;
@@ -21,6 +22,7 @@ pub mod scale_tests;
 // Re-export key types for convenience
 pub use metrics::{Alert, AlertLevel, MetricCollector, MetricSnapshot};
 pub use bench::{BenchResult, BenchSuite, RegressionVerdict, check_regression};
+pub use bench_generative::run_generative_suite;
 pub use validate::{FormalReport, FormalValidator, LiveValidator, RetroReport, RetroValidator};
 pub use synthetic::{PlantedConstraint, RecoveryScore, ScenarioKind, SyntheticGenerator, SyntheticScenario};
 pub use report::{FullReport, ReportGenerator, SystemOverview};

@@ -29,6 +29,7 @@ isls-templates = { path = "../isls-templates" }
 isls-compose = { path = "../isls-compose" }
 isls-pmhd = { path = "../isls-pmhd" }
 isls-gateway = { path = "../isls-gateway" }
+isls-multilang = { path = "../isls-multilang" }
 
 serde = { workspace = true }
 tokio = { workspace = true }
