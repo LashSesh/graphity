@@ -488,6 +488,7 @@ select { cursor: pointer; width: auto; }
         <button class="nav-btn" data-view="foundry" title="Foundry (Ctrl+5)">B</button>
         <button class="nav-btn" data-view="oracle" title="Oracle (Ctrl+6)">O</button>
         <button class="nav-btn" data-view="constitution" title="Constitution (Ctrl+7)">C</button>
+        <button class="nav-btn" data-view="navigator" title="Navigator (Ctrl+8)">N</button>
         <div class="sidebar-bottom">
             <div class="status-pill" id="statusPill"></div><br>
             <span id="sidebarUptime">0m</span><br>
@@ -790,6 +791,62 @@ select { cursor: pointer; width: auto; }
             </div>
         </div>
 
+        <!-- ═══ View 8: Navigator (C29) ════════════════════════════════ -->
+        <div class="view" id="view-navigator">
+            <div class="metric-grid" style="margin-bottom:var(--gap)">
+                <div class="metric-card"><div class="metric-value" id="navVertices">—</div><div class="metric-label">Vertices</div></div>
+                <div class="metric-card"><div class="metric-value" id="navEdges">—</div><div class="metric-label">Edges</div></div>
+                <div class="metric-card"><div class="metric-value" id="navSimplices">—</div><div class="metric-label">Simplices</div></div>
+                <div class="metric-card"><div class="metric-value gold" id="navBestRes">—</div><div class="metric-label">Best Resonance</div></div>
+            </div>
+
+            <div class="card" style="margin-bottom:var(--gap)">
+                <h3>Navigator Controls</h3>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+                    <select id="navMode" style="padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
+                        <option value="config">Config Optimization</option>
+                        <option value="architecture">Architecture Exploration</option>
+                    </select>
+                    <input type="number" id="navSteps" value="20" min="1" max="500"
+                        style="width:80px;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
+                    <span style="font-size:12px;color:var(--text-dim)">steps</span>
+                    <button class="btn" onclick="navigatorStep()">▶ RUN</button>
+                    <button class="btn btn-secondary" onclick="navigatorRefresh()">↺ Refresh</button>
+                    <button class="btn btn-secondary" onclick="navigatorExportMesh()">⬇ Export Mesh</button>
+                </div>
+                <div id="navRunLog" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);min-height:24px"></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin-bottom:var(--gap)">
+                <div class="card">
+                    <h3>Mesh Metrics</h3>
+                    <div style="font-family:var(--font-mono);font-size:13px">
+                        <div class="detail-row"><span class="detail-label">Spectral Gap:</span><span class="detail-value" id="navSpecGap">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Betti [b0,b1,b2]:</span><span class="detail-value" id="navBetti">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Singularities:</span><span class="detail-value" id="navSingCount">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Steps run:</span><span class="detail-value" id="navStepsRun">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Mode:</span><span class="detail-value" id="navModeDisplay">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Spiral:</span><span class="detail-value" style="color:var(--text-dim)">NavigatorSpiral (golden-angle)</span></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Best Configuration</h3>
+                    <div style="font-family:var(--font-mono);font-size:13px">
+                        <div class="detail-row"><span class="detail-label">Resonance:</span><span class="detail-value gold" id="navBestResFull">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Point:</span><span class="detail-value" id="navBestPoint" style="word-break:break-all;font-size:11px">—</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Singularity Feed <span style="font-size:12px;font-weight:normal;color:var(--text-dim)">— unexplored gold</span></h3>
+                <div id="navSingularities" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)">
+                    <span style="color:var(--text-dim)">No singularities detected yet. Run the navigator to explore the pattern space.</span>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- Status Bar -->
@@ -846,6 +903,7 @@ const viewTitles = {
     foundry: ['Foundry', 'Project fabrication with compile feedback'],
     oracle: ['Oracle', 'Autonomy metrics, pattern memory, budget'],
     constitution: ['Constitution', 'Genesis Crystal, ADAMANT status'],
+    navigator: ['Navigator', 'C29 — Spectral-Guided Pattern Space Exploration'],
 };
 
 // ─── Navigation ──────────────────────────────────────────────────────────
@@ -859,6 +917,7 @@ function switchView(view) {
     document.getElementById('viewTitle').textContent = title;
     document.getElementById('viewSubtitle').textContent = sub;
     localStorage.setItem('isls-studio-view', view);
+    if (view === 'navigator') navigatorRefresh();
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ subscribe: getEventsForView(view) }));
     }
@@ -873,6 +932,7 @@ function getEventsForView(view) {
         case 'foundry': return ['foundry_progress', 'heartbeat'];
         case 'oracle': return ['metric', 'heartbeat'];
         case 'constitution': return ['alert', 'heartbeat'];
+        case 'navigator': return ['heartbeat'];
         default: return ['heartbeat'];
     }
 }
@@ -1304,10 +1364,10 @@ document.addEventListener('keydown', (e) => {
     // Escape — close modals
     if (e.key === 'Escape') { closeCmdPalette(); return; }
 
-    // Ctrl+1..7 — switch views
-    if (e.ctrlKey && e.key >= '1' && e.key <= '7') {
+    // Ctrl+1..8 — switch views
+    if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
         e.preventDefault();
-        const views = ['dashboard', 'forge', 'explorer', 'monitor', 'foundry', 'oracle', 'constitution'];
+        const views = ['dashboard', 'forge', 'explorer', 'monitor', 'foundry', 'oracle', 'constitution', 'navigator'];
         switchView(views[parseInt(e.key) - 1]);
         return;
     }
@@ -1354,6 +1414,101 @@ function escapeHtml(s) {
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ─── Navigator (C29) ─────────────────────────────────────────────────────
+function navigatorRefresh() {
+    fetch('/navigate/status')
+        .then(r => r.json())
+        .then(data => {
+            const s = data.state;
+            if (!s) {
+                document.getElementById('navRunLog').textContent =
+                    'No state yet. Click RUN to start exploring.';
+                return;
+            }
+            document.getElementById('navVertices').textContent =
+                s.mesh ? (s.mesh.vertices || []).length : '—';
+            document.getElementById('navEdges').textContent =
+                s.mesh ? (s.mesh.edges || []).length : '—';
+            document.getElementById('navSimplices').textContent =
+                s.mesh ? (s.mesh.simplices || []).length : '—';
+            document.getElementById('navBestRes').textContent =
+                s.best_resonance != null ? s.best_resonance.toFixed(4) : '—';
+            document.getElementById('navBestResFull').textContent =
+                s.best_resonance != null ? s.best_resonance.toFixed(6) : '—';
+            document.getElementById('navStepsRun').textContent = s.steps_run || '—';
+            document.getElementById('navModeDisplay').textContent = s.mode || '—';
+            if (s.best_point) {
+                document.getElementById('navBestPoint').textContent =
+                    '[' + s.best_point.map(x => x.toFixed(3)).join(', ') + ']';
+            }
+            // Singularity feed (placeholder from mesh data)
+            renderNavSingularities(s.mesh);
+        })
+        .catch(() => {
+            document.getElementById('navRunLog').textContent = 'Gateway not reachable.';
+        });
+}
+
+function navigatorStep() {
+    const steps = parseInt(document.getElementById('navSteps').value) || 20;
+    const mode = document.getElementById('navMode').value;
+    document.getElementById('navRunLog').textContent = `Running ${steps} steps (${mode})...`;
+    fetch(`/navigate/step?steps=${steps}&mode=${mode}`, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                document.getElementById('navRunLog').textContent =
+                    `Done. Steps: ${data.steps_run} | Vertices: ${data.vertices} | ` +
+                    `Edges: ${data.edges} | Best: ${(data.best_resonance || 0).toFixed(4)} | ` +
+                    `Singularities: ${data.singularities}`;
+                navigatorRefresh();
+            } else {
+                document.getElementById('navRunLog').textContent = 'Error: ' + (data.message || 'unknown');
+            }
+        })
+        .catch(() => {
+            document.getElementById('navRunLog').textContent = 'Navigator step failed.';
+        });
+}
+
+function navigatorExportMesh() {
+    fetch('/navigate/export-mesh')
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok && data.mesh) {
+                const blob = new Blob([JSON.stringify(data.mesh, null, 2)], {type: 'application/json'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'navigator-mesh.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            } else {
+                document.getElementById('navRunLog').textContent =
+                    'No mesh to export. Run the navigator first.';
+            }
+        });
+}
+
+function renderNavSingularities(mesh) {
+    const el = document.getElementById('navSingularities');
+    if (!mesh || !mesh.vertices || mesh.vertices.length === 0) {
+        el.innerHTML = '<span style="color:var(--text-dim)">No singularities detected yet.</span>';
+        return;
+    }
+    // Compute singularities client-side: resonance > mean + 2*sigma of neighborhood
+    // For display purposes we show top 5 high-resonance vertices
+    const sorted = [...mesh.vertices].sort((a, b) => (b.resonance || 0) - (a.resonance || 0));
+    const top = sorted.slice(0, 5);
+    el.innerHTML = top.map((v, i) =>
+        `<div style="padding:6px 0;border-bottom:1px solid var(--border)">` +
+        `<span style="color:var(--accent)">★ Vertex ${v.id}</span>` +
+        ` resonance <strong style="color:var(--gold,#f4c542)">${(v.resonance || 0).toFixed(4)}</strong>` +
+        ` &nbsp;point: [${(v.point || []).map(x => x.toFixed(3)).join(', ')}]` +
+        `</div>`
+    ).join('') || '<span style="color:var(--text-dim)">No vertices yet.</span>';
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────
 function init() {
     // Restore last view
@@ -1383,6 +1538,7 @@ function init() {
 
     setInterval(() => {
         if (currentView === 'explorer') loadCrystals();
+        if (currentView === 'navigator') navigatorRefresh();
     }, 10000);
 }
 

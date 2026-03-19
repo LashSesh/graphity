@@ -1019,6 +1019,7 @@ dependencies = [
  "isls-archive",
  "isls-forge",
  "isls-harness",
+ "isls-navigator",
  "isls-store",
  "isls-templates",
  "isls-types",
