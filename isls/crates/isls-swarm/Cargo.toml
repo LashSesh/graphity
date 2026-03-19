@@ -1,0 +1,15 @@
+[package]
+name = "isls-swarm"
+version = "1.0.0"
+edition = "2021"
+description = "C31 — Multi-Agent Swarm Coordinator"
+
+[dependencies]
+isls-types  = { path = "../isls-types" }
+isls-agent  = { path = "../isls-agent" }
+isls-navigator = { path = "../isls-navigator" }
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+
+[features]
+default = []

@@ -1224,6 +1224,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-swarm"
+version = "1.0.0"
+dependencies = [
+ "isls-agent",
+ "isls-navigator",
+ "isls-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "isls-templates"
 version = "1.0.0"
 dependencies = [
