@@ -1,7 +1,8 @@
 // isls-gateway: REST + WebSocket API and Studio web interface — C19
 // Serves the Studio single-page app and provides real-time event streaming.
-// No external JS/CSS dependencies. One HTML file. Eight views (Phase 11: Navigator).
+// No external JS/CSS dependencies. One HTML file. Nine views (Phase 13: Swarm + Chat).
 
+pub mod chat;
 pub mod ws;
 
 use std::collections::BTreeMap;
@@ -20,6 +21,7 @@ use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use chat::{BindRequest, BoundProject, ChatJobStore, ChatRequest, run_chat_job};
 use ws::{EventHub, EventType, SubscribeRequest, WsEvent};
 
 // The entire Studio is embedded at compile time
@@ -34,6 +36,10 @@ pub struct AppState {
     pub engine_state: Arc<RwLock<EngineState>>,
     pub forge_state: Arc<RwLock<ForgeState>>,
     pub foundry_state: Arc<RwLock<FoundryState>>,
+    /// In-progress and completed chat jobs (keyed by job_id)
+    pub chat_jobs: ChatJobStore,
+    /// Default project path for /agent/chat when no `project` field is set
+    pub bound_project: BoundProject,
 }
 
 impl AppState {
@@ -44,6 +50,8 @@ impl AppState {
             engine_state: Arc::new(RwLock::new(EngineState::default())),
             forge_state: Arc::new(RwLock::new(ForgeState::default())),
             foundry_state: Arc::new(RwLock::new(FoundryState::default())),
+            chat_jobs: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            bound_project: Arc::new(RwLock::new(None)),
         }
     }
 }
@@ -302,6 +310,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/agent/goal", post(agent_goal))
         .route("/agent/step", post(agent_step_handler))
         .route("/agent/history", get(agent_history))
+        // C30 Agent Chat (Phase 12 upgrade)
+        .route("/agent/chat", post(agent_chat_start))
+        .route("/agent/chat/{job_id}/events", get(agent_chat_events))
+        .route("/agent/bind", post(agent_bind))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)
@@ -819,6 +831,69 @@ async fn agent_history() -> Json<serde_json::Value> {
     }
 }
 
+// ─── C30 Agent Chat Handlers ─────────────────────────────────────────────────
+
+/// POST /agent/chat — start a background chat job, return job_id immediately
+async fn agent_chat_start(
+    State(state): State<AppState>,
+    Json(req): Json<ChatRequest>,
+) -> Json<serde_json::Value> {
+    let job_id = format!("chat-{:08x}", rand_u32());
+
+    {
+        let mut jobs = state.chat_jobs.write().await;
+        jobs.insert(job_id.clone(), chat::ChatJob::new(job_id.clone()));
+    }
+
+    // Spawn background task
+    let jobs = state.chat_jobs.clone();
+    let bound = state.bound_project.clone();
+    let req_clone = req.clone();
+    let job_clone = job_id.clone();
+    tokio::spawn(async move {
+        run_chat_job(jobs, job_clone, req_clone, bound).await;
+    });
+
+    Json(serde_json::json!({
+        "ok": true,
+        "job_id": job_id,
+    }))
+}
+
+/// GET /agent/chat/{job_id}/events — poll accumulated events for a job
+async fn agent_chat_events(
+    State(state): State<AppState>,
+    Path(job_id): Path<String>,
+) -> Json<serde_json::Value> {
+    let jobs = state.chat_jobs.read().await;
+    match jobs.get(&job_id) {
+        Some(job) => Json(serde_json::json!({
+            "ok": true,
+            "events": job.events,
+            "complete": job.complete,
+        })),
+        None => Json(serde_json::json!({
+            "ok": false,
+            "error": "job not found",
+        })),
+    }
+}
+
+/// POST /agent/bind — set the default project for subsequent /agent/chat calls
+async fn agent_bind(
+    State(state): State<AppState>,
+    Json(req): Json<BindRequest>,
+) -> Json<serde_json::Value> {
+    let path = std::path::PathBuf::from(&req.project);
+    let exists = path.exists();
+    *state.bound_project.write().await = Some(path);
+    Json(serde_json::json!({
+        "ok": true,
+        "project": req.project,
+        "exists": exists,
+    }))
+}
+
 // ─── WebSocket Handler ──────────────────────────────────────────────────────
 
 async fn ws_handler(
@@ -1165,6 +1240,92 @@ mod tests {
         assert_eq!(data["ok"], true);
         assert!(data["steps_run"].as_u64().unwrap_or(0) > 0);
         assert!(data["plan_size"].as_u64().unwrap_or(0) >= 5);
+    }
+
+    // AT-AG22: Chat endpoint returns events in correct order
+    #[tokio::test]
+    async fn at_ag22_chat_endpoint_event_order() {
+        let app = test_app();
+
+        // Start chat job (project = "." which exists)
+        let body = serde_json::json!({
+            "message": "add a hello function",
+            "project": ".",
+        });
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/agent/chat")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let data: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap(),
+        ).unwrap();
+        assert_eq!(data["ok"], true);
+        let job_id = data["job_id"].as_str().unwrap().to_string();
+
+        // Poll until complete (max 30 attempts × 100ms = 3s)
+        let mut events = serde_json::Value::Array(vec![]);
+        let mut complete = false;
+        for _ in 0..30 {
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+            let resp = app
+                .clone()
+                .oneshot(
+                    Request::get(format!("/agent/chat/{}/events", job_id))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let data: serde_json::Value = serde_json::from_slice(
+                &axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap(),
+            ).unwrap();
+            events = data["events"].clone();
+            complete = data["complete"].as_bool().unwrap_or(false);
+            if complete { break; }
+        }
+
+        assert!(complete, "job must complete within 3 seconds");
+
+        // Verify event ordering: Analysis must come before Complete
+        let event_types: Vec<&str> = events.as_array().unwrap()
+            .iter()
+            .filter_map(|e| e.get("type").and_then(|t| t.as_str()))
+            .collect();
+
+        assert!(!event_types.is_empty(), "must have at least one event");
+        let first = event_types[0];
+        let last = *event_types.last().unwrap();
+        assert_eq!(first, "analysis", "first event must be analysis, got: {}", first);
+        assert_eq!(last, "complete", "last event must be complete, got: {}", last);
+    }
+
+    // AT-AG22b: /agent/bind stores the project path
+    #[tokio::test]
+    async fn at_ag22b_agent_bind() {
+        let app = test_app();
+        let body = serde_json::json!({"project": "/tmp"});
+        let resp = app
+            .oneshot(
+                Request::post("/agent/bind")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let data: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap(),
+        ).unwrap();
+        assert_eq!(data["ok"], true);
+        assert_eq!(data["project"], "/tmp");
     }
 
     // AT-ST-AG3: GET /agent/history returns ok field

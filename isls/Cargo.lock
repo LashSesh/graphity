@@ -1031,6 +1031,7 @@ dependencies = [
  "isls-forge",
  "isls-harness",
  "isls-navigator",
+ "isls-oracle",
  "isls-store",
  "isls-templates",
  "isls-types",
