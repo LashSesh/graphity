@@ -1,0 +1,745 @@
+%%% =======================================================================
+%%% ISLS Extension Phase 12 v1.0.0
+%%% The Agent: Studio as Workspace-Aware Development Exoskeleton
+%%% The Lab That Makes the Product Pure
+%%% Author: Sebastian Klemm
+%%% Date: 19 March 2026
+%%% Status: Implementation Specification for Claude Code
+%%% =======================================================================
+\documentclass[11pt,a4paper,twoside]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs,longtable,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{titlesec}
+
+\geometry{margin=2.5cm,top=3cm,bottom=3cm,headheight=14pt}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{requirement}{Requirement}[section]
+
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}[section]
+
+\newcommand{\ISLS}{\textsf{ISLS}}
+
+\definecolor{sec-color}{HTML}{1e3a5f}
+
+\titleformat{\section}
+  {\Large\bfseries\color{sec-color}}
+  {\thesection}{1em}{}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!5},
+  rulecolor=\color{gray!30},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{\ISLS{} Phase 12 v1.0.0}
+\fancyhead[RE,LO]{Sebastian Klemm}
+\fancyfoot[C]{\thepage}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  pdftitle={ISLS Phase 12 — The Agent},
+  pdfauthor={Sebastian Klemm},
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+{\Huge\bfseries \ISLS{} Extension Phase~12\\[0.3cm]
+v1.0.0}\\[1.5cm]
+{\Large The Agent}\\[1cm]
+{\large The Studio becomes the workshop.\\
+Chat-driven. Workspace-aware. Memory-backed.\\
+Formally verified. Accumulating. Autonomous.\\[0.5cm]
+Everyone has the same LLM.\\
+Nobody has this lab.}\\[2cm]
+{\large Sebastian Klemm}\\[0.5cm]
+{\large 19 March 2026}\\[1.5cm]
+
+\begin{abstract}
+\noindent
+This document specifies the transformation of the \ISLS{} Studio
+from a dashboard into an \textbf{agent}: a workspace-aware,
+chat-driven development interface that uses any LLM as its engine
+but wraps it in the full \ISLS{} substrate --- Pattern Memory,
+Constraint Propagation, Foundry compile-test-fix, formal
+crystallization, and accumulating autonomy.
+
+The operator opens \texttt{localhost:8420}, types what they want in
+natural language, and the Agent does the rest: reads the project,
+understands what exists, constructs a maximally-constrained prompt,
+calls the LLM, receives code, writes it to disk, compiles, tests,
+fixes if needed, crystallizes, stores the pattern. Next time
+something similar is needed, it comes from memory.
+
+This is not a Claude Code replacement. Claude Code is the LLM.
+\ISLS{} is the exoskeleton. The exoskeleton makes the LLM's
+output reproducible, verifiable, accumulating, and progressively
+cheaper. Everyone has access to the same LLM API. Nobody else has
+this infrastructure around it.
+
+The value proposition in one sentence: \textbf{the 100th project
+costs less than the 1st, and the 1000th costs almost nothing.}
+
+\medskip\noindent\textbf{Status:} Implementation Specification.\\
+\textbf{Modifies:} C19 (Gateway/Studio), C25 (Oracle), C27 (Foundry).\\
+\textbf{New module:} \texttt{agent.rs} in \texttt{isls-gateway}.\\
+\textbf{No new crate.} The Agent is a mode of the Studio, not a
+separate system.
+\end{abstract}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+%%% =====================================================================
+\part{The Problem}\label{part:problem}
+
+\section{Why ISLS Is Currently Useless for Daily Work}\label{sec:useless}
+
+Today, to use the Forge, the operator must:
+\begin{enumerate}[nosep]
+  \item Write a JSON DecisionSpec by hand.
+  \item Run \texttt{isls forge --spec file.json --domain rust}.
+  \item Wait for output.
+  \item Manually inspect the output.
+  \item Manually copy files into their project.
+  \item Manually run \texttt{cargo check} to see if it works.
+  \item If it doesn't work, start over.
+\end{enumerate}
+
+Claude Code, by comparison: the operator types what they want, it
+reads the project, edits files, compiles, tests, iterates, done.
+No JSON specs, no manual copying, no separate tools.
+
+The gap is not intelligence. The gap is \textbf{agency} ---
+the ability to act on the operator's behalf in the operator's
+project, autonomously, in a feedback loop.
+
+
+%%% =====================================================================
+\part{The Agent}\label{part:agent}
+
+\section{What It Looks Like}\label{sec:looks}
+
+\begin{lstlisting}[title={The Studio Agent Interface}]
++----------------------------------------------------------+
+| ISLS Agent                    [project: ~/my-api]  [M:23]|
++----------------------------------------------------------+
+|                                                          |
+|  YOU: Add a /search endpoint that does full-text         |
+|       search on bookmarks by title and tags              |
+|                                                          |
+|  AGENT: Analyzing workspace...                           |
+|    Found: src/router.rs (6 routes), src/models.rs        |
+|    (Bookmark struct with title, url, tags fields),       |
+|    src/database.rs (SQLx, bookmarks table)               |
+|                                                          |
+|    Plan:                                                 |
+|    1. Add SearchParams struct to models.rs               |
+|    2. Add search_bookmarks() to database.rs              |
+|    3. Add GET /search route to router.rs                 |
+|    4. Add test in tests/search.rs                        |
+|                                                          |
+|    Executing...                                          |
+|    [1/4] models.rs: SearchParams added (from memory)     |
+|    [2/4] database.rs: search query (oracle: 0.8s)        |
+|    [3/4] router.rs: route added (from memory)            |
+|    [4/4] tests/search.rs: test generated (oracle: 0.6s)  |
+|                                                          |
+|    > cargo check ... OK                                  |
+|    > cargo test  ... 13/13 passed                        |
+|                                                          |
+|    Crystal: a7b3c9 | Files: 4 | Attempts: 1             |
+|    Patterns stored: 3 new, 1 from memory                 |
+|                                                          |
+|  YOU: The search should also support date ranges          |
+|                                                          |
+|  AGENT: Analyzing diff...                                |
+|    Modifying: SearchParams (add from/to dates),          |
+|    search_bookmarks() (add WHERE clause),                |
+|    test (add date range test case)                       |
+|    ...                                                   |
++----------------------------------------------------------+
+| [M] Memory: 23 patterns | Auto: 34% | Cost: $0.02       |
++----------------------------------------------------------+
+\end{lstlisting}
+
+
+\section{The Five Capabilities}\label{sec:capabilities}
+
+\subsection{1. Chat Interface}\label{sec:chat}
+
+\begin{definition}[Agent Chat]\label{def:chat}
+The Studio gains a primary chat view. The operator types natural
+language. The Agent responds with actions. The conversation is
+persistent within a session and can reference previous messages.
+
+\begin{lstlisting}
+// WebSocket message types (extend existing ws.rs)
+pub enum AgentMessage {
+    /// Operator sends a request
+    UserMessage { content: String },
+
+    /// Agent shows analysis
+    Analysis { workspace_summary: String, plan: Vec<PlanStep> },
+
+    /// Agent shows progress
+    Progress { step: usize, total: usize, description: String,
+               source: String }, // "memory", "oracle", "static"
+
+    /// Agent shows compile/test result
+    ToolResult { tool: String, success: bool, output: String },
+
+    /// Agent shows final result
+    Complete { files_changed: Vec<String>, crystal_id: String,
+               patterns_stored: usize, patterns_reused: usize,
+               cost_usd: f64 },
+
+    /// Agent asks for clarification
+    Clarification { question: String, options: Vec<String> },
+}
+\end{lstlisting}
+\end{definition}
+
+
+\subsection{2. Workspace Awareness}\label{sec:workspace}
+
+\begin{definition}[Project Binding]\label{def:projectbind}
+The Agent is always bound to a project directory. At startup or
+via the UI, the operator selects a directory. The Agent runs
+WorkspaceAnalyzer (C27) and maintains a live model:
+
+\begin{lstlisting}
+pub struct AgentWorkspace {
+    pub root: PathBuf,
+    pub model: WorkspaceModel,      // from C27 WorkspaceAnalyzer
+    pub file_index: FileIndex,       // path -> last_modified + summary
+    pub type_index: TypeIndex,       // type_name -> file + fields
+    pub function_index: FunctionIndex, // fn_name -> file + signature
+    pub route_index: RouteIndex,     // path -> handler + method (if API)
+    pub last_analysis: Instant,
+}
+
+impl AgentWorkspace {
+    /// Re-analyze when files change
+    pub fn refresh_if_stale(&mut self) -> bool;
+
+    /// Find all files relevant to a task
+    pub fn relevant_files(&self, task: &str) -> Vec<RelevantFile>;
+
+    /// Get the full content of relevant files for the Oracle prompt
+    pub fn context_for_prompt(&self, relevant: &[RelevantFile],
+                               max_tokens: usize) -> String;
+
+    /// After the Agent modifies files, update indexes
+    pub fn notify_change(&mut self, paths: &[PathBuf]);
+}
+\end{lstlisting}
+\end{definition}
+
+\begin{definition}[Context Construction]\label{def:context}
+The Agent builds the Oracle prompt from workspace context:
+\begin{lstlisting}
+pub fn build_agent_prompt(
+    user_message: &str,
+    workspace: &AgentWorkspace,
+    memory_matches: &[PatternEntry],
+    conversation_history: &[ConversationTurn],
+) -> SynthesisPrompt {
+    let relevant = workspace.relevant_files(user_message);
+    let context = workspace.context_for_prompt(&relevant, 6000);
+
+    let system = format!(
+        "You are a code agent working in a Rust project.\n\
+         You modify EXISTING files. You do NOT create from scratch.\n\
+         Output ONLY the complete modified file content.\n\
+         No explanations, no markdown fences.\n\n\
+         PROJECT STRUCTURE:\n{}\n\n\
+         EXISTING CODE (relevant files):\n{}\n\n\
+         KNOWN PATTERNS:\n{}",
+        workspace.model.summary(),
+        context,
+        format_memory_matches(memory_matches),
+    );
+
+    let user = format!(
+        "CONVERSATION:\n{}\n\nLATEST REQUEST:\n{}",
+        format_history(conversation_history),
+        user_message,
+    );
+
+    SynthesisPrompt {
+        system,
+        user,
+        output_format: OutputFormat::Rust,
+        max_tokens: 4096,
+        temperature: 0.0,
+    }
+}
+\end{lstlisting}
+
+The key difference from the current Forge: the prompt contains the
+\textbf{actual code} from the operator's project. The LLM sees what
+exists and modifies it, rather than generating from scratch.
+\end{definition}
+
+
+\subsection{3. Autonomous Execution}\label{sec:execution}
+
+\begin{definition}[Agent Execution Loop]\label{def:execloop}
+\begin{lstlisting}
+pub struct Agent {
+    workspace: AgentWorkspace,
+    oracle: Box<dyn SynthesisOracle>,
+    foundry: Foundry,
+    memory: PatternMemory,
+    conversation: Vec<ConversationTurn>,
+    config: AgentConfig,
+}
+
+impl Agent {
+    pub async fn handle_message(&mut self, msg: &str) -> AgentResult {
+        // 1. Analyze: what does the operator want?
+        let task = self.analyze_intent(msg).await?;
+
+        // 2. Plan: which files need to change?
+        let plan = self.plan_changes(&task).await?;
+        self.emit(AgentMessage::Analysis { ... });
+
+        // 3. For each planned change:
+        let mut changed_files = Vec::new();
+        for (i, step) in plan.steps.iter().enumerate() {
+            // 3a. Check Pattern Memory first
+            let signature = step.to_five_d_signature();
+            if let Some(pattern) = self.memory.find_match(&signature, 0.85) {
+                // Adapt pattern to current context
+                let adapted = self.adapt_pattern(&pattern, &step)?;
+                self.write_file(&step.file, &adapted)?;
+                self.emit(AgentMessage::Progress {
+                    source: "memory".into(), ...
+                });
+            } else {
+                // 3b. Call Oracle with full workspace context
+                let prompt = build_agent_prompt(
+                    &step.description,
+                    &self.workspace,
+                    &self.memory.recent_matches(5),
+                    &self.conversation,
+                );
+                let response = self.oracle.synthesize(&prompt)?;
+
+                // 3c. Strip markdown, extract code
+                let code = strip_and_extract(&response.content);
+                self.write_file(&step.file, &code)?;
+
+                self.emit(AgentMessage::Progress {
+                    source: "oracle".into(), ...
+                });
+            }
+            changed_files.push(step.file.clone());
+        }
+
+        // 4. Compile and test
+        let compile = self.foundry.toolchain.cargo_check(&self.workspace.root)?;
+        self.emit(AgentMessage::ToolResult {
+            tool: "cargo check".into(), ...
+        });
+
+        if !compile.success {
+            // 5. Auto-fix: send error back to Oracle
+            let fix_result = self.auto_fix(&compile.stderr, &changed_files).await?;
+            if !fix_result.success {
+                return Ok(AgentResult::CompileFailure { ... });
+            }
+        }
+
+        let test = self.foundry.toolchain.cargo_test(&self.workspace.root)?;
+        self.emit(AgentMessage::ToolResult {
+            tool: "cargo test".into(), ...
+        });
+
+        // 6. Crystallize
+        let crystal = self.crystallize(&changed_files, &task)?;
+
+        // 7. Store patterns for reuse
+        let patterns_stored = self.store_patterns(&changed_files, &crystal)?;
+
+        // 8. Update workspace model
+        self.workspace.notify_change(&changed_files);
+
+        // 9. Update conversation
+        self.conversation.push(ConversationTurn {
+            role: "user".into(), content: msg.into(),
+        });
+        self.conversation.push(ConversationTurn {
+            role: "agent".into(), content: format!("Changed {} files", changed_files.len()),
+        });
+
+        Ok(AgentResult::Success { crystal, patterns_stored, ... })
+    }
+}
+\end{lstlisting}
+\end{definition}
+
+
+\subsection{4. Multi-Turn Conversation}\label{sec:multiturn}
+
+\begin{definition}[Conversation Context]\label{def:conversation}
+The Agent maintains conversation history within a session. Each
+turn is stored and included in subsequent Oracle prompts. This
+enables:
+
+\begin{itemize}[nosep]
+  \item \textbf{Refinement}: ``The search should also support date
+        ranges'' --- the Agent sees the previous turn (search endpoint)
+        and modifies only what changed.
+  \item \textbf{Reference}: ``Make the same change in the other module''
+        --- the Agent understands ``the same change'' from context.
+  \item \textbf{Correction}: ``That's wrong, the field is called
+        \texttt{created\_at} not \texttt{date}'' --- the Agent re-reads
+        the file and corrects.
+\end{itemize}
+
+Conversation history is truncated to fit the LLM context window
+(keep last $n$ turns, summarize earlier ones).
+\end{definition}
+
+
+\subsection{5. Accumulating Advantage}\label{sec:accumulate}
+
+\begin{definition}[The Compounding Effect]\label{def:compound}
+Every Agent action that succeeds is crystallized and stored in
+Pattern Memory. The accumulation metrics:
+
+\begin{lstlisting}
+pub struct AccumulationMetrics {
+    pub total_requests: u64,
+    pub memory_served: u64,          // no LLM call needed
+    pub oracle_served: u64,          // LLM called
+    pub oracle_first_try: u64,      // compiled on first attempt
+    pub oracle_with_fix: u64,        // needed correction cycle
+    pub autonomy_ratio: f64,         // memory_served / total
+    pub total_cost_usd: f64,
+    pub avg_cost_per_request: f64,   // should decrease over time
+    pub patterns_in_memory: usize,
+}
+\end{lstlisting}
+
+The Studio dashboard shows:
+\begin{itemize}[nosep]
+  \item Autonomy ratio as a percentage bar (``34\% self-sufficient'')
+  \item Cost trend chart (cost per request declining over time)
+  \item Pattern count growing
+  \item ``Saved \$X.XX by using memory instead of LLM''
+\end{itemize}
+\end{definition}
+
+
+%%% =====================================================================
+\part{Intent Analysis}\label{part:intent}
+
+\section{What the Agent Understands}\label{sec:understands}
+
+\begin{definition}[Intent Classification]\label{def:intent}
+The Agent classifies the operator's message into an operation type.
+This classification can be done with simple keyword matching first
+(no LLM needed), or by a lightweight LLM call for ambiguous cases:
+
+\begin{lstlisting}
+pub enum AgentIntent {
+    /// "Add a search endpoint" -> add new code
+    Add { target: String, description: String },
+
+    /// "Fix the compile error in database.rs" -> fix existing code
+    Fix { file: Option<String>, issue: String },
+
+    /// "Refactor the handler into smaller functions" -> restructure
+    Refactor { target: String, instruction: String },
+
+    /// "Write tests for the search module" -> generate tests
+    Test { target: Option<String> },
+
+    /// "What does the search function do?" -> explain (no code change)
+    Explain { target: String },
+
+    /// "Run the tests" -> execute tool
+    Run { command: String },
+
+    /// "Show me the project structure" -> workspace query
+    Query { question: String },
+
+    /// Complex: needs LLM to decompose into sub-intents
+    Complex { description: String },
+}
+\end{lstlisting}
+
+For \texttt{Add}, \texttt{Fix}, \texttt{Refactor}, \texttt{Test}:
+the Agent acts (modifies files, compiles, tests).
+
+For \texttt{Explain}, \texttt{Query}: the Agent responds without
+changing files.
+
+For \texttt{Run}: the Agent executes a shell command and shows
+output.
+
+For \texttt{Complex}: the Agent decomposes into a multi-step plan
+(each step is one of the simple intents above).
+\end{definition}
+
+
+%%% =====================================================================
+\part{File Operations}\label{part:fileops}
+
+\section{How the Agent Modifies Files}\label{sec:modify}
+
+\begin{definition}[Targeted File Modification]\label{def:modify}
+The Agent does NOT generate entire files from scratch (wasteful,
+error-prone). It generates \textbf{patches}: targeted modifications
+to existing files.
+
+Two strategies:
+\begin{enumerate}[nosep]
+  \item \textbf{Full-file replacement}: for small files or new files,
+        the Oracle returns the complete file content. The Agent writes
+        it directly.
+  \item \textbf{Surgical edit}: for large files, the Agent sends only
+        the relevant section to the Oracle, receives the modified
+        section, and splices it back in. This reduces token usage and
+        error surface.
+\end{enumerate}
+
+\begin{lstlisting}
+pub enum FileOperation {
+    Create { path: String, content: String },
+    Replace { path: String, content: String },
+    Edit {
+        path: String,
+        anchor: String,      // unique string to locate the edit point
+        old_content: String, // what to replace
+        new_content: String, // replacement
+    },
+    Append { path: String, content: String },
+    Delete { path: String },
+}
+\end{lstlisting}
+
+For surgical edits, the Oracle prompt includes:
+\begin{lstlisting}
+"File: src/database.rs
+REPLACE THIS:
+    pub async fn list_bookmarks(...) -> ... {
+        sqlx::query_as!(...)
+    }
+WITH YOUR MODIFICATION.
+Context: adding full-text search on title and tags fields.
+Output ONLY the replacement code block. Nothing else."
+\end{lstlisting}
+\end{definition}
+
+
+%%% =====================================================================
+\part{Gateway Integration}\label{part:gateway}
+
+\section{New Endpoints}\label{sec:endpoints}
+
+\begin{lstlisting}
+// Agent-specific endpoints
+POST  /agent/message        Body: {content: "add search endpoint"}
+                            Returns: stream of AgentMessage via SSE
+
+POST  /agent/bind           Body: {project_dir: "/path/to/project"}
+                            Returns: WorkspaceModel summary
+
+GET   /agent/workspace      Returns: current workspace model
+
+GET   /agent/conversation   Returns: conversation history
+
+POST  /agent/clear          Clears conversation history
+
+GET   /agent/accumulation   Returns: AccumulationMetrics
+
+// The chat interface uses Server-Sent Events (SSE) for streaming:
+// POST /agent/message returns a stream of AgentMessage as they occur
+// (analysis, progress, tool results, completion)
+\end{lstlisting}
+
+
+\section{Studio Chat View}\label{sec:chatview}
+
+The Studio's primary view becomes the Chat. The 7 existing views
+remain accessible via sidebar, but the Chat is default.
+
+\begin{lstlisting}[title={Studio Layout with Chat}]
++--[sidebar]--+--[chat]------------------------------+
+| [C] Chat    | YOU: add search endpoint              |
+| [D] Dash    |                                       |
+| [F] Forge   | AGENT: Analyzing...                   |
+| [E] Explore |   Found: router.rs, models.rs, ...    |
+| [M] Monitor |   Plan: 4 files                       |
+| [B] Build   |   [1/4] models.rs (memory) OK         |
+| [O] Oracle  |   [2/4] database.rs (oracle 0.8s) OK  |
+| [C] Const.  |   [3/4] router.rs (memory) OK         |
+| [N] Nav     |   [4/4] tests/search.rs (oracle) OK   |
+|             |   > cargo check ... OK                |
+|             |   > cargo test ... 13/13 passed       |
+|             |   Crystal: a7b3c9                     |
+|             |                                       |
+| Auto: 34%   | YOU: also support date ranges         |
+| Mem: 23     |                                       |
+| $0.02       | AGENT: Modifying 3 files...            |
++-----------  +---------------------------------------+
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Configuration}\label{part:config}
+
+\begin{lstlisting}
+agent:
+  enabled: true
+  default_project: "~/projects/my-api"
+  max_conversation_turns: 20
+  max_context_tokens: 6000     # workspace context in prompt
+  auto_compile: true           # compile after every change
+  auto_test: true              # test after every change
+  auto_crystallize: true       # crystallize successful changes
+  auto_store_patterns: true    # store patterns from successful changes
+  surgical_edit_threshold: 200 # lines; above this use surgical edit
+  oracle_provider: "auto"      # auto-detect from env vars
+\end{lstlisting}
+
+
+%%% =====================================================================
+\part{Acceptance Tests}\label{part:tests}
+
+\begin{longtable}{l l p{5.5cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Procedure} \\
+\midrule
+\endfirsthead \midrule \endhead \bottomrule \endfoot
+AT-AG1 & Project bind & Bind to a Rust project; verify workspace
+  model contains correct modules, types, functions. \\
+AT-AG2 & Intent classification & Send ``add an endpoint''; verify
+  classified as Add. Send ``fix the bug''; verify Fix. \\
+AT-AG3 & Workspace context & Bind project with 5 files; verify
+  prompt contains relevant file contents. \\
+AT-AG4 & File creation & Send ``create a new module health.rs'';
+  verify file created on disk. \\
+AT-AG5 & File modification & Send ``add a field to User struct'';
+  verify existing file modified correctly. \\
+AT-AG6 & Compile check & Agent modifies file; verify
+  \texttt{cargo check} automatically runs. \\
+AT-AG7 & Auto-fix & Mock Oracle returns code with missing import;
+  verify Agent detects compile error and retries with error context. \\
+AT-AG8 & Crystallization & Successful change produces a crystal
+  with evidence chain linking to the conversation. \\
+AT-AG9 & Pattern storage & After successful change, verify pattern
+  stored in memory with correct signature. \\
+AT-AG10 & Memory reuse & Store a pattern; request similar change;
+  verify served from memory without Oracle call. \\
+AT-AG11 & Multi-turn & Send ``add endpoint'', then ``also add
+  pagination''; verify second turn modifies the first result. \\
+AT-AG12 & Accumulation metrics & Make 5 requests (3 oracle, 2 memory);
+  verify autonomy ratio = 40\%. \\
+AT-AG13 & SSE streaming & Connect to /agent/message; verify
+  AgentMessages stream in real-time. \\
+AT-AG14 & Explain intent & Send ``what does search\_bookmarks do?'';
+  verify response without file changes. \\
+\end{longtable}
+
+
+%%% =====================================================================
+\part{Handoff}\label{part:handoff}
+
+\section{What Changes}
+
+\begin{tabularx}{\textwidth}{l X}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-gateway/src/agent.rs} & New: Agent struct, execution loop,
+  intent classification, workspace binding. \\
+\texttt{isls-gateway/src/lib.rs} & Add agent routes: /agent/message,
+  /agent/bind, /agent/workspace, /agent/conversation,
+  /agent/accumulation. \\
+\texttt{isls-gateway/src/ws.rs} & Add AgentMessage event types for
+  SSE streaming. \\
+\texttt{isls-gateway/src/static/studio.html} & Add Chat view as
+  primary view. SSE client for streaming agent responses. \\
+\texttt{isls-oracle/src/lib.rs} & Expose \texttt{strip\_markdown\_fences}
+  as public utility. \\
+\texttt{isls-foundry/src/workspace.rs} & Expose WorkspaceAnalyzer
+  fields for Agent consumption (type\_index, function\_index). \\
+\texttt{isls-cli/src/main.rs} & Add \texttt{isls agent} subcommand
+  for terminal-based agent (non-GUI fallback). \\
+\bottomrule
+\end{tabularx}
+
+\section{Test Count}
+
+\begin{tabular}{l r r}
+\toprule
+\textbf{Phase} & \textbf{New Tests} & \textbf{Cumulative} \\
+\midrule
+Phase 1--11 & 373 & 373 \\
+Phase 12 (Agent) & 14 & $\ge$ 387 \\
+\bottomrule
+\end{tabular}
+
+\section{Completion Criteria}
+
+\begin{enumerate}[nosep]
+  \item Operator types natural language in Studio Chat.
+  \item Agent analyzes workspace and shows plan before executing.
+  \item Agent modifies existing files with workspace context.
+  \item \texttt{cargo check} and \texttt{cargo test} run automatically.
+  \item Compile errors trigger auto-fix cycle (error $\to$ Oracle $\to$
+        retry).
+  \item Every successful change is crystallized with evidence chain.
+  \item Patterns are stored and reused for similar future requests.
+  \item Accumulation metrics show autonomy ratio, cost trend, pattern
+        count.
+  \item Multi-turn conversation works (refinement, correction,
+        reference).
+  \item SSE streaming shows real-time progress in the Studio.
+  \item Terminal fallback: \texttt{isls agent} works without browser.
+  \item Total tests $\ge 387$, zero warnings.
+  \item \textbf{Everyone has the same LLM. Nobody has this lab.}
+\end{enumerate}
+
+
+\vfill
+\begin{center}
+\rule{0.5\textwidth}{0.4pt}\\[0.5cm]
+{\small Generated for \ISLS{} Extension Phase 12 v1.0.0.\\[0.2cm]
+The 1st project costs \$0.05 and takes 10 seconds.\\
+The 100th project costs \$0.01 and takes 3 seconds.\\
+The 1000th project costs nothing and takes milliseconds.\\[0.3cm]
+The LLM is the chemist.\\
+The Memory is the recipe book that grows.\\
+The Foundry is the quality control.\\
+The Crystal is the proof of purity.\\
+The Lab is the competitive advantage.\\[0.3cm]
+The chemist is for hire. The lab is yours.}
+\end{center}
+
+\end{document}
