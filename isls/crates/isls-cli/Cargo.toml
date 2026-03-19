@@ -31,6 +31,7 @@ isls-pmhd = { path = "../isls-pmhd" }
 isls-gateway = { path = "../isls-gateway" }
 isls-multilang = { path = "../isls-multilang" }
 isls-navigator = { path = "../isls-navigator" }
+isls-agent = { path = "../isls-agent" }
 
 serde = { workspace = true }
 tokio = { workspace = true }
@@ -38,5 +39,9 @@ serde_json = { workspace = true }
 chrono = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
+
+[features]
+# Enable when metatron_triton is available as a path dependency.
+triton = []
 
 [dev-dependencies]

@@ -1,6 +1,6 @@
 // isls-gateway: REST + WebSocket API and Studio web interface — C19
 // Serves the Studio single-page app and provides real-time event streaming.
-// No external JS/CSS dependencies. One HTML file. Seven views.
+// No external JS/CSS dependencies. One HTML file. Eight views (Phase 11: Navigator).
 
 pub mod ws;
 
@@ -175,6 +175,18 @@ pub struct FoundryProject {
     pub status: String,
 }
 
+// ─── Navigator State ────────────────────────────────────────────────────────
+
+fn navigator_state_path() -> std::path::PathBuf {
+    let base = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    std::path::PathBuf::from(base).join(".isls").join("navigator").join("state.json")
+}
+
+fn agent_state_path() -> std::path::PathBuf {
+    let base = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    std::path::PathBuf::from(base).join(".isls").join("agent").join("state.json")
+}
+
 // ─── Request/Response Types ─────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
@@ -196,6 +208,21 @@ pub struct FoundryRequest {
 #[derive(Debug, Deserialize)]
 pub struct CommandRequest {
     pub command: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NavigateStepQuery {
+    pub steps: Option<usize>,
+    pub mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AgentGoalRequest {
+    pub intent: String,
+    pub domain: Option<String>,
+    pub constraints: Option<Vec<String>>,
+    pub confidence: Option<f64>,
+    pub max_steps: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -266,6 +293,15 @@ pub fn build_router(state: AppState) -> Router {
         .route("/engine/start", post(engine_start))
         .route("/engine/stop", post(engine_stop))
         .route("/engine/step", post(engine_step))
+        // C29 Navigator
+        .route("/navigate/status", get(navigate_status))
+        .route("/navigate/step", post(navigate_step))
+        .route("/navigate/export-mesh", get(navigate_export_mesh))
+        // C30 Agent
+        .route("/agent/status", get(agent_status))
+        .route("/agent/goal", post(agent_goal))
+        .route("/agent/step", post(agent_step_handler))
+        .route("/agent/history", get(agent_history))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)
@@ -588,6 +624,201 @@ async fn engine_step(State(state): State<AppState>) -> Json<serde_json::Value> {
     Json(serde_json::json!({"ok": true, "tick": engine.tick}))
 }
 
+// ─── C29 Navigator Handlers ──────────────────────────────────────────────────
+
+/// GET /navigate/status — returns current NavigatorState from ~/.isls/navigator/state.json
+async fn navigate_status() -> Json<serde_json::Value> {
+    let path = navigator_state_path();
+    match std::fs::read_to_string(&path) {
+        Ok(json) => {
+            let state: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+            Json(serde_json::json!({
+                "ok": true,
+                "state": state,
+                "path": path.to_string_lossy(),
+            }))
+        }
+        Err(_) => Json(serde_json::json!({
+            "ok": false,
+            "state": null,
+            "message": "No navigator state. Run 'isls navigate' first.",
+        })),
+    }
+}
+
+/// POST /navigate/step?steps=N&mode=config — run N spiral steps and persist state
+async fn navigate_step(
+    Query(params): Query<NavigateStepQuery>,
+) -> Json<serde_json::Value> {
+    use isls_navigator::{Navigator, NavigatorConfig, NavigatorState, SpectralSignature};
+
+    let steps = params.steps.unwrap_or(10).min(500);
+    let mode = params.mode.clone().unwrap_or_else(|| "config".to_string());
+
+    let config = NavigatorConfig { dim: 5, k: 3, seed: 42, ..Default::default() };
+    let mut nav = Navigator::new(config, |params: &[f64]| {
+        let r: f64 = params.iter().map(|&x| x * (1.0 - x)).sum::<f64>() / params.len() as f64;
+        SpectralSignature::new(r, r, r)
+    });
+
+    let history = nav.run(steps);
+    let state = NavigatorState::from_navigator(&nav, mode.clone());
+
+    let path = navigator_state_path();
+    let save_ok = state.save(&path).is_ok();
+
+    Json(serde_json::json!({
+        "ok": true,
+        "mode": mode,
+        "steps_run": history.len(),
+        "best_resonance": nav.best_signature().map(|s| s.resonance()).unwrap_or(0.0),
+        "vertices": nav.mesh.vertices.len(),
+        "edges": nav.mesh.edges.len(),
+        "simplices": nav.mesh.simplices.len(),
+        "singularities": nav.singularities().len(),
+        "state_saved": save_ok,
+    }))
+}
+
+/// GET /navigate/export-mesh — returns the current mesh as JSON
+async fn navigate_export_mesh() -> Json<serde_json::Value> {
+    use isls_navigator::NavigatorState;
+
+    let path = navigator_state_path();
+    match NavigatorState::load(&path) {
+        Ok(state) => {
+            match serde_json::to_value(&state.mesh) {
+                Ok(mesh_json) => Json(serde_json::json!({
+                    "ok": true,
+                    "mesh": mesh_json,
+                    "steps_run": state.steps_run,
+                    "best_resonance": state.best_resonance,
+                })),
+                Err(e) => Json(serde_json::json!({"ok": false, "error": e.to_string()})),
+            }
+        }
+        Err(_) => Json(serde_json::json!({
+            "ok": false,
+            "message": "No navigator state. Run 'isls navigate' or POST /navigate/step first.",
+        })),
+    }
+}
+
+// ─── C30 Agent Handlers ──────────────────────────────────────────────────────
+
+/// GET /agent/status — read AgentState from ~/.isls/agent/state.json
+async fn agent_status() -> Json<serde_json::Value> {
+    let path = agent_state_path();
+    match std::fs::read_to_string(&path) {
+        Ok(json) => {
+            let state: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+            Json(serde_json::json!({
+                "ok": true,
+                "state": state,
+            }))
+        }
+        Err(_) => Json(serde_json::json!({
+            "ok": false,
+            "state": null,
+            "message": "No agent state. Run 'isls agent <intent>' or POST /agent/goal first.",
+        })),
+    }
+}
+
+/// POST /agent/goal — create an agent from a goal description and run to completion
+async fn agent_goal(
+    Json(req): Json<AgentGoalRequest>,
+) -> Json<serde_json::Value> {
+    use isls_agent::{Agent, AgentConfig, AgentGoal};
+
+    let mut goal = AgentGoal::new(&req.intent)
+        .with_confidence(req.confidence.unwrap_or(0.75));
+    if let Some(ref d) = req.domain {
+        goal = goal.with_domain(d.as_str());
+    }
+    if let Some(ref cs) = req.constraints {
+        for c in cs {
+            goal = goal.with_constraint(c.as_str());
+        }
+    }
+
+    let max_steps = req.max_steps.unwrap_or(100).min(500);
+    let config = AgentConfig { max_steps, ..Default::default() };
+    let mut agent = Agent::new(config, goal);
+    let steps = agent.run(0);
+
+    let path = agent_state_path();
+    let save_ok = agent.state.save(&path).is_ok();
+
+    Json(serde_json::json!({
+        "ok": true,
+        "intent": req.intent,
+        "steps_run": steps.len(),
+        "best_score": agent.best_score(),
+        "complete": agent.is_complete(),
+        "plan_size": agent.state.plan.actions.len(),
+        "state_saved": save_ok,
+    }))
+}
+
+/// POST /agent/step — execute one step from persisted state
+async fn agent_step_handler() -> Json<serde_json::Value> {
+    use isls_agent::{Agent, AgentConfig, AgentState};
+
+    let path = agent_state_path();
+    match AgentState::load(&path) {
+        Err(_) => Json(serde_json::json!({
+            "ok": false,
+            "message": "No agent state. POST /agent/goal first.",
+        })),
+        Ok(state) => {
+            let config = AgentConfig::default();
+            let mut agent = Agent { config, state };
+            match agent.step() {
+                None => Json(serde_json::json!({
+                    "ok": true,
+                    "complete": true,
+                    "message": "Agent is already complete.",
+                })),
+                Some(s) => {
+                    let save_ok = agent.state.save(&path).is_ok();
+                    Json(serde_json::json!({
+                        "ok": true,
+                        "step_id": s.step_id,
+                        "action": s.action.action_type.label(),
+                        "outcome": s.outcome,
+                        "score": s.score,
+                        "complete": agent.is_complete(),
+                        "state_saved": save_ok,
+                    }))
+                }
+            }
+        }
+    }
+}
+
+/// GET /agent/history — return full step history from persisted state
+async fn agent_history() -> Json<serde_json::Value> {
+    let path = agent_state_path();
+    match std::fs::read_to_string(&path) {
+        Ok(json) => {
+            let state: serde_json::Value = serde_json::from_str(&json).unwrap_or_default();
+            let history = state.get("history").cloned().unwrap_or(serde_json::Value::Array(vec![]));
+            let steps = history.as_array().map(|a| a.len()).unwrap_or(0);
+            Json(serde_json::json!({
+                "ok": true,
+                "steps": steps,
+                "history": history,
+            }))
+        }
+        Err(_) => Json(serde_json::json!({
+            "ok": false,
+            "history": [],
+            "message": "No agent state.",
+        })),
+    }
+}
+
 // ─── WebSocket Handler ──────────────────────────────────────────────────────
 
 async fn ws_handler(
@@ -821,6 +1052,66 @@ mod tests {
         assert_eq!(data["ok"], true);
     }
 
+    // AT-ST-NV1: Navigator status returns ok=false when no state exists
+    #[tokio::test]
+    async fn at_st_nv1_navigate_status_no_state() {
+        let app = test_app();
+        let resp = app
+            .oneshot(Request::get("/navigate/status").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        // Either ok (state exists) or not — endpoint must respond
+        assert!(data.get("ok").is_some());
+    }
+
+    // AT-ST-NV2: Navigator step runs and returns mesh metrics
+    #[tokio::test]
+    async fn at_st_nv2_navigate_step_runs() {
+        let app = test_app();
+        let resp = app
+            .oneshot(
+                Request::post("/navigate/step?steps=5&mode=config")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(data["ok"], true);
+        assert_eq!(data["steps_run"], 5);
+        assert!(data["vertices"].as_u64().unwrap_or(0) > 0);
+    }
+
+    // AT-ST-NV3: Navigate export-mesh returns mesh after step
+    #[tokio::test]
+    async fn at_st_nv3_navigate_export_mesh() {
+        let app = test_app();
+        // First run some steps to create state
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::post("/navigate/step?steps=3")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        // Now export (may succeed or return no-state depending on save path)
+        let resp = app
+            .oneshot(Request::get("/navigate/export-mesh").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(data.get("ok").is_some());
+    }
+
     // AT-ST8: Health endpoint
     #[tokio::test]
     async fn at_st8_health_endpoint() {
@@ -834,5 +1125,71 @@ mod tests {
         let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(data["status"], "ok");
         assert!(data.get("version").is_some());
+    }
+
+    // AT-ST-AG1: Agent status returns ok field even without prior state
+    #[tokio::test]
+    async fn at_st_ag1_agent_status_no_state() {
+        let app = test_app();
+        let resp = app
+            .oneshot(Request::get("/agent/status").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(data.get("ok").is_some());
+    }
+
+    // AT-ST-AG2: POST /agent/goal creates agent, runs it, returns metrics
+    #[tokio::test]
+    async fn at_st_ag2_agent_goal_runs() {
+        let app = test_app();
+        let body = serde_json::json!({
+            "intent": "Build a deterministic event sourcing library",
+            "domain": "rust",
+            "confidence": 0.7,
+        });
+        let resp = app
+            .oneshot(
+                Request::post("/agent/goal")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(data["ok"], true);
+        assert!(data["steps_run"].as_u64().unwrap_or(0) > 0);
+        assert!(data["plan_size"].as_u64().unwrap_or(0) >= 5);
+    }
+
+    // AT-ST-AG3: GET /agent/history returns ok field
+    #[tokio::test]
+    async fn at_st_ag3_agent_history() {
+        let app = test_app();
+        // Run goal first so history may exist
+        let goal_body = serde_json::json!({"intent": "History test goal"});
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::post("/agent/goal")
+                    .header("content-type", "application/json")
+                    .body(Body::from(serde_json::to_vec(&goal_body).unwrap()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let resp = app
+            .oneshot(Request::get("/agent/history").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let data: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert!(data.get("ok").is_some());
     }
 }

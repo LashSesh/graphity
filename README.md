@@ -1,6 +1,6 @@
 # AVALON &mdash; Invariant Structure Learning System
 
-**Version 1.0.0** &nbsp;|&nbsp; **26 Crates** &nbsp;|&nbsp; **326+ Tests** &nbsp;|&nbsp; **Zero Warnings**
+**Version 1.0.0** &nbsp;|&nbsp; **27 Crates** &nbsp;|&nbsp; **415+ Tests** &nbsp;|&nbsp; **Zero Warnings**
 
 A deterministic, append-only substrate for discovering, crystallizing, and replaying structural invariants from streaming data. ISLS observes entities over time, extracts constraint programs, gates them through a formal consensus protocol, and emits **Semantic Crystals** &mdash; self-contained, hash-verified knowledge artifacts that are replay-reproducible and tamper-evident.
 
@@ -88,7 +88,7 @@ Every crystal carries a complete evidence chain, is content-addressed (SHA-256),
 
 ## Crate Map
 
-ISLS is organized as a Cargo workspace with 26 crates. Each crate has a designation (C1&ndash;C27) and a clear responsibility boundary.
+ISLS is organized as a Cargo workspace with 27 crates. Each crate has a designation (C1&ndash;C31) and a clear responsibility boundary.
 
 ### Core Pipeline
 
@@ -130,6 +130,10 @@ ISLS is organized as a Cargo workspace with 26 crates. Each crate has a designat
 | `isls-oracle` | C25 | Hybrid Synthesis Oracle: memory-first &rarr; LLM fallback &rarr; skeleton |
 | `isls-templates` | C26 | Crystallized Architecture Pattern Catalog: pre-validated skeletal templates |
 | `isls-foundry` | C27 | Closed-loop software fabrication: compile-test-fix pipeline |
+| `isls-multilang` | C28 | Babylon Bridge: IR-validated multi-language code generation |
+| `isls-navigator` | C29 | Spectral-Guided Pattern Space Explorer: TRITON spirals + Laplacian mesh |
+| `isls-agent` | C30 | Autonomous Goal-Directed Agent: plan &rarr; step &rarr; adapt &rarr; complete |
+| `isls-swarm` | C31 | Multi-Agent Swarm Coordinator: seed-diverse agents + resonance consensus |
 
 ---
 
@@ -334,6 +338,10 @@ The ISLS core (Phases 1&ndash;6) defines the fundamental substrate. Extensions a
 | 7 | v1.0.0 | C26 | Crystallized Architecture Pattern Catalog |
 | 8 | v1.0.0 | C27 | The Foundry &mdash; Closed-Loop Software Fabrication |
 | 9 | v1.0.0 | C19 | The Studio &mdash; Unified Web-Based Operator Interface |
+| 10 | v1.0.0 | C28 | Babylon Bridge &mdash; IR-Validated Multi-Language Forge |
+| 11 | v1.0.0 | C29 | Navigator &mdash; Spectral-Guided Pattern Space Explorer |
+| 12 | v1.0.0 | C30 | Agent &mdash; Autonomous Goal-Directed Agent |
+| 13 | v1.0.0 | C31 | Swarm &mdash; Multi-Agent Swarm Coordinator |
 
 ---
 
