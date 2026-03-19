@@ -64,6 +64,10 @@ pub fn run_generative_suite_live(git_commit: &str) -> Vec<BenchResult> {
         return run_generative_suite(git_commit);
     };
 
+    println!("[live-oracle] Provider detected: {provider}");
+    println!("[live-oracle] Key available — real HTTP calls will be made.");
+    println!("[live-oracle] B17/B24: direct synthesize_prompt(); B20/B21: prompt+compile");
+
     // Start from the mock suite (B16, B18, B19, B20, B21, B22, B23 stay mock)
     let mut results = run_generative_suite(git_commit);
 
@@ -176,10 +180,14 @@ fn bench_oracle_latency_live(git_commit: &str, provider: &str) -> BenchResult {
         temperature: 0.0,
     };
 
+    println!("[B17] Making {N} live API calls to {provider}...");
     let start = Instant::now();
-    for _ in 0..N {
-        // Count every attempt (ok or err) — the network round-trip is what we measure
-        let _ = engine.synthesize_prompt(&prompt);
+    for i in 0..N {
+        let t = Instant::now();
+        match engine.synthesize_prompt(&prompt) {
+            Ok(resp) => println!("[B17] call {}/{N}: OK  {:>6}ms  {} tokens", i+1, t.elapsed().as_millis(), resp.tokens_used),
+            Err(e)   => println!("[B17] call {}/{N}: ERR {:>6}ms  {e}", i+1, t.elapsed().as_millis()),
+        }
     }
     let elapsed = start.elapsed();
     let ms_per_call = elapsed.as_millis() as f64 / N as f64;
@@ -351,17 +359,19 @@ fn bench_foundry_compile_rate_live(git_commit: &str, provider: &str) -> BenchRes
         temperature: 0.0,
     };
 
+    println!("[B20] Calling {provider} oracle for compile-rate test...");
     let compiled = match engine.synthesize_prompt(&prompt) {
         Ok(resp) => {
+            println!("[B20] Oracle OK: {} chars, {} tokens", resp.content.len(), resp.tokens_used);
             // If rustc isn't available, treat a successful oracle call as 100%
             let err = try_compile_rust_with_error(&resp.content);
             match err.as_deref() {
-                None => true,
-                Some(e) if e.contains("rustc not found") => true, // can't compile, assume ok
-                _ => false,
+                None => { println!("[B20] rustc: COMPILE OK"); true }
+                Some(e) if e.contains("rustc not found") => { println!("[B20] rustc: not found (treating as OK)"); true }
+                Some(e) => { println!("[B20] rustc: FAILED\n{e}"); false }
             }
         }
-        Err(_) => false,
+        Err(e) => { println!("[B20] Oracle ERR: {e}"); false }
     };
 
     make_result("B20", git_commit,
