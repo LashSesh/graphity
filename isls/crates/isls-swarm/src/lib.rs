@@ -5,18 +5,21 @@
 // exploration seed, and runs them through configurable rounds.  After
 // every round the Swarm collects each agent's latest step result and
 // applies a consensus policy to decide whether the collective goal has
-// been reached.  The final SwarmReport bundles all round records and
-// the aggregate resonance score.
+// been reached.  When `SwarmPolicy.drill_config` is set, the Swarm also
+// runs a PMHD DrillEngine (C21) each round to adversarially test whether
+// the agents' collective hypothesis survives formal scrutiny.
 //
 // Design invariants
 // -----------------
 //   SI-1  Every agent gets a unique, deterministic seed (base_seed + agent_id).
 //   SI-2  A round is complete when *all* active agents have produced a step.
 //   SI-3  ConsensusVote confidence = mean score of steps produced this round,
-//         clamped to [0, 1].
+//         clamped to [0, 1].  For DrillBacked mode: mean PMHD quality.
 //   SI-4  The Swarm terminates when consensus is reached OR max_rounds is hit
 //         OR all members have exhausted their plans.
 //   SI-5  SwarmReport is serialisable and deterministic for the same inputs.
+//   SI-6  PMHD drills are seeded by (base_seed XOR round_id * constant) so
+//         each round receives a distinct, deterministic drill seed.
 
 use std::collections::BTreeMap;
 
@@ -24,8 +27,8 @@ use isls_agent::{Agent, AgentConfig, AgentGoal, AgentStep};
 
 // ─── Re-exports ───────────────────────────────────────────────────────────────
 
-pub use policy::{SwarmPolicy, ConsensusMode};
-pub use report::{SwarmRound, ConsensusVote, SwarmReport};
+pub use policy::{ConsensusMode, SwarmPolicy};
+pub use report::{ConsensusVote, DrillSummary, SwarmReport, SwarmRound};
 
 // ─── Modules ──────────────────────────────────────────────────────────────────
 
@@ -61,8 +64,9 @@ impl SwarmMember {
 
 // ─── Swarm ────────────────────────────────────────────────────────────────────
 
-/// Multi-agent coordinator.
+/// Multi-agent coordinator with optional PMHD adversarial drilling.
 ///
+/// Basic usage (no PMHD):
 /// ```
 /// use isls_swarm::{Swarm, SwarmPolicy, ConsensusMode};
 /// use isls_agent::AgentGoal;
@@ -74,6 +78,7 @@ impl SwarmMember {
 ///     max_rounds: 10,
 ///     consensus_mode: ConsensusMode::WeightedResonance,
 ///     consensus_threshold: 0.5,
+///     drill_config: None,
 /// };
 /// let mut swarm = Swarm::new(policy, goal);
 /// let report = swarm.run();
@@ -100,20 +105,18 @@ impl Swarm {
             })
             .collect();
 
-        Self {
-            policy,
-            goal,
-            members,
-            rounds_run: 0,
-            complete: false,
-        }
+        Self { policy, goal, members, rounds_run: 0, complete: false }
     }
 
-    /// Execute one round: step every active member, build a ConsensusVote.
+    /// Execute one round:
+    ///   1. Step every active member.
+    ///   2. Optionally run a PMHD drill.
+    ///   3. Build a ConsensusVote.
     pub fn round(&mut self) -> SwarmRound {
         let round_id = self.rounds_run;
         self.rounds_run += 1;
 
+        // Step all non-exhausted members
         let mut member_steps: BTreeMap<usize, Option<AgentStep>> = BTreeMap::new();
         for m in &mut self.members {
             if !m.is_complete() {
@@ -123,22 +126,36 @@ impl Swarm {
             }
         }
 
+        // Optional PMHD drill
+        let drill_summary = self.policy.drill_config.as_ref().map(|cfg| {
+            policy::drill_round(
+                &self.goal.intent,
+                self.goal.domain.as_deref(),
+                &self.goal.constraints,
+                self.goal.confidence_target,
+                round_id,
+                cfg,
+            )
+        });
+
+        // Consensus evaluation
         let vote = self.policy.consensus_mode.vote(
             &self.members,
             &member_steps,
             self.policy.consensus_threshold,
+            drill_summary.as_ref(),
         );
 
         if vote.reached {
             self.complete = true;
         }
 
-        // Also complete when all members have finished their plans
+        // Also terminate when all members have exhausted their plans
         if self.members.iter().all(|m| m.is_complete()) {
             self.complete = true;
         }
 
-        SwarmRound { round_id, member_steps, consensus: vote }
+        SwarmRound { round_id, member_steps, consensus: vote, drill_summary }
     }
 
     /// Run until consensus is reached or `max_rounds` is exhausted.
@@ -185,6 +202,7 @@ impl Swarm {
 mod tests {
     use super::*;
     use isls_agent::AgentGoal;
+    use isls_pmhd::PmhdConfig;
 
     fn default_policy() -> SwarmPolicy {
         SwarmPolicy {
@@ -193,11 +211,22 @@ mod tests {
             max_rounds: 20,
             consensus_mode: ConsensusMode::WeightedResonance,
             consensus_threshold: 0.4,
+            drill_config: None,
         }
     }
 
     fn default_goal() -> AgentGoal {
         AgentGoal::new("test swarm coordination")
+    }
+
+    fn drill_config() -> PmhdConfig {
+        PmhdConfig {
+            ticks: 5,
+            pool_size: 4,
+            commit_budget: 3,
+            seed: 99,
+            ..PmhdConfig::default()
+        }
     }
 
     // AT-SW1: Swarm creates the correct number of members
@@ -258,6 +287,7 @@ mod tests {
             max_rounds: 5,
             consensus_mode: ConsensusMode::Majority,
             consensus_threshold: 0.99,
+            drill_config: None,
         };
         let mut swarm = Swarm::new(policy, default_goal());
         let report = swarm.run();
@@ -324,10 +354,10 @@ mod tests {
             max_rounds: 20,
             consensus_mode: ConsensusMode::Unanimous,
             consensus_threshold: 0.01,
+            drill_config: None,
         };
         let mut swarm = Swarm::new(policy, default_goal());
         let report = swarm.run();
-        // At minimum it runs without panic; consensus may or may not be reached
         assert!(report.rounds_run > 0);
     }
 
@@ -367,7 +397,6 @@ mod tests {
     fn at_sw17_participating_agents_count() {
         let mut swarm = Swarm::new(default_policy(), default_goal());
         let round = swarm.round();
-        // In the first round all members should still be active
         assert_eq!(round.consensus.participating_agents, 3);
     }
 
@@ -379,5 +408,122 @@ mod tests {
         let mut swarm = Swarm::new(policy, default_goal());
         let report = swarm.run();
         assert_eq!(report.swarm_size, size);
+    }
+
+    // ─── PMHD Integration Tests ───────────────────────────────────────────────
+
+    // AT-SW19: Without drill_config, drill_summary is None in every round
+    #[test]
+    fn at_sw19_no_drill_config_no_summary() {
+        let mut swarm = Swarm::new(default_policy(), default_goal());
+        let round = swarm.round();
+        assert!(round.drill_summary.is_none(),
+            "drill_summary should be None when drill_config is not set");
+    }
+
+    // AT-SW20: With drill_config set, drill_summary is Some in every round
+    #[test]
+    fn at_sw20_drill_config_produces_summary() {
+        let policy = SwarmPolicy {
+            drill_config: Some(drill_config()),
+            ..default_policy()
+        };
+        let mut swarm = Swarm::new(policy, default_goal());
+        let round = swarm.round();
+        assert!(round.drill_summary.is_some(),
+            "drill_summary should be Some when drill_config is set");
+    }
+
+    // AT-SW21: DrillSummary ticks_executed > 0
+    #[test]
+    fn at_sw21_drill_summary_ticks_positive() {
+        let policy = SwarmPolicy {
+            drill_config: Some(drill_config()),
+            ..default_policy()
+        };
+        let mut swarm = Swarm::new(policy, default_goal());
+        let round = swarm.round();
+        let ds = round.drill_summary.unwrap();
+        assert!(ds.ticks_executed > 0, "drill must execute at least one tick");
+    }
+
+    // AT-SW22: DrillSummary mean_quality is in [0, 1]
+    #[test]
+    fn at_sw22_drill_summary_quality_range() {
+        let policy = SwarmPolicy {
+            drill_config: Some(drill_config()),
+            ..default_policy()
+        };
+        let mut swarm = Swarm::new(policy, default_goal());
+        swarm.run(); // run all rounds
+        // Check every round's drill summary
+        // (re-run for inspection since run() consumes rounds internally)
+        let mut swarm2 = Swarm::new(
+            SwarmPolicy { drill_config: Some(drill_config()), ..default_policy() },
+            default_goal(),
+        );
+        let report = swarm2.run();
+        for r in &report.rounds {
+            if let Some(ds) = &r.drill_summary {
+                assert!(ds.mean_quality >= 0.0 && ds.mean_quality <= 1.0,
+                    "round {}: mean_quality {} out of [0,1]", r.round_id, ds.mean_quality);
+            }
+        }
+    }
+
+    // AT-SW23: DrillBacked mode — consensus based on PMHD, not agent scores
+    #[test]
+    fn at_sw23_drill_backed_mode() {
+        let policy = SwarmPolicy {
+            size: 3,
+            base_seed: 13,
+            max_rounds: 15,
+            consensus_mode: ConsensusMode::DrillBacked,
+            consensus_threshold: 0.0, // any monolith committed → consensus
+            drill_config: Some(PmhdConfig {
+                ticks: 10,
+                pool_size: 5,
+                commit_budget: 5,
+                seed: 77,
+                ..PmhdConfig::default()
+            }),
+        };
+        let mut swarm = Swarm::new(policy, default_goal());
+        let report = swarm.run();
+        // With threshold=0.0 and non-trivial drill, consensus should be reached
+        assert!(report.consensus_reached,
+            "DrillBacked with threshold=0.0 should reach consensus");
+    }
+
+    // AT-SW24: Drill determinism — same policy + goal → same DrillSummary each round
+    #[test]
+    fn at_sw24_drill_determinism() {
+        let policy = SwarmPolicy {
+            drill_config: Some(drill_config()),
+            ..default_policy()
+        };
+        let g = default_goal();
+        let mut s1 = Swarm::new(policy.clone(), g.clone());
+        let mut s2 = Swarm::new(policy, g);
+        let r1 = s1.round();
+        let r2 = s2.round();
+        let ds1 = r1.drill_summary.unwrap();
+        let ds2 = r2.drill_summary.unwrap();
+        assert_eq!(ds1, ds2, "drill summary must be deterministic for same inputs");
+    }
+
+    // AT-SW25: SwarmRound with drill serialises cleanly
+    #[test]
+    fn at_sw25_drill_round_serialisation() {
+        let policy = SwarmPolicy {
+            drill_config: Some(drill_config()),
+            ..default_policy()
+        };
+        let mut swarm = Swarm::new(policy, default_goal());
+        let round = swarm.round();
+        let json = serde_json::to_string(&round).expect("serialise round");
+        let back: SwarmRound = serde_json::from_str(&json).expect("deserialise round");
+        assert_eq!(back.round_id, round.round_id);
+        assert!(back.drill_summary.is_some());
     }
 }

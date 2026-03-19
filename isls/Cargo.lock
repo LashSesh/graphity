@@ -1229,6 +1229,7 @@ version = "1.0.0"
 dependencies = [
  "isls-agent",
  "isls-navigator",
+ "isls-pmhd",
  "isls-types",
  "serde",
  "serde_json",
