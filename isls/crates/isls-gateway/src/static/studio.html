@@ -489,6 +489,7 @@ select { cursor: pointer; width: auto; }
         <button class="nav-btn" data-view="oracle" title="Oracle (Ctrl+6)">O</button>
         <button class="nav-btn" data-view="constitution" title="Constitution (Ctrl+7)">C</button>
         <button class="nav-btn" data-view="navigator" title="Navigator (Ctrl+8)">N</button>
+        <button class="nav-btn" data-view="agent" title="Agent (Ctrl+9)">A</button>
         <div class="sidebar-bottom">
             <div class="status-pill" id="statusPill"></div><br>
             <span id="sidebarUptime">0m</span><br>
@@ -847,6 +848,59 @@ select { cursor: pointer; width: auto; }
             </div>
         </div>
 
+        <!-- ═══ View 9: Agent (C30) ═════════════════════════════════════ -->
+        <div class="view" id="view-agent">
+            <div class="metric-grid" style="margin-bottom:var(--gap)">
+                <div class="metric-card"><div class="metric-value" id="agStepsRun">—</div><div class="metric-label">Steps Run</div></div>
+                <div class="metric-card"><div class="metric-value gold" id="agBestScore">—</div><div class="metric-label">Best Score</div></div>
+                <div class="metric-card"><div class="metric-value" id="agPlanSize">—</div><div class="metric-label">Plan Size</div></div>
+                <div class="metric-card"><div class="metric-value" id="agComplete">—</div><div class="metric-label">Complete</div></div>
+            </div>
+
+            <div class="card" style="margin-bottom:var(--gap)">
+                <h3>New Agent Goal</h3>
+                <div style="display:flex;gap:8px;align-items:flex-start;flex-direction:column;margin-bottom:12px">
+                    <input type="text" id="agIntent" placeholder="Describe your goal…"
+                        style="width:100%;box-sizing:border-box;padding:8px 12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:14px">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                        <input type="text" id="agDomain" placeholder="domain (e.g. rust)"
+                            style="width:140px;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
+                        <input type="number" id="agConfidence" value="0.75" min="0" max="1" step="0.05"
+                            style="width:80px;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
+                        <span style="font-size:12px;color:var(--text-dim)">confidence</span>
+                        <button class="btn" onclick="agentRunGoal()">▶ RUN GOAL</button>
+                        <button class="btn btn-secondary" onclick="agentStepOne()">→ STEP</button>
+                        <button class="btn btn-secondary" onclick="agentRefresh()">↺ Refresh</button>
+                    </div>
+                    <input type="text" id="agConstraint" placeholder="Add constraint (press Enter)"
+                        style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px"
+                        onkeydown="if(event.key==='Enter'){agentAddConstraint();}">
+                    <div id="agConstraintList" style="display:flex;flex-wrap:wrap;gap:6px;font-size:12px"></div>
+                </div>
+                <div id="agRunLog" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);min-height:24px"></div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin-bottom:var(--gap)">
+                <div class="card">
+                    <h3>Current State</h3>
+                    <div style="font-family:var(--font-mono);font-size:13px">
+                        <div class="detail-row"><span class="detail-label">Intent:</span><span class="detail-value" id="agIntent2" style="word-break:break-all;font-size:11px">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Domain:</span><span class="detail-value" id="agDomain2">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Mode:</span><span class="detail-value" id="agMode">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Plan idx:</span><span class="detail-value" id="agPlanIdx">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Confidence:</span><span class="detail-value" id="agConfidence2">—</span></div>
+                        <div class="detail-row"><span class="detail-label">Constraints:</span><span class="detail-value" id="agConstraints2" style="font-size:11px">—</span></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>Step History <span id="agHistoryCount" style="font-size:12px;font-weight:normal;color:var(--text-dim)"></span></h3>
+                    <div id="agHistoryFeed" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);max-height:200px;overflow-y:auto">
+                        <span style="color:var(--text-dim)">No history yet.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- Status Bar -->
@@ -904,6 +958,7 @@ const viewTitles = {
     oracle: ['Oracle', 'Autonomy metrics, pattern memory, budget'],
     constitution: ['Constitution', 'Genesis Crystal, ADAMANT status'],
     navigator: ['Navigator', 'C29 — Spectral-Guided Pattern Space Exploration'],
+    agent: ['Agent', 'C30 — Autonomous Goal-Directed Agent'],
 };
 
 // ─── Navigation ──────────────────────────────────────────────────────────
@@ -918,6 +973,7 @@ function switchView(view) {
     document.getElementById('viewSubtitle').textContent = sub;
     localStorage.setItem('isls-studio-view', view);
     if (view === 'navigator') navigatorRefresh();
+    if (view === 'agent') agentRefresh();
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ subscribe: getEventsForView(view) }));
     }
@@ -933,6 +989,7 @@ function getEventsForView(view) {
         case 'oracle': return ['metric', 'heartbeat'];
         case 'constitution': return ['alert', 'heartbeat'];
         case 'navigator': return ['heartbeat'];
+        case 'agent': return ['heartbeat'];
         default: return ['heartbeat'];
     }
 }
@@ -1364,10 +1421,10 @@ document.addEventListener('keydown', (e) => {
     // Escape — close modals
     if (e.key === 'Escape') { closeCmdPalette(); return; }
 
-    // Ctrl+1..8 — switch views
-    if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
+    // Ctrl+1..9 — switch views
+    if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
-        const views = ['dashboard', 'forge', 'explorer', 'monitor', 'foundry', 'oracle', 'constitution', 'navigator'];
+        const views = ['dashboard', 'forge', 'explorer', 'monitor', 'foundry', 'oracle', 'constitution', 'navigator', 'agent'];
         switchView(views[parseInt(e.key) - 1]);
         return;
     }
@@ -1509,6 +1566,115 @@ function renderNavSingularities(mesh) {
     ).join('') || '<span style="color:var(--text-dim)">No vertices yet.</span>';
 }
 
+// ─── Agent (C30) ─────────────────────────────────────────────────────────
+let agConstraints = [];
+
+function agentAddConstraint() {
+    const input = document.getElementById('agConstraint');
+    const val = input.value.trim();
+    if (!val) return;
+    agConstraints.push(val);
+    input.value = '';
+    renderAgConstraints();
+}
+
+function renderAgConstraints() {
+    const el = document.getElementById('agConstraintList');
+    el.innerHTML = agConstraints.map((c, i) =>
+        `<span style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:3px;padding:2px 8px;cursor:pointer"
+            onclick="agConstraints.splice(${i},1);renderAgConstraints()">${escapeHtml(c)} ×</span>`
+    ).join('');
+}
+
+function agentRunGoal() {
+    const intent = document.getElementById('agIntent').value.trim();
+    if (!intent) { document.getElementById('agRunLog').textContent = 'Enter a goal intent first.'; return; }
+    const domain = document.getElementById('agDomain').value.trim() || undefined;
+    const confidence = parseFloat(document.getElementById('agConfidence').value) || 0.75;
+
+    document.getElementById('agRunLog').textContent = 'Running agent…';
+    fetch('/agent/goal', {
+        method: 'POST',
+        headers: {'content-type': 'application/json'},
+        body: JSON.stringify({ intent, domain, constraints: agConstraints, confidence }),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            document.getElementById('agRunLog').textContent =
+                `Done. Steps: ${data.steps_run} | Score: ${(data.best_score||0).toFixed(4)} | Complete: ${data.complete}`;
+            agentRefresh();
+        } else {
+            document.getElementById('agRunLog').textContent = 'Error: ' + (data.message || 'unknown');
+        }
+    })
+    .catch(() => { document.getElementById('agRunLog').textContent = 'Agent goal request failed.'; });
+}
+
+function agentStepOne() {
+    document.getElementById('agRunLog').textContent = 'Executing one step…';
+    fetch('/agent/step', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                document.getElementById('agRunLog').textContent =
+                    data.message || `Step ${data.step_id}: ${data.action} → ${data.outcome} (score=${(data.score||0).toFixed(4)})`;
+                agentRefresh();
+            } else {
+                document.getElementById('agRunLog').textContent = 'Error: ' + (data.message || 'unknown');
+            }
+        })
+        .catch(() => { document.getElementById('agRunLog').textContent = 'Step request failed.'; });
+}
+
+function agentRefresh() {
+    fetch('/agent/status')
+        .then(r => r.json())
+        .then(data => {
+            const s = data.state;
+            if (!s) {
+                document.getElementById('agRunLog').textContent =
+                    document.getElementById('agRunLog').textContent || 'No agent state yet. Run a goal first.';
+                return;
+            }
+            document.getElementById('agStepsRun').textContent  = s.steps_run || 0;
+            document.getElementById('agBestScore').textContent = (s.best_score || 0).toFixed(4);
+            document.getElementById('agPlanSize').textContent  = s.plan ? s.plan.actions.length : '—';
+            const complete = s.complete ? 'YES' : 'NO';
+            document.getElementById('agComplete').textContent  = complete;
+            document.getElementById('agComplete').style.color  = s.complete ? 'var(--success)' : '';
+            document.getElementById('agIntent2').textContent   = s.goal ? s.goal.intent : '—';
+            document.getElementById('agDomain2').textContent   = (s.goal && s.goal.domain) ? s.goal.domain : 'general';
+            document.getElementById('agMode').textContent      = s.mode || '—';
+            document.getElementById('agPlanIdx').textContent   = s.plan ? s.plan.current_idx : '—';
+            document.getElementById('agConfidence2').textContent = s.goal ? (s.goal.confidence_target * 100).toFixed(0) + '%' : '—';
+            document.getElementById('agConstraints2').textContent =
+                (s.goal && s.goal.constraints && s.goal.constraints.length)
+                    ? s.goal.constraints.join(' | ') : '—';
+        });
+
+    fetch('/agent/history')
+        .then(r => r.json())
+        .then(data => {
+            const count = data.steps || 0;
+            document.getElementById('agHistoryCount').textContent = count ? `(${count})` : '';
+            const hist = data.history;
+            if (!hist || !hist.length) {
+                document.getElementById('agHistoryFeed').innerHTML =
+                    '<span style="color:var(--text-dim)">No history yet.</span>';
+                return;
+            }
+            document.getElementById('agHistoryFeed').innerHTML = hist.map(s =>
+                `<div style="padding:4px 0;border-bottom:1px solid var(--border)">` +
+                `<span style="color:var(--accent)">[${s.step_id}]</span> ` +
+                `<strong>${s.action ? s.action.action_type.kind || s.action.action_type : '?'}</strong> ` +
+                `<span style="color:var(--text-dim)">${escapeHtml(s.outcome)}</span> ` +
+                `<span style="color:var(--gold,#f4c542)">${(s.score||0).toFixed(3)}</span>` +
+                `</div>`
+            ).join('');
+        });
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────
 function init() {
     // Restore last view
@@ -1539,6 +1705,7 @@ function init() {
     setInterval(() => {
         if (currentView === 'explorer') loadCrystals();
         if (currentView === 'navigator') navigatorRefresh();
+        if (currentView === 'agent') agentRefresh();
     }, 10000);
 }
 

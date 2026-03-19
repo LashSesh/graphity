@@ -7,6 +7,7 @@ description = "ISLS Gateway — REST + WebSocket API and Studio web interface (C
 [dependencies]
 isls-types = { path = "../isls-types" }
 isls-navigator = { path = "../isls-navigator" }
+isls-agent = { path = "../isls-agent" }
 isls-harness = { path = "../isls-harness" }
 isls-archive = { path = "../isls-archive" }
 isls-store = { path = "../isls-store" }

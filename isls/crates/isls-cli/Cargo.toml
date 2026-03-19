@@ -31,6 +31,7 @@ isls-pmhd = { path = "../isls-pmhd" }
 isls-gateway = { path = "../isls-gateway" }
 isls-multilang = { path = "../isls-multilang" }
 isls-navigator = { path = "../isls-navigator" }
+isls-agent = { path = "../isls-agent" }
 
 serde = { workspace = true }
 tokio = { workspace = true }

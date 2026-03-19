@@ -831,6 +831,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-agent"
+version = "1.0.0"
+dependencies = [
+ "isls-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "isls-archive"
 version = "1.0.0"
 dependencies = [
@@ -884,6 +893,7 @@ name = "isls-cli"
 version = "1.0.0"
 dependencies = [
  "chrono",
+ "isls-agent",
  "isls-archive",
  "isls-artifact-ir",
  "isls-capsule",
@@ -1016,6 +1026,7 @@ dependencies = [
  "axum",
  "chrono",
  "futures",
+ "isls-agent",
  "isls-archive",
  "isls-forge",
  "isls-harness",
