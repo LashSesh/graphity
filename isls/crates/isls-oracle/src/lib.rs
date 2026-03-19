@@ -117,6 +117,26 @@ pub trait SynthesisOracle: Send + Sync {
     fn cost_estimate(&self) -> OracleCost;
 }
 
+// ─── Markdown fence stripping ─────────────────────────────────────────────────
+
+/// Strip leading ``` / ```rust fences and trailing ``` fences from LLM output.
+/// LLMs often wrap code in markdown fences even when instructed not to.
+pub fn strip_markdown_fences(s: &str) -> String {
+    let s = s.trim();
+    if s.starts_with("```") {
+        let lines: Vec<&str> = s.lines().collect();
+        if lines.len() >= 2 {
+            let end = if lines.last().map(|l| l.trim()) == Some("```") {
+                lines.len() - 1
+            } else {
+                lines.len()
+            };
+            return lines[1..end].join("\n");
+        }
+    }
+    s.to_string()
+}
+
 // ─── ClaudeOracle ─────────────────────────────────────────────────────────────
 
 /// Default built-in oracle: Anthropic Claude API.
@@ -195,7 +215,7 @@ impl SynthesisOracle for ClaudeOracle {
             let json: serde_json::Value = resp.json()
                 .map_err(|e| OracleError::Http(e.to_string()))?;
 
-            let content = json["content"]
+            let raw_content = json["content"]
                 .as_array()
                 .and_then(|arr| arr.first())
                 .and_then(|c| c["text"].as_str())
@@ -213,7 +233,7 @@ impl SynthesisOracle for ClaudeOracle {
                 .to_string();
 
             Ok(OracleResponse {
-                content,
+                content: strip_markdown_fences(&raw_content),
                 model: self.model.clone(),
                 tokens_used,
                 finish_reason,
@@ -318,7 +338,7 @@ impl SynthesisOracle for OpenAIOracle {
             let json: serde_json::Value = resp.json()
                 .map_err(|e| OracleError::Http(e.to_string()))?;
 
-            let content = json["choices"]
+            let raw_content = json["choices"]
                 .as_array()
                 .and_then(|arr| arr.first())
                 .and_then(|c| c["message"]["content"].as_str())
@@ -336,7 +356,7 @@ impl SynthesisOracle for OpenAIOracle {
                 .to_string();
 
             Ok(OracleResponse {
-                content,
+                content: strip_markdown_fences(&raw_content),
                 model: self.model.clone(),
                 tokens_used,
                 finish_reason,
