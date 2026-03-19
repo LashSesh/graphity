@@ -1096,20 +1096,27 @@ impl OracleEngine {
                     // sk-ant-... or other formats → ClaudeOracle
                     return Box::new(ClaudeOracle::new(api_key));
                 }
-                if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-                    if !key.is_empty() {
-                        return Box::new(ClaudeOracle::new(key));
-                    }
-                }
-                if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-                    if !key.is_empty() {
-                        let mut oracle = OpenAIOracle::new(key);
-                        if !config.model.is_empty()
-                            && config.model != "claude-sonnet-4-20250514"
-                        {
-                            oracle = oracle.with_model(config.model.clone());
+                // Only fall back to env-var scanning when api_key_source itself was
+                // env-based (e.g. the default "env:ANTHROPIC_API_KEY").
+                // When api_key_source was explicitly set to "" (skeleton / mock mode),
+                // skip env lookup — otherwise mock benchmarks accidentally consume
+                // real API quota because OPENAI_API_KEY is in the environment.
+                if config.api_key_source.starts_with("env:") {
+                    if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+                        if !key.is_empty() {
+                            return Box::new(ClaudeOracle::new(key));
                         }
-                        return Box::new(oracle);
+                    }
+                    if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                        if !key.is_empty() {
+                            let mut oracle = OpenAIOracle::new(key);
+                            if !config.model.is_empty()
+                                && config.model != "claude-sonnet-4-20250514"
+                            {
+                                oracle = oracle.with_model(config.model.clone());
+                            }
+                            return Box::new(oracle);
+                        }
                     }
                 }
                 // No key found — skeleton fallback
