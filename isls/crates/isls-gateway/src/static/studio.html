@@ -481,7 +481,7 @@ select { cursor: pointer; width: auto; }
     <!-- Sidebar Navigation -->
     <nav class="sidebar">
         <div class="logo">IS</div>
-        <button class="nav-btn active" data-view="dashboard" title="Dashboard (Ctrl+1)">D</button>
+        <button class="nav-btn" data-view="dashboard" title="Dashboard (Ctrl+1)">D</button>
         <button class="nav-btn" data-view="forge" title="Forge (Ctrl+2)">F</button>
         <button class="nav-btn" data-view="explorer" title="Explorer (Ctrl+3)">E</button>
         <button class="nav-btn" data-view="monitor" title="Monitor (Ctrl+4)">M</button>
@@ -490,6 +490,7 @@ select { cursor: pointer; width: auto; }
         <button class="nav-btn" data-view="constitution" title="Constitution (Ctrl+7)">C</button>
         <button class="nav-btn" data-view="navigator" title="Navigator (Ctrl+8)">N</button>
         <button class="nav-btn" data-view="agent" title="Agent (Ctrl+9)">A</button>
+        <button class="nav-btn active" data-view="chat" title="Chat (Ctrl+0)" style="font-size:10px">CH</button>
         <div class="sidebar-bottom">
             <div class="status-pill" id="statusPill"></div><br>
             <span id="sidebarUptime">0m</span><br>
@@ -510,7 +511,7 @@ select { cursor: pointer; width: auto; }
     <main class="content">
 
         <!-- ═══ View 1: Dashboard ═══════════════════════════════════════ -->
-        <div class="view active" id="view-dashboard">
+        <div class="view" id="view-dashboard">
             <div class="metric-grid" id="dashMetrics">
                 <div class="metric-card"><div class="metric-value green" id="dashHealth">GREEN</div><div class="metric-label">Health</div></div>
                 <div class="metric-card"><div class="metric-value" id="dashCrystals">0</div><div class="metric-label">Crystals</div></div>
@@ -901,6 +902,30 @@ select { cursor: pointer; width: auto; }
             </div>
         </div>
 
+        <!-- C30 Agent Chat (Phase 12 — default view) -->
+        <div class="view active" id="view-chat" style="display:flex;flex-direction:column;height:calc(100vh - 80px)">
+            <!-- Project binder bar -->
+            <div style="display:flex;gap:8px;padding:8px;border-bottom:1px solid var(--border);flex-shrink:0">
+                <input type="text" id="chatProject" placeholder="Project path (e.g. ~/my-api) — leave blank for current dir"
+                    style="flex:1;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px">
+                <button class="btn" onclick="bindProject()" style="flex-shrink:0">Bind</button>
+                <span id="chatBindStatus" style="color:var(--text-dim);font-size:12px;align-self:center"></span>
+            </div>
+            <!-- Accumulation metrics bar -->
+            <div id="chatAccumBar" style="padding:4px 12px;font-size:11px;color:var(--text-dim);background:var(--bg-secondary);border-bottom:1px solid var(--border);flex-shrink:0">
+                Auto: 0% | Mem: 0 | $0.0000 | Saved: $0.00
+            </div>
+            <!-- Message area -->
+            <div id="chat-messages" style="flex:1;overflow-y:auto;padding:12px 16px;font-family:var(--font-mono,monospace)"></div>
+            <!-- Input area -->
+            <div style="display:flex;gap:8px;padding:8px;border-top:1px solid var(--border);flex-shrink:0">
+                <input id="chat-input" type="text" placeholder="What do you want to build?"
+                    style="flex:1;padding:8px 12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:14px"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}">
+                <button class="btn" onclick="sendChat()" style="flex-shrink:0">Send</button>
+            </div>
+        </div>
+
     </main>
 
     <!-- Status Bar -->
@@ -959,6 +984,7 @@ const viewTitles = {
     constitution: ['Constitution', 'Genesis Crystal, ADAMANT status'],
     navigator: ['Navigator', 'C29 — Spectral-Guided Pattern Space Exploration'],
     agent: ['Agent', 'C30 — Autonomous Goal-Directed Agent'],
+    chat: ['Chat', 'C30 — Workspace-Aware Development Agent'],
 };
 
 // ─── Navigation ──────────────────────────────────────────────────────────
@@ -974,6 +1000,7 @@ function switchView(view) {
     localStorage.setItem('isls-studio-view', view);
     if (view === 'navigator') navigatorRefresh();
     if (view === 'agent') agentRefresh();
+    if (view === 'chat') { renderedEventCount = 0; }
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ subscribe: getEventsForView(view) }));
     }
@@ -990,6 +1017,7 @@ function getEventsForView(view) {
         case 'constitution': return ['alert', 'heartbeat'];
         case 'navigator': return ['heartbeat'];
         case 'agent': return ['heartbeat'];
+        case 'chat': return ['heartbeat'];
         default: return ['heartbeat'];
     }
 }
@@ -1675,11 +1703,157 @@ function agentRefresh() {
         });
 }
 
+// ─── Chat (C30 Phase 12) ─────────────────────────────────────────────────
+let chatJobId = null;
+let chatPolling = null;
+let renderedEventCount = 0;
+let chatTotalRequests = 0, chatMemoryHits = 0, chatOracleCost = 0, chatPatterns = 0;
+
+function sendChat() {
+    const input = document.getElementById('chat-input');
+    const project = (document.getElementById('chatProject').value || '').trim() || null;
+    const message = input.value.trim();
+    if (!message) return;
+    input.value = '';
+    appendChatMsg('user', message);
+    renderedEventCount = 0;
+
+    fetch('/agent/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message, project}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.ok) {
+            if (chatPolling) { clearInterval(chatPolling); chatPolling = null; }
+            chatPolling = setInterval(() => pollChatEvents(data.job_id), 500);
+        } else {
+            appendChatMsg('agent', 'Error: ' + (data.error || 'unknown'), 'error');
+        }
+    })
+    .catch(err => appendChatMsg('agent', 'Network error: ' + err, 'error'));
+}
+
+function pollChatEvents(jobId) {
+    fetch('/agent/chat/' + jobId + '/events')
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                renderChatEvents(data.events || []);
+                if (data.complete) {
+                    if (chatPolling) { clearInterval(chatPolling); chatPolling = null; }
+                }
+            }
+        })
+        .catch(() => {});
+}
+
+function renderChatEvents(events) {
+    const newEvents = events.slice(renderedEventCount);
+    renderedEventCount = events.length;
+    for (const evt of newEvents) {
+        switch (evt.type) {
+            case 'analysis':
+                appendChatMsg('agent',
+                    'Project: ' + evt.summary + '\n' +
+                    'Plan: ' + (evt.plan || []).join(' → ') + '\n' +
+                    'Files: ' + (evt.files || []).join(', '),
+                    'analysis');
+                break;
+            case 'progress':
+                appendChatMsg('agent',
+                    '[' + evt.step + '/' + evt.total + '] ' + evt.file +
+                    ' (' + evt.source + ' ' + evt.duration_ms + 'ms)',
+                    'progress');
+                if (evt.source === 'oracle') { chatTotalRequests++; chatOracleCost += 0; }
+                else if (evt.source === 'memory') { chatTotalRequests++; chatMemoryHits++; }
+                updateAccumBar();
+                break;
+            case 'tool_result':
+                appendChatMsg('agent',
+                    evt.tool + ': ' + (evt.success ? '✓' : '✗') + ' ' + (evt.output || '').slice(0, 200),
+                    evt.success ? 'success' : 'error');
+                break;
+            case 'fix_attempt':
+                appendChatMsg('agent',
+                    'Fix attempt ' + evt.attempt + '/' + evt.max + ': ' + evt.error.slice(0, 120),
+                    'warning');
+                break;
+            case 'complete':
+                const files = (evt.files_changed || []).length > 0
+                    ? evt.files_changed.join(', ') : 'none';
+                chatOracleCost += evt.cost_usd || 0;
+                appendChatMsg('agent',
+                    'Done. Files: ' + files + '\n' +
+                    'Crystal: ' + evt.crystal_id + ' | Cost: $' + (evt.cost_usd || 0).toFixed(4) +
+                    ' | ' + (evt.duration_secs || 0).toFixed(1) + 's' +
+                    (evt.patterns_stored > 0 ? ' | ' + evt.patterns_stored + ' pattern(s) stored' : ''),
+                    'complete');
+                updateAccumBar();
+                break;
+            case 'error':
+                appendChatMsg('agent', evt.message, 'error');
+                break;
+        }
+    }
+}
+
+function appendChatMsg(role, text, kind) {
+    const msgs = document.getElementById('chat-messages');
+    if (!msgs) return;
+    const div = document.createElement('div');
+    const colorMap = {
+        user: 'var(--text-dim)',
+        analysis: 'var(--accent)',
+        progress: 'var(--text-secondary)',
+        success: 'var(--success,#22c55e)',
+        error: 'var(--danger,#ef4444)',
+        warning: 'var(--gold,#f4c542)',
+        complete: 'var(--gold,#f4c542)',
+    };
+    const color = colorMap[kind || role] || 'var(--text-primary)';
+    div.style.cssText = 'padding:5px 0;border-bottom:1px solid var(--border);color:' + color +
+        ';white-space:pre-wrap;font-size:12px;line-height:1.5';
+    div.textContent = (role === 'user' ? '> ' : '  ') + text;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+}
+
+function bindProject() {
+    const project = (document.getElementById('chatProject').value || '').trim();
+    if (!project) return;
+    fetch('/agent/bind', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({project}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        const status = d.exists ? 'bound' : 'bound (path not found)';
+        document.getElementById('chatBindStatus').textContent = status;
+        appendChatMsg('agent', 'Bound to: ' + project, 'analysis');
+    })
+    .catch(() => { document.getElementById('chatBindStatus').textContent = 'error'; });
+}
+
+function updateAccumBar() {
+    const bar = document.getElementById('chatAccumBar');
+    if (!bar) return;
+    const ratio = chatTotalRequests > 0 ? chatMemoryHits / chatTotalRequests : 0;
+    const saved = chatMemoryHits * (chatTotalRequests > 0 ? chatOracleCost / chatTotalRequests : 0);
+    bar.textContent = 'Auto: ' + Math.round(ratio * 100) + '%' +
+        ' | Mem: ' + chatPatterns +
+        ' | $' + chatOracleCost.toFixed(4) +
+        ' | Saved: $' + saved.toFixed(2);
+}
+
 // ─── Init ────────────────────────────────────────────────────────────────
 function init() {
-    // Restore last view
+    // Restore last view; default to 'chat' when no preference is saved
     const saved = localStorage.getItem('isls-studio-view');
     if (saved && viewTitles[saved]) switchView(saved);
+    else switchView('chat');
 
     // Render constitution constraints
     renderConstraints();

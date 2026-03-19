@@ -1,6 +1,26 @@
 // isls-agent: C30 — Autonomous Goal-Directed Agent
 // Plans. Steps. Adapts. Completes.
 // The agent that turns intent into crystallised action.
+//
+// Phase 12 upgrade: Workspace-Aware Development Agent
+//   workspace.rs    — AgentWorkspace (project analysis)
+//   conversation.rs — Conversation history
+//   accumulation.rs — AccumulationMetrics (autonomy ratio, cost tracking)
+//   apply.rs        — apply_and_verify (file write + compile/test loop)
+//   prompt.rs       — build_workspace_prompt (Oracle prompt with real code)
+
+pub mod accumulation;
+pub mod apply;
+pub mod conversation;
+pub mod prompt;
+pub mod workspace;
+
+// Re-exports for convenience
+pub use accumulation::AccumulationMetrics;
+pub use apply::{apply_and_verify, strip_markdown_fences, ApplyOracle, ApplyResult, CargoCheck, CompileCheck};
+pub use conversation::{Conversation, ConversationTurn};
+pub use prompt::{build_workspace_prompt, PatternHint, WorkspacePrompt};
+pub use workspace::{AgentWorkspace, CrateType, FunctionInfo, ModuleInfo, RouteInfo, TypeInfo};
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -561,5 +581,45 @@ mod tests {
             assert_eq!(step.step_id, i,
                 "step {} has wrong step_id {}", i, step.step_id);
         }
+    }
+
+    // ─── Workspace Integration (AT-AG19, AT-AG20) ────────────────────────────
+
+    // AT-AG19: Pattern stored in AccumulationMetrics after successful oracle call
+    #[test]
+    fn at_ag19_pattern_storage() {
+        let mut metrics = AccumulationMetrics::default();
+        metrics.record_oracle_call(0.02);
+        metrics.set_patterns_in_memory(1);
+        assert_eq!(metrics.patterns_in_memory, 1,
+            "AT-AG19: pattern count must be stored after oracle call");
+        assert_eq!(metrics.oracle_served, 1);
+        assert!((metrics.total_cost_usd - 0.02).abs() < 1e-9);
+    }
+
+    // AT-AG20: Memory reuse → autonomy_ratio increases, oracle NOT called again
+    #[test]
+    fn at_ag20_memory_reuse_autonomy() {
+        let mut metrics = AccumulationMetrics::default();
+        // Simulate: first request hits oracle, next 3 hit memory
+        metrics.record_oracle_call(0.01);
+        metrics.record_memory_hit();
+        metrics.record_memory_hit();
+        metrics.record_memory_hit();
+
+        assert_eq!(metrics.total_requests, 4);
+        assert_eq!(metrics.oracle_served, 1);
+        assert_eq!(metrics.memory_served, 3);
+        assert!(
+            (metrics.autonomy_ratio - 0.75).abs() < 1e-9,
+            "AT-AG20: autonomy_ratio should be 0.75 (3/4), got {}",
+            metrics.autonomy_ratio
+        );
+        // Money saved = 3 memory hits * $0.01 avg oracle cost = $0.03
+        assert!(
+            (metrics.money_saved_usd - 0.03).abs() < 1e-9,
+            "AT-AG20: money saved should be $0.03, got {}",
+            metrics.money_saved_usd
+        );
     }
 }
