@@ -57,6 +57,7 @@ ISLS (31 crates, 460 tests)
 The constitutional governance layer. 21 machine-verifiable axioms.
 
 - License: CC BY 4.0
+- Citation: Klemm, S. (2026). *ISLS* (Version 1.0.0). Zenodo. [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
 
 ## Configuration
 

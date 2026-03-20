@@ -1,10 +1,28 @@
-# AVALON &mdash; Invariant Structure Learning System
+# ISLS &mdash; Intelligent Semantic Ledger Substrate
 
-**Version 1.0.0** &nbsp;|&nbsp; **27 Crates** &nbsp;|&nbsp; **415+ Tests** &nbsp;|&nbsp; **Zero Warnings**
+**Version 1.0.0** &nbsp;|&nbsp; **31 Crates** &nbsp;|&nbsp; **460 Tests** &nbsp;|&nbsp; **Zero Warnings**
 
-A deterministic, append-only substrate for discovering, crystallizing, and replaying structural invariants from streaming data. ISLS observes entities over time, extracts constraint programs, gates them through a formal consensus protocol, and emits **Semantic Crystals** &mdash; self-contained, hash-verified knowledge artifacts that are replay-reproducible and tamper-evident.
+A formally verified, cryptographically anchored software intelligence platform that generates, validates, and accumulates knowledge through adversarial testing.
+
+ISLS observes data streams, discovers invariant patterns, validates them through an 8-gate adversarial cascade, and crystallises the survivors as cryptographically anchored, deterministically reproducible artifacts called **Semantic Crystals**. Every crystal carries a complete evidence chain, is content-addressed (SHA-256), and can be independently verified.
+
+The system also generates software from natural language, compiles and tests the output autonomously, and accumulates validated patterns in a local knowledge base that progressively reduces dependency on external LLMs.
 
 Built entirely in Rust. No garbage collector. No runtime exceptions. One binary.
+
+---
+
+## Key Metrics
+
+| Metric | Value |
+|--------|-------|
+| Observation throughput | 853 K obs/sec (single laptop) |
+| Crystal validation | 146 crystals, 100% pass rate, 5 scenarios |
+| Live code generation | 100% compile rate (4 consecutive runs) |
+| Oracle latency | ~800 ms (OpenAI gpt-4o-mini) |
+| End-to-end fabrication | ~10 seconds |
+| Test suite | 460 tests, 0 failures, 0 warnings |
+| Constitutional conformance | 21/21 ADAMANT axioms, C4 class |
 
 ---
 
@@ -21,7 +39,9 @@ Built entirely in Rust. No garbage collector. No runtime exceptions. One binary.
 - [Extension Phases](#extension-phases)
 - [Testing](#testing)
 - [Constitution & ADAMANT](#constitution--adamant)
+- [ADAMANT Protocol & Citation](#adamant-protocol--citation)
 - [License](#license)
+- [Author](#author)
 
 ---
 
@@ -88,7 +108,7 @@ Every crystal carries a complete evidence chain, is content-addressed (SHA-256),
 
 ## Crate Map
 
-ISLS is organized as a Cargo workspace with 27 crates. Each crate has a designation (C1&ndash;C31) and a clear responsibility boundary.
+ISLS is organized as a Cargo workspace with 31 crates. Each crate has a designation (C1&ndash;C31) and a clear responsibility boundary.
 
 ### Core Pipeline
 
@@ -162,6 +182,18 @@ isls init
 Creates `~/.isls/` with default config, data directories, and Genesis Crystal.
 
 ### Quick Run
+
+```bash
+# Run full validation pipeline (scenarios + benchmarks + report)
+# Linux / macOS:
+./run_all_scenarios.sh
+# Windows:
+run_all_scenarios.bat
+
+# The generated report opens in your browser automatically.
+```
+
+Or step by step:
 
 ```bash
 # Ingest synthetic data (500 entities)
@@ -432,7 +464,7 @@ isls genesis validate
 ```
 graphity/
   isls/
-    Cargo.toml              # Workspace root (26 crates)
+    Cargo.toml              # Workspace root (31 crates)
     Cargo.lock
     crates/
       isls-types/           # C1: Core data model
@@ -461,14 +493,29 @@ graphity/
       isls-oracle/          # C25: Hybrid synthesis oracle
       isls-templates/       # C26: Architecture templates
       isls-foundry/         # C27: Fabrication pipeline
-  full-report.html          # Generated validation report
-  LICENSE                   # Apache 2.0
+  LICENSE                   # MIT
 ```
+
+---
+
+## ADAMANT Protocol & Citation
+
+ISLS is governed by the **ADAMANT Protocol** &mdash; 21 machine-verifiable constitutional axioms (CC BY 4.0).
+
+If you use ISLS in academic work, please cite:
+
+> Klemm, S. (2026). *ISLS &mdash; Intelligent Semantic Ledger Substrate* (Version 1.0.0). Zenodo. [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
+
+*(Zenodo DOI will be assigned upon first release.)*
 
 ---
 
 ## License
 
-Copyright 2026 Sebastian Klemm
+MIT &mdash; see [LICENSE](LICENSE).
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.
+---
+
+## Author
+
+Sebastian Klemm
