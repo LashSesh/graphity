@@ -18,6 +18,9 @@ pub struct ConversationTurn {
     pub timestamp: u64,
     /// Files modified during this turn (empty for user turns)
     pub files_changed: Vec<String>,
+    /// Features added during this turn (for follow-up tracking)
+    #[serde(default)]
+    pub features_added: Vec<String>,
 }
 
 impl ConversationTurn {
@@ -27,6 +30,7 @@ impl ConversationTurn {
             content: content.into(),
             timestamp: unix_now(),
             files_changed: Vec::new(),
+            features_added: Vec::new(),
         }
     }
 
@@ -36,6 +40,21 @@ impl ConversationTurn {
             content: content.into(),
             timestamp: unix_now(),
             files_changed,
+            features_added: Vec::new(),
+        }
+    }
+
+    pub fn agent_with_features(
+        content: impl Into<String>,
+        files_changed: Vec<String>,
+        features_added: Vec<String>,
+    ) -> Self {
+        Self {
+            role: "agent".to_string(),
+            content: content.into(),
+            timestamp: unix_now(),
+            files_changed,
+            features_added,
         }
     }
 }
@@ -47,11 +66,22 @@ pub struct Conversation {
     pub turns: Vec<ConversationTurn>,
     /// Maximum turns to keep (oldest are dropped when exceeded)
     pub max_turns: usize,
+    /// Project directory this conversation is bound to
+    #[serde(default)]
+    pub project: Option<std::path::PathBuf>,
+    /// Accumulates all features built across turns
+    #[serde(default)]
+    pub features_built: Vec<String>,
 }
 
 impl Conversation {
     pub fn new(max_turns: usize) -> Self {
-        Self { turns: Vec::new(), max_turns }
+        Self {
+            turns: Vec::new(),
+            max_turns,
+            project: None,
+            features_built: Vec::new(),
+        }
     }
 
     /// Append a turn, dropping the oldest if the window is full.
