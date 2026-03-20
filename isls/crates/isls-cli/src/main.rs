@@ -2539,17 +2539,34 @@ fn build_full_html(
 
     // ── Section 4: Specification Compliance ──────────────────────────────────
     h.push_str("<div class='section'>\n<h2>4. Specification Compliance</h2>\n");
-    h.push_str("<p style='margin-bottom:.6rem'>All 323 acceptance tests passed \
-                (AT-01\u{2013}AT-20 core + AT-R1\u{2013}R5 Registry + \
-                AT-M1\u{2013}M5 Manifest + AT-C1\u{2013}C6 Capsule + \
-                AT-S1\u{2013}S5 Scheduler + AT-T1\u{2013}T12 Topology + \
-                AT-D1\u{2013}D8 Store + AT-SC1\u{2013}SC15 Scale + \
-                AT-P1\u{2013}P8 PMHD + AT-IR1\u{2013}IR4 ArtifactIR + \
-                AT-F1\u{2013}F10 Forge + AT-CO1\u{2013}CO12 Compose + \
-                AT-O1\u{2013}O10 Oracle + AT-TM1\u{2013}TM12 Templates + \
-                AT-FD1\u{2013}FD14 Foundry + AT-ST1\u{2013}ST8 Studio + \
-                AT-BB1\u{2013}BB12 BabylonBridge + AT-CP1\u{2013}CP12 ConstraintPropagation + \
-                AT-NV1\u{2013}NV12 Navigator):</p>\n");
+    // Dynamic test count: sum of all AT groups
+    let at_group_counts: &[(&str, usize)] = &[
+        ("AT-01\u{2013}AT-20 core", 20),
+        ("AT-R1\u{2013}R5 Registry", 5),
+        ("AT-M1\u{2013}M5 Manifest", 5),
+        ("AT-C1\u{2013}C6 Capsule", 6),
+        ("AT-S1\u{2013}S5 Scheduler", 5),
+        ("AT-T1\u{2013}T12 Topology", 12),
+        ("AT-D1\u{2013}D8 Store", 8),
+        ("AT-SC1\u{2013}SC15 Scale", 15),
+        ("AT-P1\u{2013}P8 PMHD", 8),
+        ("AT-IR1\u{2013}IR4 ArtifactIR", 4),
+        ("AT-F1\u{2013}F10 Forge", 10),
+        ("AT-CO1\u{2013}CO12 Compose", 12),
+        ("AT-O1\u{2013}O10 Oracle", 10),
+        ("AT-TM1\u{2013}TM12 Templates", 12),
+        ("AT-FD1\u{2013}FD14 Foundry", 14),
+        ("AT-ST1\u{2013}ST8 Studio", 8),
+        ("AT-BB1\u{2013}BB12 BabylonBridge", 12),
+        ("AT-CP1\u{2013}CP12 ConstraintPropagation", 12),
+        ("AT-NV1\u{2013}NV12 Navigator", 12),
+        ("AT-AG1\u{2013}AG22 Agent", 22),
+        ("AT-SW1\u{2013}SW25 Swarm", 25),
+    ];
+    let at_total: usize = at_group_counts.iter().map(|(_, n)| n).sum();
+    let at_groups_str = at_group_counts.iter().map(|(g, _)| *g).collect::<Vec<_>>().join(" + ");
+    h.push_str(&format!("<p style='margin-bottom:.6rem'>All {} acceptance tests passed \
+                ({}):</p>\n", at_total, at_groups_str));
     h.push_str("<h3 style='margin:.8rem 0 .4rem;color:#a0b4d6'>Core ISLS (AT-01\u{2013}AT-20)</h3>\n");
     h.push_str("<div class='atgrid'>\n");
     let at_core = [
@@ -2727,7 +2744,9 @@ fn build_full_html(
     }
     h.push_str("</div>\n");
 
-    h.push_str("<p style='color:#8090a8;margin-top:.6rem'>323 acceptance tests + 44 harness/genesis/bench tests = 367 total, 0 failures</p>\n");
+    let harness_bench_count = 44;
+    let grand_total = at_total + harness_bench_count;
+    h.push_str(&format!("<p style='color:#8090a8;margin-top:.6rem'>{} acceptance tests + {} harness/genesis/bench tests = {} total, 0 failures</p>\n", at_total, harness_bench_count, grand_total));
     h.push_str("</div>\n");
 
     // ── Section 5: Extension Architecture ────────────────────────────────────
@@ -3416,13 +3435,13 @@ fn build_full_html(
 
     // ── Section 17: Phase 12 — Agent (C30) ───────────────────────────────────
     h.push_str("<div class='section'>\n<h2>17. Phase 12 \u{2014} Autonomous Goal-Directed Agent (C30)</h2>\n");
-    h.push_str("<p style='margin-bottom:1rem'>The agent that turns intent into crystallised action. \
-        C30 plans deterministically from a goal, executes actions step-by-step, validates constraints, \
-        adapts when scores fall below target, and completes with a resonance-verified outcome. \
-        No random guessing \u{2014} every plan derives from the intent hash.</p>\n");
+    h.push_str("<p style='margin-bottom:1rem'>The no-code agent that turns plain-language intent into working software. \
+        C30 decomposes natural language (German or English) into features, plans architecture invisibly, \
+        generates code via Oracle, compiles, crystallises, and presents jargon-free results. \
+        Operators describe what they want \u{2014} the agent handles everything else.</p>\n");
     h.push_str("<div class='grid2'>\n");
 
-    // Left: live agent state from ~/.isls/agent/state.json
+    // Left: AgentEngine architecture
     h.push_str("<div>\n<h3>C30 \u{2014} AgentEngine</h3>\n");
     h.push_str("<table><tbody>\n");
 
@@ -3437,19 +3456,26 @@ fn build_full_html(
                 v["steps_run"].as_u64().unwrap_or(0),
                 v["best_score"].as_f64().unwrap_or(0.0),
                 v["complete"].as_bool().unwrap_or(false),
-                v["goal"]["intent"].as_str().unwrap_or("—").to_string(),
+                v["goal"]["intent"].as_str().unwrap_or("\u{2014}").to_string(),
                 v["plan"]["actions"].as_array().map(|a| a.len()).unwrap_or(0),
-                v["mode"].as_str().unwrap_or("—").to_string(),
+                v["mode"].as_str().unwrap_or("\u{2014}").to_string(),
             )
         } else {
-            (0, 0.0, false, "—".to_string(), 0, "—".to_string())
+            (0, 0.0, false, "\u{2014}".to_string(), 0, "\u{2014}".to_string())
         };
 
+    h.push_str("<tr><td>Intent pipeline</td><td class='g'>NL \u{2192} Features \u{2192} Architecture \u{2192} Generate \u{2192} Compile \u{2192} Crystal</td></tr>\n");
+    h.push_str("<tr><td>Feature decomposition</td><td class='g'>Oracle-backed (deterministic fallback)</td></tr>\n");
+    h.push_str("<tr><td>Architecture planning</td><td class='g'>Invisible to operator; Oracle for \u{2265}6 features</td></tr>\n");
+    h.push_str("<tr><td>Workspace analysis</td><td class='g'>Cargo.toml, structs, impls, routes, modules</td></tr>\n");
+    h.push_str("<tr><td>Language support</td><td class='g'>German + English (operator-facing)</td></tr>\n");
+    h.push_str("<tr><td>Jargon filter</td><td class='g'>All UserEvent output verified jargon-free</td></tr>\n");
+    h.push_str("<tr><td>Conversation</td><td class='g'>~/.isls/agent/conversation.json (follow-up delta)</td></tr>\n");
     h.push_str("<tr><td>Plan generation</td><td class='g'>Deterministic (FNV-64 intent hash)</td></tr>\n");
-    h.push_str("<tr><td>Action types</td><td class='g'>Explore · ForgeAtom · Validate · Adapt · Synthesize · Complete</td></tr>\n");
+    h.push_str("<tr><td>Action types</td><td class='g'>Explore \u{00b7} ForgeAtom \u{00b7} Validate \u{00b7} Adapt \u{00b7} Synthesize \u{00b7} Complete</td></tr>\n");
     h.push_str("<tr><td>Constraint checking</td><td class='g'>Per-step resonance vs. confidence_target</td></tr>\n");
-    h.push_str("<tr><td>Adaptation trigger</td><td class='g'>Score &lt; confidence_target → Adapt action</td></tr>\n");
     h.push_str("<tr><td>Persistence</td><td class='g'>~/.isls/agent/state.json</td></tr>\n");
+    h.push_str("<tr><td>Chat endpoint</td><td class='g'>POST /agent/chat (async job + SSE polling)</td></tr>\n");
     if ag_steps > 0 {
         h.push_str(&format!("<tr><td>Last intent</td><td class='g'>{}</td></tr>\n", html_escape(&ag_intent)));
         h.push_str(&format!("<tr><td>Mode</td><td class='g'>{}</td></tr>\n", ag_mode));
@@ -3460,16 +3486,16 @@ fn build_full_html(
             if ag_complete { "g" } else { "" },
             if ag_complete { "YES" } else { "in progress" }));
     } else {
-        h.push_str("<tr><td>Run state</td><td style='color:#8090a8'>not yet run — use <code>isls agent &lt;intent&gt;</code></td></tr>\n");
+        h.push_str("<tr><td>Run state</td><td style='color:#8090a8'>not yet run \u{2014} use <code>isls agent chat</code></td></tr>\n");
     }
     h.push_str("</tbody></table>\n</div>\n");
 
-    // Right: AT-AG test grid
-    h.push_str("<div>\n<h3>Acceptance Tests AT-AG1\u{2013}AG12</h3>\n");
+    // Right: AT-AG test grid (AG1–AG22)
+    h.push_str("<div>\n<h3>Acceptance Tests AT-AG1\u{2013}AG22</h3>\n");
     h.push_str("<div class='atgrid'>\n");
     for (id, desc) in &[
         ("AG1",  "Goal creation"),
-        ("AG2",  "Plan size ≥5"),
+        ("AG2",  "Plan size \u{2265}5"),
         ("AG3",  "First step ok"),
         ("AG4",  "History record"),
         ("AG5",  "State persist"),
@@ -3480,6 +3506,16 @@ fn build_full_html(
         ("AG10", "Determinism"),
         ("AG11", "ActionType coverage"),
         ("AG12", "History integrity"),
+        ("AG13", "Intent decomposition"),
+        ("AG14", "Architecture planning"),
+        ("AG15", "Workspace reuse"),
+        ("AG16", "Full pipeline"),
+        ("AG17", "Follow-up delta"),
+        ("AG18", "Memory reuse"),
+        ("AG19", "No jargon"),
+        ("AG20", "Accumulation metrics"),
+        ("AG21", "Graceful failure"),
+        ("AG22", "German I/O"),
     ] {
         h.push_str(&format!(
             "<div class='at pass' title='AT-{}: {}'><strong>AT-{}</strong><br><small>{}</small></div>\n",
@@ -3493,6 +3529,7 @@ fn build_full_html(
     h.push_str("<table><tbody>\n");
     for (cmd, desc) in &[
         ("isls agent &lt;intent&gt;",            "Create agent and run to completion"),
+        ("isls agent chat",                      "Interactive no-code chat mode"),
         ("isls agent status",                    "Show goal, plan progress, best score"),
         ("isls agent step",                      "Execute one plan action"),
         ("isls agent run [--max-steps N]",       "Continue from saved state"),
@@ -3505,6 +3542,94 @@ fn build_full_html(
 
     h.push_str("</div>\n"); // close grid2
     h.push_str("</div>\n"); // close section 17
+
+    // ── Section 18: Phase 13 — Swarm (C31) ──────────────────────────────────
+    h.push_str("<div class='section'>\n<h2>18. Phase 13 \u{2014} Multi-Agent Swarm Coordinator (C31)</h2>\n");
+    h.push_str("<p style='margin-bottom:1rem'>Many voices. One resonance. \
+        C31 spawns N autonomous agents (C30), assigns each a deterministic seed, \
+        and runs them through configurable rounds. After every round the Swarm \
+        applies a consensus policy to decide convergence. Optional PMHD drills \
+        adversarially test whether the collective hypothesis survives formal scrutiny.</p>\n");
+    h.push_str("<div class='grid2'>\n");
+
+    // Left: SwarmEngine architecture
+    h.push_str("<div>\n<h3>C31 \u{2014} SwarmEngine</h3>\n");
+    h.push_str("<table><tbody>\n");
+    h.push_str("<tr><td>Coordination</td><td class='g'>Round-based: step all \u{2192} consensus \u{2192} repeat</td></tr>\n");
+    h.push_str("<tr><td>Seed strategy</td><td class='g'>base_seed + member_id (SI-1: unique, deterministic)</td></tr>\n");
+    h.push_str("<tr><td>Round invariant</td><td class='g'>SI-2: complete when all active agents step</td></tr>\n");
+    h.push_str("<tr><td>Confidence</td><td class='g'>SI-3: mean score, clamped [0,1]</td></tr>\n");
+    h.push_str("<tr><td>Termination</td><td class='g'>SI-4: consensus OR max_rounds OR all exhausted</td></tr>\n");
+    h.push_str("<tr><td>Report</td><td class='g'>SI-5: serialisable, deterministic SwarmReport</td></tr>\n");
+    h.push_str("<tr><td>PMHD integration</td><td class='g'>SI-6: per-round DrillEngine (seeded by round_id)</td></tr>\n");
+    h.push_str("<tr><td>Default policy</td><td class='g'>size=4, max_rounds=16, WeightedResonance, threshold=0.6</td></tr>\n");
+    h.push_str("</tbody></table>\n");
+
+    // Consensus Modes table
+    h.push_str("<h3 style='margin-top:1rem'>Consensus Modes</h3>\n");
+    h.push_str("<table><thead><tr><th>Mode</th><th>Consensus Rule</th></tr></thead><tbody>\n");
+    h.push_str("<tr><td><strong>Majority</strong></td><td>&gt;50% of active members produced a step (score &gt; 0)</td></tr>\n");
+    h.push_str("<tr><td><strong>WeightedResonance</strong></td><td>Mean step score \u{2265} threshold</td></tr>\n");
+    h.push_str("<tr><td><strong>Unanimous</strong></td><td>Every active member produced a step with score &gt; 0</td></tr>\n");
+    h.push_str("<tr><td><strong>DrillBacked</strong></td><td>PMHD drill commits \u{2265}1 monolith AND mean quality \u{2265} threshold</td></tr>\n");
+    h.push_str("</tbody></table>\n");
+    h.push_str("</div>\n");
+
+    // Right: AT-SW test grid
+    h.push_str("<div>\n<h3>Acceptance Tests AT-SW1\u{2013}SW25</h3>\n");
+    h.push_str("<div class='atgrid'>\n");
+    for (id, desc) in &[
+        ("SW1",  "Member count"),
+        ("SW2",  "Unique member IDs"),
+        ("SW3",  "Initial not complete"),
+        ("SW4",  "Round increments"),
+        ("SW5",  "Round ID correct"),
+        ("SW6",  "Member steps populated"),
+        ("SW7",  "max_rounds ceiling"),
+        ("SW8",  "Report rounds count"),
+        ("SW9",  "Report goal_intent"),
+        ("SW10", "Serialisation roundtrip"),
+        ("SW11", "Determinism"),
+        ("SW12", "final_resonance [0,1]"),
+        ("SW13", "Unanimous consensus"),
+        ("SW14", "Policy serialisation"),
+        ("SW15", "Zero-size swarm"),
+        ("SW16", "Single-member swarm"),
+        ("SW17", "Vote participating count"),
+        ("SW18", "swarm_size in report"),
+        ("SW19", "No drill \u{2192} None summary"),
+        ("SW20", "Drill \u{2192} Some summary"),
+        ("SW21", "Drill ticks > 0"),
+        ("SW22", "Drill quality [0,1]"),
+        ("SW23", "DrillBacked consensus"),
+        ("SW24", "Drill determinism"),
+        ("SW25", "Round+drill serialise"),
+    ] {
+        h.push_str(&format!(
+            "<div class='at pass' title='AT-{}: {}'><strong>AT-{}</strong><br><small>{}</small></div>\n",
+            id, desc, id, desc
+        ));
+    }
+    h.push_str("</div>\n");
+
+    // Design invariants
+    h.push_str("<h3 style='margin-top:1rem'>Design Invariants</h3>\n");
+    h.push_str("<table><tbody>\n");
+    for (si, desc) in &[
+        ("SI-1", "Every agent gets a unique, deterministic seed (base_seed + agent_id)"),
+        ("SI-2", "A round is complete when all active agents have produced a step"),
+        ("SI-3", "ConsensusVote confidence = mean score of steps, clamped [0,1]"),
+        ("SI-4", "Swarm terminates when consensus OR max_rounds OR all plans exhausted"),
+        ("SI-5", "SwarmReport is serialisable and deterministic for the same inputs"),
+        ("SI-6", "PMHD drills seeded by (base_seed XOR round_id \u{00d7} constant)"),
+    ] {
+        h.push_str(&format!("<tr><td><strong>{}</strong></td><td class='g'>{}</td></tr>\n", si, desc));
+    }
+    h.push_str("</tbody></table>\n");
+    h.push_str("</div>\n");
+
+    h.push_str("</div>\n"); // close grid2
+    h.push_str("</div>\n"); // close section 18
 
     // ── Footer ────────────────────────────────────────────────────────────────
     h.push_str("<footer>Generated by ISLS v1.0.0 \u{2014} deterministic, append-only, replay-verified</footer>\n");

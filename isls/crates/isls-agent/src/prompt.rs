@@ -107,7 +107,6 @@ pub fn build_workspace_prompt(
 mod tests {
     use super::*;
     use crate::workspace::{AgentWorkspace, ModuleInfo};
-    use std::path::PathBuf;
 
     // AT-AG15: Prompt with context — verify Oracle prompt contains file contents
     #[test]
