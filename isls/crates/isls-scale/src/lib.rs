@@ -1,5 +1,7 @@
-// isls-scale: Hierarchical Multi-Scale Observation Layer (C18)
-// Hypercube Universes, Dimensional Bridges, Scale Ladders.
+//! Hierarchical multi-scale observation layer for ISLS (C18).
+//!
+//! Provides hypercube universes, dimensional bridges, and scale ladders for
+//! micro/meso/macro observation and cross-scale coarsening.
 
 use std::collections::BTreeMap;
 use isls_types::{FiveDState, Hash256, SemanticCrystal, VertexId, content_address_raw};
@@ -101,11 +103,16 @@ impl HyperBounds {
         let mut min = points[0].clone();
         let mut max = points[0].clone();
         for p in points.iter().skip(1) {
-            if p.p   < min.p   { min.p   = p.p; }   if p.p   > max.p   { max.p   = p.p; }
-            if p.rho < min.rho { min.rho = p.rho; } if p.rho > max.rho { max.rho = p.rho; }
-            if p.omega < min.omega { min.omega = p.omega; } if p.omega > max.omega { max.omega = p.omega; }
-            if p.chi < min.chi { min.chi = p.chi; } if p.chi > max.chi { max.chi = p.chi; }
-            if p.eta < min.eta { min.eta = p.eta; } if p.eta > max.eta { max.eta = p.eta; }
+            if p.p < min.p { min.p = p.p; }
+            if p.p > max.p { max.p = p.p; }
+            if p.rho < min.rho { min.rho = p.rho; }
+            if p.rho > max.rho { max.rho = p.rho; }
+            if p.omega < min.omega { min.omega = p.omega; }
+            if p.omega > max.omega { max.omega = p.omega; }
+            if p.chi < min.chi { min.chi = p.chi; }
+            if p.chi > max.chi { max.chi = p.chi; }
+            if p.eta < min.eta { min.eta = p.eta; }
+            if p.eta > max.eta { max.eta = p.eta; }
         }
         Some(HyperBounds { min, max })
     }
@@ -411,8 +418,8 @@ fn bisect_recursive(
 
     // Stop conditions: too small, max clusters reached, or spectral gap too small
     let spectral_gap = if n > 1 {
-        let range = sorted[n - 1].0 - sorted[0].0;
-        range // simplified gap estimate
+        
+        sorted[n - 1].0 - sorted[0].0 // simplified gap estimate
     } else {
         0.0
     };
@@ -596,7 +603,7 @@ pub fn lift_micro_to_meso(
         }
     }
 
-    let universes: Vec<HypercubeUniverse> = groups.iter().map(|(_, verts)| {
+    let universes: Vec<HypercubeUniverse> = groups.values().map(|verts| {
         build_universe(verts, embeddings, Scale::Meso, ScalePolicy::Balanced)
     }).collect();
 
@@ -655,7 +662,7 @@ pub fn lift_meso_to_macro(
         }
     }
 
-    let macro_universes: Vec<HypercubeUniverse> = groups.iter().map(|(_, cids)| {
+    let macro_universes: Vec<HypercubeUniverse> = groups.values().map(|cids| {
         // Aggregate the meso aggregate states
         let verts: Vec<VertexId> = cids.iter()
             .flat_map(|&cid| {

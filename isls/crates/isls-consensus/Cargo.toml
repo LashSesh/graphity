@@ -2,6 +2,9 @@
 name = "isls-consensus"
 version = "1.0.0"
 edition = "2021"
+description = "Consensus validation and Proof-of-Reproducibility gate (L3)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

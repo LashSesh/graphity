@@ -2,6 +2,9 @@
 name = "isls-types"
 version = "1.0.0"
 edition = "2021"
+description = "Core shared types for ISLS: crystals, observations, temporal primitives"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 serde = { workspace = true }

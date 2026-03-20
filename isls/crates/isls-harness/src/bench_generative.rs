@@ -18,7 +18,6 @@ use isls_oracle::{OracleConfig, OracleEngine, OraclePatternMemory, SynthesisProm
 use isls_forge::{ForgeConfig, ForgeEngine, RustModuleMatrix};
 use isls_multilang::templates::TemplateCatalog as MultiLangCatalog;
 #[allow(unused_imports)]
-
 use crate::bench::BenchResult;
 
 /// Run all generative benchmarks (B16–B24) in deterministic mock/skeleton mode.
@@ -26,16 +25,17 @@ use crate::bench::BenchResult;
 /// All oracle calls use an empty api_key → `available()` = false → skeleton path.
 /// Safe to run in CI without any API keys.
 pub fn run_generative_suite(git_commit: &str) -> Vec<BenchResult> {
-    let mut results = Vec::new();
-    results.push(bench_forge_throughput(git_commit));
-    results.push(bench_oracle_latency(git_commit));         // skeleton mode
-    results.push(bench_oracle_rejection_rate(git_commit));  // skeleton mode
-    results.push(bench_pattern_hit_rate(git_commit));
-    results.push(bench_foundry_compile_rate(git_commit));
-    results.push(bench_template_match_accuracy(git_commit));
-    results.push(bench_foundry_avg_attempts(git_commit));
-    results.push(bench_gateway_latency(git_commit));
-    results.push(bench_full_fabrication_time(git_commit));  // skeleton mode
+    let results = vec![
+        bench_forge_throughput(git_commit),
+        bench_oracle_latency(git_commit),            // skeleton mode
+        bench_oracle_rejection_rate(git_commit),     // skeleton mode
+        bench_pattern_hit_rate(git_commit),
+        bench_foundry_compile_rate(git_commit),
+        bench_template_match_accuracy(git_commit),
+        bench_foundry_avg_attempts(git_commit),
+        bench_gateway_latency(git_commit),
+        bench_full_fabrication_time(git_commit),     // skeleton mode
+    ];
     results
 }
 
@@ -125,8 +125,10 @@ pub fn bench_forge_throughput(git_commit: &str) -> BenchResult {
 
 /// B17: Average Oracle synthesis call latency (ms/call) — skeleton/mock mode.
 pub fn bench_oracle_latency(git_commit: &str) -> BenchResult {
-    let mut config = OracleConfig::default();
-    config.api_key_source = String::new(); // force skeleton: no real API calls
+    let config = OracleConfig {
+        api_key_source: String::new(), // force skeleton: no real API calls
+        ..OracleConfig::default()
+    };
     let mut engine = OracleEngine::new(config, OraclePatternMemory::new());
     let matrix = RustModuleMatrix;
 
@@ -155,14 +157,20 @@ pub fn bench_oracle_latency(git_commit: &str) -> BenchResult {
 /// Uses 3 direct synthesize_prompt() calls so the measured time always
 /// reflects a real network round-trip, not just PMHD drill overhead.
 fn bench_oracle_latency_live(git_commit: &str, provider: &str) -> BenchResult {
-    let mut config = OracleConfig::default();
-    config.provider = Some(provider.to_string());
-    if provider == "openai" {
-        config.model = "gpt-4o-mini".to_string();
-        config.api_key_source = "env:OPENAI_API_KEY".to_string();
+    let config = if provider == "openai" {
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            model: "gpt-4o-mini".to_string(),
+            api_key_source: "env:OPENAI_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
     } else {
-        config.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
-    }
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            api_key_source: "env:ANTHROPIC_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
+    };
     let engine = OracleEngine::new(config, OraclePatternMemory::new());
 
     if !engine.oracle_available() {
@@ -199,8 +207,10 @@ fn bench_oracle_latency_live(git_commit: &str, provider: &str) -> BenchResult {
 
 /// B18: Fraction of Oracle outputs that fail validation (percent) — skeleton mode.
 pub fn bench_oracle_rejection_rate(git_commit: &str) -> BenchResult {
-    let mut config = OracleConfig::default();
-    config.api_key_source = String::new(); // force skeleton
+    let config = OracleConfig {
+        api_key_source: String::new(), // force skeleton
+        ..OracleConfig::default()
+    };
     let mut engine = OracleEngine::new(config, OraclePatternMemory::new());
     let matrix = RustModuleMatrix;
 
@@ -334,14 +344,20 @@ fn try_compile_rust_with_error(code: &str) -> Option<String> {
 /// Reports 100% if it compiles, 0% if not, or falls back to mock if rustc not
 /// available or oracle unavailable.
 fn bench_foundry_compile_rate_live(git_commit: &str, provider: &str) -> BenchResult {
-    let mut config = OracleConfig::default();
-    config.provider = Some(provider.to_string());
-    if provider == "openai" {
-        config.model = "gpt-4o-mini".to_string();
-        config.api_key_source = "env:OPENAI_API_KEY".to_string();
+    let config = if provider == "openai" {
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            model: "gpt-4o-mini".to_string(),
+            api_key_source: "env:OPENAI_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
     } else {
-        config.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
-    }
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            api_key_source: "env:ANTHROPIC_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
+    };
     let engine = OracleEngine::new(config, OraclePatternMemory::new());
 
     if !engine.oracle_available() {
@@ -383,14 +399,20 @@ fn bench_foundry_compile_rate_live(git_commit: &str, provider: &str) -> BenchRes
 /// B21 live: ask oracle for Rust code, try to compile; if it fails, send the
 /// compiler error back for one fix attempt. Reports the actual attempt count.
 fn bench_foundry_avg_attempts_live(git_commit: &str, provider: &str) -> BenchResult {
-    let mut config = OracleConfig::default();
-    config.provider = Some(provider.to_string());
-    if provider == "openai" {
-        config.model = "gpt-4o-mini".to_string();
-        config.api_key_source = "env:OPENAI_API_KEY".to_string();
+    let config = if provider == "openai" {
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            model: "gpt-4o-mini".to_string(),
+            api_key_source: "env:OPENAI_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
     } else {
-        config.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
-    }
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            api_key_source: "env:ANTHROPIC_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
+    };
     let engine = OracleEngine::new(config, OraclePatternMemory::new());
 
     if !engine.oracle_available() {
@@ -547,14 +569,20 @@ pub fn bench_full_fabrication_time(git_commit: &str) -> BenchResult {
 /// (1 real API call). Guarantees the oracle is called even when the PMHD drill
 /// does not produce a committed monolith within the tick budget.
 fn bench_full_fabrication_time_live(git_commit: &str, provider: &str) -> BenchResult {
-    let mut config = OracleConfig::default();
-    config.provider = Some(provider.to_string());
-    if provider == "openai" {
-        config.model = "gpt-4o-mini".to_string();
-        config.api_key_source = "env:OPENAI_API_KEY".to_string();
+    let config = if provider == "openai" {
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            model: "gpt-4o-mini".to_string(),
+            api_key_source: "env:OPENAI_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
     } else {
-        config.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
-    }
+        OracleConfig {
+            provider: Some(provider.to_string()),
+            api_key_source: "env:ANTHROPIC_API_KEY".to_string(),
+            ..OracleConfig::default()
+        }
+    };
     let mut engine = OracleEngine::new(config, OraclePatternMemory::new());
     let matrix = RustModuleMatrix;
     let spec = simple_rust_api_spec();

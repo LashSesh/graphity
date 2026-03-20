@@ -3,6 +3,8 @@ name = "isls-store"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Structured Persistence Layer (C17): SQLite-backed project/run/crystal/settings store"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

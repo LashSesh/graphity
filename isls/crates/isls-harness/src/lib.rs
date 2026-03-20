@@ -1,3 +1,9 @@
+//! Validation harness for ISLS (C10).
+//!
+//! Benchmark runners, formal and retrospective validators, metric collectors,
+//! synthetic scenario generators, and report builders for end-to-end system
+//! validation.
+
 // isls-harness: ISLS Validation Harness — C10
 // Benchmark runners, validators, metric collectors, reporters
 // Spec: ISLS_ValidationHarness_v1_0_0

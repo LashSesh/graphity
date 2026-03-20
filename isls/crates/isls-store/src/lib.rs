@@ -1,6 +1,7 @@
-// isls-store: Structured Persistence Layer (C17)
-// SQLite-backed store for projects, runs, crystals, traces, manifests,
-// capsules, registries, metrics, alerts, and settings.
+//! Structured persistence layer for ISLS (C17).
+//!
+//! SQLite-backed store managing projects, runs, crystals, traces, manifests,
+//! capsules, registries, metrics, alerts, and settings.
 
 use std::path::Path;
 use std::sync::Mutex;

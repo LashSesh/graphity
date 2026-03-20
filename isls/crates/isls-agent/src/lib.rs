@@ -1,3 +1,9 @@
+//! Autonomous goal-directed agent for ISLS (C30).
+//!
+//! Plans, steps, and adapts to turn high-level intent into crystallised action.
+//! Includes workspace-aware development capabilities with compile/test feedback
+//! loops and conversation-driven oracle prompting.
+
 // isls-agent: C30 — Autonomous Goal-Directed Agent
 // Plans. Steps. Adapts. Completes.
 // The agent that turns intent into crystallised action.
@@ -210,14 +216,14 @@ impl AgentState {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 
     pub fn load(path: &Path) -> std::io::Result<Self> {
         let json = std::fs::read_to_string(path)?;
         serde_json::from_str(&json)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+            .map_err(std::io::Error::other)
     }
 }
 

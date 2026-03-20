@@ -421,7 +421,7 @@ fn parse_args(args: &[String]) -> Command {
         "validate" => {
             let formal = args.contains(&"--formal".to_string());
             let retro = args.contains(&"--retro".to_string());
-            Command::Validate { formal: formal || (!formal && !retro), retro }
+            Command::Validate { formal: formal || !retro, retro }
         }
         "report" => {
             let full_html = args.contains(&"--full-html".to_string())
@@ -855,15 +855,19 @@ fn cmd_oracle_diagnose() {
 
     // 2. Build the oracle
     let (provider, mut config) = if has_openai {
-        let mut c = OracleConfig::default();
-        c.provider = Some("openai".to_string());
-        c.model = "gpt-4o-mini".to_string();
-        c.api_key_source = "env:OPENAI_API_KEY".to_string();
+        let c = OracleConfig {
+            provider: Some("openai".to_string()),
+            model: "gpt-4o-mini".to_string(),
+            api_key_source: "env:OPENAI_API_KEY".to_string(),
+            ..Default::default()
+        };
         ("openai", c)
     } else {
-        let mut c = OracleConfig::default();
-        c.provider = Some("claude".to_string());
-        c.api_key_source = "env:ANTHROPIC_API_KEY".to_string();
+        let c = OracleConfig {
+            provider: Some("claude".to_string()),
+            api_key_source: "env:ANTHROPIC_API_KEY".to_string(),
+            ..Default::default()
+        };
         ("anthropic", c)
     };
     config.max_retries = 0; // single attempt for diagnostics
@@ -1448,6 +1452,7 @@ fn cmd_run(replay: Option<&str>, mode: RunMode, ticks: usize, project: Option<&s
     // come from.  If ingested data exists, stop at min(ticks, n_windows) —
     // never cycle so the engine sees the real sequence.  Without ingested data
     // fall back to the synthetic generator.
+    #[allow(clippy::type_complexity)]
     let (steps, get_payloads): (usize, Box<dyn Fn(usize) -> Vec<Vec<u8>>>) =
         if let Some(ref wins) = ingested {
             let n = wins.len();
@@ -1970,7 +1975,7 @@ fn cmd_validate(formal: bool, retro: bool) {
 
     if retro {
         println!("\nRunning V-Retro validation (horizon: 7 days)...");
-        if archive.len() == 0 {
+        if archive.is_empty() {
             println!("  No crystals in archive. Run `isls run` first to collect data.");
             return;
         }
@@ -1994,8 +1999,7 @@ fn cmd_report(json: bool, html: bool) {
         .ok()
         .and_then(|s| {
             s.lines()
-                .filter(|l| !l.is_empty())
-                .last()
+                .rfind(|l| !l.is_empty())
                 .and_then(|line| serde_json::from_str::<MetricSnapshot>(line).ok())
         })
         .unwrap_or_else(|| {
@@ -2247,6 +2251,7 @@ fn load_capsule_test_result(results_dir: &std::path::Path) -> String {
         .unwrap_or_else(|| "N/A".to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_full_html(
     meta: &[(&str, usize, usize, usize)],
     formals: &[Option<FormalReport>],

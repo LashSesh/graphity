@@ -1,6 +1,7 @@
-// isls-pmhd: Adversarial Hypothesis Drill — C21
-// Polycentric Multi-Hypothesis Drill: generates, opposes, evaluates, and commits
-// structured hypotheses. Deterministic under fixed (DecisionSpec, seed).
+//! Polycentric multi-hypothesis drill for ISLS (C21).
+//!
+//! Generates, opposes, evaluates, and commits structured hypotheses through
+//! adversarial drilling. Deterministic under a fixed `(DecisionSpec, seed)`.
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
@@ -222,7 +223,7 @@ impl Counterexample {
         let mut hasher = Sha256::new();
         hasher.update(target_id.as_bytes());
         hasher.update(reason.as_bytes());
-        hasher.update(&[severity]);
+        hasher.update([severity]);
         let id = hex_encode(&hasher.finalize());
         Self { id, target_id, reason, severity }
     }
@@ -250,7 +251,7 @@ impl QualityMetrics {
         [self.coherence, self.diversity, self.novelty,
          self.stability, self.robustness, self.coverage]
             .iter()
-            .all(|&v| v >= 0.0 && v <= 1.0)
+            .all(|&v| (0.0..=1.0).contains(&v))
     }
 
     pub fn passes(&self, t: &QualityThresholds) -> bool {
@@ -352,8 +353,8 @@ impl PmhdMonolith {
             counters.iter().map(|c| c.severity as f64 / 255.0).collect();
         let mut hasher = Sha256::new();
         hasher.update(h.id.as_bytes());
-        hasher.update(&prov.tick_range[0].to_le_bytes());
-        hasher.update(&prov.spec_id);
+        hasher.update(prov.tick_range[0].to_le_bytes());
+        hasher.update(prov.spec_id);
         let id = hex_encode(&hasher.finalize());
         Self { id, core_hypothesis: h, excalibration_vector, counterexamples: counters, quality, provenance: prov }
     }

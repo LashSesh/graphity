@@ -1,6 +1,7 @@
-// isls-artifact-ir: Universal Artifact Intermediate Representation — C22
-// A flat, serializable IR that bridges PmhdMonolith to domain-specific synthesis.
-// Deterministic: same (monolith, spec) always produces the same ArtifactIR.
+//! Universal artifact intermediate representation for ISLS (C22).
+//!
+//! A flat, serializable IR that bridges `PmhdMonolith` to domain-specific
+//! synthesis. Deterministic: the same `(monolith, spec)` always yields the same IR.
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};

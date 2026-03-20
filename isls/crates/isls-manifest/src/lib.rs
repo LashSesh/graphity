@@ -1,5 +1,7 @@
-// isls-manifest: Execution Manifest (C13)
-// Produces a content-addressed meta-artifact binding an entire run.
+//! Execution manifest for ISLS (C13).
+//!
+//! Produces a content-addressed meta-artifact that binds an entire run,
+//! linking crystals, traces, registries, and evidence into a single verifiable envelope.
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
@@ -95,7 +97,7 @@ pub fn build_manifest(
     let rd_digest = content_address(rd);
     let input_digest = content_address(&observation_log);
     let crystal_digests: Vec<Hash256> = archive.crystals().iter().map(|c| c.crystal_id).collect();
-    let trace_digests: Vec<Hash256> = traces.iter().map(|t| content_address(t)).collect();
+    let trace_digests: Vec<Hash256> = traces.iter().map(content_address).collect();
     let registry_digests = registries.digests();
 
     // mef_head: head of the evidence chain — last crystal's last evidence entry

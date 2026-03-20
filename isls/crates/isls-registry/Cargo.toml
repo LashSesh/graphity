@@ -3,6 +3,8 @@ name = "isls-registry"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Registry Infrastructure — C12: digest-bound catalog for operators, profiles, obligations, macros"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

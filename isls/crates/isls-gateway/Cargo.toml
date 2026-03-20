@@ -3,6 +3,8 @@ name = "isls-gateway"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Gateway — REST + WebSocket API and Studio web interface (C19)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

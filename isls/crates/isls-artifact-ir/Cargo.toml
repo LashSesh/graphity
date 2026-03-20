@@ -3,6 +3,8 @@ name = "isls-artifact-ir"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Artifact IR — C22: Universal Artifact Intermediate Representation"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

@@ -1,3 +1,8 @@
+//! Morphogenic graph transformations (Layer L4).
+//!
+//! Applies structural mutations (node split, merge, edge retype, subgraph
+//! replication) and intrinsic time-step evolution to the persistent graph.
+
 // isls-morph: Morphogenic controller (Layer L4)
 // C8 — depends on isls-types, isls-persist
 

@@ -1,3 +1,8 @@
+//! Information-geometric carrier structures for ISLS.
+//!
+//! Implements the tubus coordinate system, pi-coupled helix pairs, mandorla
+//! formation, and phase-ladder construction from consensus metrics.
+
 // isls-carrier: Tubus, helix, mandorla, phase-ladder (C6)
 // depends on isls-types, isls-consensus
 
@@ -23,7 +28,7 @@ pub fn helix_pair(tau: f64, phi: f64, r: f64) -> (TubusCoord, TubusCoord) {
 // ─── Mandorla Formation ───────────────────────────────────────────────────────
 
 /// Mandorla formation (ISLS Def 7.3, OI-07 resolved)
-/// kappa(t) = exp(-lambda * delta_phi(t)) * exp(-mu_r * r(t)^2) in [0,1]
+/// `kappa(t) = exp(-lambda * delta_phi(t)) * exp(-mu_r * r(t)^2)` in `[0,1]`
 pub fn mandorla(
     alpha: &TubusCoord,
     beta: &TubusCoord,

@@ -3,6 +3,8 @@ name = "isls-capsule"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Capsule Protocol — C14: evidence-bound secret release (OLP)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

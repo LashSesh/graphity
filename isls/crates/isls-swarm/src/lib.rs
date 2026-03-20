@@ -1,3 +1,9 @@
+//! Multi-agent swarm coordinator for ISLS (C31).
+//!
+//! Spawns N autonomous agents with distinct deterministic seeds, runs them
+//! through configurable rounds, and applies a consensus policy (optionally
+//! backed by PMHD drills) to converge on a collective result.
+
 // isls-swarm: C31 — Multi-Agent Swarm Coordinator
 // Many voices. One resonance.
 //

@@ -1,3 +1,8 @@
+//! Consensus validation and proof-of-rigor gate (Layer L3).
+//!
+//! Implements dual-consensus operators, metric normalization, and the PoR
+//! finite-state machine that gates crystal formation.
+
 // isls-consensus: Consensus, PoR gate, proof engine (Layer L3)
 // C5 — depends on isls-types, isls-persist
 

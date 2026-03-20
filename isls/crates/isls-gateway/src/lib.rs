@@ -1,3 +1,9 @@
+//! REST and WebSocket API gateway for ISLS (C19).
+//!
+//! Serves the Studio single-page web interface and provides real-time event
+//! streaming over WebSockets. All static assets are embedded at compile time
+//! with zero external JS/CSS dependencies.
+
 // isls-gateway: REST + WebSocket API and Studio web interface — C19
 // Serves the Studio single-page app and provides real-time event streaming.
 // No external JS/CSS dependencies. One HTML file. Nine views (Phase 13: Swarm + Chat).
@@ -553,7 +559,7 @@ async fn execute_command(
     State(state): State<AppState>,
     Json(req): Json<CommandRequest>,
 ) -> Json<CommandResponse> {
-    let parts: Vec<&str> = req.command.trim().split_whitespace().collect();
+    let parts: Vec<&str> = req.command.split_whitespace().collect();
     if parts.is_empty() {
         return Json(CommandResponse { ok: false, message: "Empty command".into(), data: None });
     }

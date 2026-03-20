@@ -3,6 +3,8 @@ name = "isls-templates"
 version = "1.0.0"
 edition = "2021"
 description = "Crystallized Architecture Pattern Catalog — Pre-Validated Skeletal Templates (C26)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

@@ -1,5 +1,7 @@
-// isls-scheduler: Spiral Scheduler (C15)
-// Provides adaptive tick granularity based on system dynamics.
+//! Spiral scheduler for ISLS (C15).
+//!
+//! Provides adaptive tick granularity that adjusts sub-step counts based on
+//! system pressure metrics (drift, flux, synchronization).
 
 use isls_types::SchedulerConfig;
 

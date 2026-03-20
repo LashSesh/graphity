@@ -1,3 +1,8 @@
+//! Spectral-guided pattern space navigator for ISLS (C29).
+//!
+//! Explores the design space using golden-angle spirals and spectral signatures
+//! (quality, stability, efficiency) to guide search toward high-resonance regions.
+
 // isls-navigator: C29 — Spectral-Guided Pattern Space Explorer
 // TRITON spirals. The mesh triangulates. The Laplacian reads the topology.
 // The gradient pulls the spiral toward gold.
@@ -281,6 +286,7 @@ impl SimplexMesh {
 
     /// Spectral gradient: direction from vertex toward the Fiedler-opposite cluster.
     /// This is the "invisible string" — the Fiedler vector tells TRITON where to go.
+    #[allow(clippy::needless_range_loop)]
     pub fn spectral_gradient(
         &self,
         vertex_id: usize,
@@ -440,7 +446,8 @@ impl NavigatorSpiral {
         }
     }
 
-    /// Generate the next candidate point in [0,1]^dim via golden-angle spiral.
+    /// Generate the next candidate point in `[0,1]^dim` via golden-angle spiral.
+    #[allow(clippy::needless_range_loop)]
     pub fn next_point(&mut self) -> Vec<f64> {
         self.step_count += 1;
         self.angle += GOLDEN_ANGLE;
@@ -471,6 +478,7 @@ impl NavigatorSpiral {
     }
 
     /// Update momentum from spectral gradient and normalized reward.
+    #[allow(clippy::needless_range_loop)]
     pub fn update_momentum(&mut self, gradient: &[f64], reward: f64) {
         let alpha = (0.3 * reward).clamp(0.0, 0.6);
         for d in 0..self.dim.min(gradient.len()) {
@@ -713,7 +721,7 @@ impl NavigatorState {
             std::fs::create_dir_all(parent)?;
         }
         let json = serde_json::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
         std::fs::write(path, json)
     }
 

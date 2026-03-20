@@ -1,6 +1,7 @@
-// isls-topology: Topological-Spectral Orbit Core (C16)
-// Spectral graph analysis, CTQW propagation, Kuramoto synchronization,
-// DTL predicates, fixpoint detection, observation deduplication.
+//! Topological-spectral orbit core for ISLS (C16).
+//!
+//! Spectral graph analysis, CTQW propagation, Kuramoto synchronization,
+//! DTL predicates, fixpoint detection, and observation deduplication.
 
 use std::collections::{BTreeMap, BTreeSet};
 use isls_persist::PersistentGraph;
@@ -201,6 +202,7 @@ pub fn compute_laplacian(graph: &PersistentGraph) -> SparseLaplacian {
 
 /// Spectral decomposition via power iteration / Lanczos (K-truncated).
 /// For small n, uses dense symmetric eigendecomposition.
+#[allow(clippy::needless_range_loop)]
 pub fn spectral_decompose(laplacian: &SparseLaplacian, k_max: usize) -> SpectralDecomposition {
     let n = laplacian.n;
     if n == 0 {
@@ -279,8 +281,9 @@ pub fn spectral_decompose(laplacian: &SparseLaplacian, k_max: usize) -> Spectral
 }
 
 /// CTQW propagation using truncated spectral decomposition.
-/// alpha_{jk}(t) = sum_m exp(-i*lambda_m*t) * u_m[j] * u_m[k]
-/// p_{jk}(t) = |alpha_{jk}(t)|^2
+/// `alpha_{jk}(t) = sum_m exp(-i*lambda_m*t) * u_m[j] * u_m[k]`
+/// `p_{jk}(t) = |alpha_{jk}(t)|^2`
+#[allow(clippy::needless_range_loop)]
 pub fn ctqw_propagate(spectral: &SpectralDecomposition, config: &TopologyConfig) -> CtqwResult {
     let n = spectral.eigenvectors.first().map(|v| v.len()).unwrap_or(0);
     if n == 0 {
@@ -361,9 +364,7 @@ pub fn ctqw_propagate(spectral: &SpectralDecomposition, config: &TopologyConfig)
     // Propagation speeds (set to 0 when t_star is infinite or same vertex)
     let propagation_speeds: Vec<Vec<f64>> = t_star.iter().enumerate().map(|(j, row)| {
         row.iter().enumerate().map(|(dest, &ts)| {
-            if j == dest || ts == 0.0 {
-                0.0
-            } else if ts.is_infinite() {
+            if j == dest || ts == 0.0 || ts.is_infinite() {
                 0.0
             } else {
                 // distance = 1 (simplified: no actual shortest-path distance)
@@ -544,7 +545,7 @@ pub fn compute_topological_signature(
     let betti_0 = count_components(graph);
     let n_u = n as u64;
     let e_u = e as u64;
-    let betti_1 = if e_u + betti_0 > n_u { e_u + betti_0 - n_u } else { 0 };
+    let betti_1 = (e_u + betti_0).saturating_sub(n_u);
 
     let laplacian = compute_laplacian(graph);
     let budget_exceeded = start.elapsed().as_millis() as u64 > config.budget_ms;

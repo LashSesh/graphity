@@ -3,6 +3,8 @@ name = "isls-multilang"
 version = "1.0.0"
 edition = "2021"
 description = "C28 — Babylon Bridge: IR-Validated Multi-Language Forge (Phase 10)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types       = { path = "../isls-types" }

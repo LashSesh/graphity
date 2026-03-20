@@ -1,3 +1,9 @@
+//! Hybrid synthesis oracle for ISLS (C25).
+//!
+//! Routes synthesis queries through a memory-first, LLM-fallback, skeleton-fallback
+//! pipeline. Every LLM output is treated as an untrusted hypothesis and must pass
+//! parse, constraint, and PMHD validation before crystallisation.
+
 // isls-oracle: Hybrid Synthesis Oracle — C25
 // LLM-Bridge with Progressive Pattern Autonomy.
 // Memory-first → LLM fallback → skeleton fallback.
@@ -38,11 +44,13 @@ pub type Result<T> = std::result::Result<T, OracleError>;
 // ─── Output Format ───────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Default)]
 pub enum OutputFormat {
     Rust,
     Json,
     Yaml,
     OpenApi,
+    #[default]
     PlainText,
 }
 
@@ -58,9 +66,6 @@ impl OutputFormat {
     }
 }
 
-impl Default for OutputFormat {
-    fn default() -> Self { OutputFormat::PlainText }
-}
 
 // ─── Synthesis Prompt ────────────────────────────────────────────────────────
 
@@ -575,7 +580,7 @@ pub struct OracleConfig {
     pub provider: Option<String>,
     pub model: String,
     pub endpoint: String,
-    /// "env:ANTHROPIC_API_KEY" or "env:OPENAI_API_KEY" or "capsule:<id>" or raw key (not recommended)
+    /// `"env:ANTHROPIC_API_KEY"` or `"env:OPENAI_API_KEY"` or `"capsule:<id>"` or raw key (not recommended)
     pub api_key_source: String,
     pub temperature: f64,
     pub max_tokens: usize,
@@ -647,8 +652,8 @@ impl OraclePatternEntry {
         let content = content.into();
         let mut hasher = Sha256::new();
         hasher.update(domain.as_bytes());
-        hasher.update(&signature.p.to_le_bytes());
-        hasher.update(&signature.rho.to_le_bytes());
+        hasher.update(signature.p.to_le_bytes());
+        hasher.update(signature.rho.to_le_bytes());
         hasher.update(content.as_bytes());
         let id: Hash256 = hasher.finalize().into();
 
@@ -1198,10 +1203,9 @@ impl OracleEngine {
 
         // [3] Budget check
         if let Err(e) = self.budget.check() {
-            return self.emit_skeleton(ir, matrix).map(|r| {
+            return self.emit_skeleton(ir, matrix).inspect(|_r| {
                 // Still count it as a skeleton due to budget
                 eprintln!("[oracle] budget: {e}");
-                r
             });
         }
 

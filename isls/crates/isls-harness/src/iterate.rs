@@ -39,6 +39,7 @@ pub struct IterationItem {
 }
 
 impl IterationItem {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         priority: Priority,
         metric_id: &str,

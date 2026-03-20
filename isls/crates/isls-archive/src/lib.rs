@@ -1,3 +1,8 @@
+//! Crystal archival and evidence-chain verification.
+//!
+//! Builds semantic crystals with hash-chained evidence entries and provides
+//! replay-based verification of content addresses, operator drift, and consensus.
+
 // isls-archive: Evidence chains, replay, verification (C7)
 // depends on isls-types
 

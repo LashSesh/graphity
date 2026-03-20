@@ -1,5 +1,7 @@
-// isls-capsule: Operator Lock Protocol (C14)
-// Evidence-bound secret encapsulation: seal / open.
+//! Operator lock protocol for ISLS (C14).
+//!
+//! Evidence-bound secret encapsulation using AES-256-GCM, with policy-gated
+//! seal/open operations, expiration, and use-count limits.
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};

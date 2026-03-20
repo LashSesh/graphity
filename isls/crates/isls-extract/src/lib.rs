@@ -1,3 +1,8 @@
+//! Constraint extraction from observations (Layer L2).
+//!
+//! Reads the persistent graph to discover constraint candidates and weave
+//! them into constraint programs using configurable operator libraries.
+
 // isls-extract: Constraint extraction (Layer L2 / ECLS assimilated)
 // C4 — depends on isls-types, isls-persist
 // Inv I5: read-only on PersistentGraph (takes &PersistentGraph, immutable ref)

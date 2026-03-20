@@ -3,6 +3,8 @@ name = "isls-cli"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS single-binary operator interface — commands, dashboard, config (C11)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [[bin]]
 name = "isls"

@@ -2,6 +2,9 @@
 name = "isls-extract"
 version = "1.0.0"
 edition = "2021"
+description = "Constraint extraction from persistent graph observations (L2)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

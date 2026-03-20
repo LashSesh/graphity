@@ -266,6 +266,7 @@ impl MetricCollector {
     }
 
     /// Collect a full metric snapshot from current engine state
+    #[allow(clippy::too_many_arguments)]
     pub fn collect(
         &mut self,
         active_constraints: usize,

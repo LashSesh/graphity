@@ -3,6 +3,8 @@ name = "isls-pmhd"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS PMHD — C21: Adversarial Hypothesis Drill (Polycentric Multi-Hypothesis Drill)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

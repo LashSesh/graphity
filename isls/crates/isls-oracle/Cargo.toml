@@ -1,7 +1,10 @@
 [package]
 name = "isls-oracle"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
+description = "LLM oracle interface supporting OpenAI and Anthropic providers (C25)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types       = { path = "../isls-types" }
