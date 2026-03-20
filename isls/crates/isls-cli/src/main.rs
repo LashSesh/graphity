@@ -144,6 +144,7 @@ enum Command {
     AgentRun { max_steps: usize },
     AgentHistory,
     AgentReset,
+    AgentChat { project: Option<String> },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -484,6 +485,12 @@ fn parse_args(args: &[String]) -> Command {
                     "step"    => Command::AgentStep,
                     "history" => Command::AgentHistory,
                     "reset"   => Command::AgentReset,
+                    "chat"    => {
+                        let project = args.iter().position(|a| a == "--project")
+                            .and_then(|i| args.get(i + 1))
+                            .cloned();
+                        Command::AgentChat { project }
+                    }
                     "run"     => {
                         let max_steps = args.iter().position(|a| a == "--max-steps")
                             .and_then(|i| args.get(i + 1))
@@ -4027,6 +4034,94 @@ fn cmd_agent_reset() {
     }
 }
 
+fn cmd_agent_chat(project: Option<&str>) {
+    use isls_agent::{
+        execute_pipeline, AccumulationMetrics, AgentResult, AgentWorkspace,
+        Conversation, PipelineConfig,
+    };
+    use isls_oracle::{OracleCost, OracleResponse, SynthesisOracle, SynthesisPrompt};
+    use isls_templates::{TemplateCatalog, TemplateConfig};
+
+    // Minimal Oracle that uses deterministic mode (no LLM key needed in CLI chat)
+    struct CliOracle;
+    impl SynthesisOracle for CliOracle {
+        fn name(&self) -> &str { "cli-deterministic" }
+        fn model(&self) -> &str { "none" }
+        fn available(&self) -> bool { false }
+        fn synthesize(&self, _: &SynthesisPrompt) -> isls_oracle::Result<OracleResponse> {
+            Err(isls_oracle::OracleError::Unavailable("CLI mode — no API key".into()))
+        }
+        fn cost_estimate(&self) -> OracleCost { OracleCost::default() }
+    }
+
+    println!("ISLS Agent v1.0.0");
+    println!("Beschreibe was du bauen möchtest.");
+    println!();
+
+    let oracle = CliOracle;
+    let catalog = TemplateCatalog::new(TemplateConfig::default());
+    let mut metrics = AccumulationMetrics::default();
+    let conv_path = isls_dir().join("agent").join("conversation.json");
+    let mut conversation = Conversation::load_or_default(&conv_path, 50);
+
+    // Bind workspace if project path given
+    let mut workspace: Option<AgentWorkspace> = None;
+    if let Some(p) = project {
+        let path = std::path::Path::new(p);
+        match AgentWorkspace::analyze(path) {
+            Ok(ws) => {
+                println!("Projekt gebunden: {}", p);
+                workspace = Some(ws);
+            }
+            Err(e) => eprintln!("Warnung: Projekt konnte nicht gelesen werden: {}", e),
+        }
+    }
+
+    let config = PipelineConfig {
+        deterministic: true,
+        ..Default::default()
+    };
+
+    // Interactive REPL loop
+    let stdin = std::io::stdin();
+    loop {
+        print!("> ");
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+
+        let mut input = String::new();
+        if stdin.read_line(&mut input).is_err() || input.trim().is_empty() {
+            break;
+        }
+        let intent = input.trim();
+        if intent == "exit" || intent == "quit" {
+            break;
+        }
+
+        let result = execute_pipeline(
+            intent, &workspace, &oracle, &catalog,
+            &mut metrics, &mut conversation, &config,
+        );
+
+        match result {
+            AgentResult::Success { events, .. } => {
+                for event in &events {
+                    println!("{}", event.display_line());
+                }
+            }
+            AgentResult::Failed { events } => {
+                for event in &events {
+                    println!("{}", event.display_line());
+                }
+            }
+        }
+        println!();
+
+        // Save conversation
+        let _ = conversation.save(&conv_path);
+    }
+}
+
 fn print_help() {
     println!("ISLS — Invariant Structure Learning System");
     println!("Version 1.0.0");
@@ -4112,6 +4207,7 @@ fn print_help() {
     println!("  agent run [--max-steps <n>]    Continue running from saved state");
     println!("  agent history                  Show complete step history");
     println!("  agent reset                    Clear agent state");
+    println!("  agent chat [--project <path>]  Interactive chat mode (no-code operator)");
     println!();
     println!("EXAMPLES:");
     println!("  isls init");
@@ -4206,6 +4302,7 @@ fn main() {
         Command::AgentRun { max_steps } => cmd_agent_run(max_steps),
         Command::AgentHistory => cmd_agent_history(),
         Command::AgentReset   => cmd_agent_reset(),
+        Command::AgentChat { project } => cmd_agent_chat(project.as_deref()),
     }
 }
 

@@ -5,9 +5,11 @@ edition = "2021"
 description = "C30 — Autonomous Goal-Directed Agent"
 
 [dependencies]
-isls-types = { path = "../isls-types" }
-serde       = { workspace = true }
-serde_json  = { workspace = true }
+isls-types     = { path = "../isls-types" }
+isls-oracle    = { path = "../isls-oracle" }
+isls-templates = { path = "../isls-templates" }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
 
 [features]
 default = []

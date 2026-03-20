@@ -834,6 +834,8 @@ dependencies = [
 name = "isls-agent"
 version = "1.0.0"
 dependencies = [
+ "isls-oracle",
+ "isls-templates",
  "isls-types",
  "serde",
  "serde_json",

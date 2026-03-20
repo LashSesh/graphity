@@ -11,14 +11,22 @@
 
 pub mod accumulation;
 pub mod apply;
+pub mod architecture;
 pub mod conversation;
+pub mod feature;
+pub mod launcher;
+pub mod pipeline;
 pub mod prompt;
 pub mod workspace;
 
 // Re-exports for convenience
 pub use accumulation::AccumulationMetrics;
 pub use apply::{apply_and_verify, strip_markdown_fences, ApplyOracle, ApplyResult, CargoCheck, CompileCheck};
+pub use architecture::{TechnicalComponent, TechnicalPlan};
 pub use conversation::{Conversation, ConversationTurn};
+pub use feature::{decompose_intent, decompose_intent_deterministic, Feature};
+pub use launcher::{launch_project, LaunchInfo};
+pub use pipeline::{execute_pipeline, generate_user_summary, AgentResult, PipelineConfig, UserEvent};
 pub use prompt::{build_workspace_prompt, PatternHint, WorkspacePrompt};
 pub use workspace::{AgentWorkspace, CrateType, FunctionInfo, ModuleInfo, RouteInfo, TypeInfo};
 
