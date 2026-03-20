@@ -3,6 +3,8 @@ name = "isls-compose"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Compose — C24: Recursive Decomposition and Hierarchical Composition Engine"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types       = { path = "../isls-types" }

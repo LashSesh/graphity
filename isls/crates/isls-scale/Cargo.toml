@@ -3,6 +3,8 @@ name = "isls-scale"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Hierarchical Multi-Scale Observation Layer (C18): Hypercube Universes, Bridges, Ladders"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

@@ -1,3 +1,8 @@
+//! Canonical data model for ISLS.
+//!
+//! Defines the shared types, temporal primitives, 5D state representations,
+//! and content-addressed hashing used by all other ISLS crates.
+
 // isls-types: Canonical data model, serialization, and hashing for ISLS v1.0.0
 // C1 — Zero internal dependencies
 
@@ -386,6 +391,7 @@ pub struct RunDescriptor {
 
 /// Master configuration (ISLS Sec 33, all OIs resolved)
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Config {
     pub temporal: TemporalConfig,
     pub carrier: CarrierConfig,
@@ -399,22 +405,6 @@ pub struct Config {
     pub archive: ArchiveConfig,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            temporal: TemporalConfig::default(),
-            carrier: CarrierConfig::default(),
-            observation: ObservationConfig::default(),
-            persistence: PersistenceConfig::default(),
-            extraction: ExtractionConfig::default(),
-            consensus: ConsensusConfig::default(),
-            adaptation: AdaptationConfig::default(),
-            thresholds: ThresholdConfig::default(),
-            normalization: NormalizationConfig::default(),
-            archive: ArchiveConfig::default(),
-        }
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TemporalConfig {

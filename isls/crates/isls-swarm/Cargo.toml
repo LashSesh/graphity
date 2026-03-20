@@ -3,6 +3,8 @@ name = "isls-swarm"
 version = "1.0.0"
 edition = "2021"
 description = "C31 — Multi-Agent Swarm Coordinator"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types  = { path = "../isls-types" }

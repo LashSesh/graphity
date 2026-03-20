@@ -3,6 +3,8 @@ name = "isls-manifest"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Execution Manifest — C13: run-level content-addressed meta-artifact"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

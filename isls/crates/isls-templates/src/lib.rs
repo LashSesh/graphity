@@ -1,3 +1,9 @@
+//! Crystallised architecture pattern catalog for ISLS (C26).
+//!
+//! Provides pre-validated skeletal `CompositionTree` templates encoding standard
+//! software archetypes, so the Forge starts from an 80% skeleton rather than
+//! decomposing from scratch.
+
 // isls-templates: Crystallized Architecture Pattern Catalog — C26
 // Pre-Validated Skeletal Templates for Software Generation.
 // Normed structures so the Forge starts at 80%, not at 0%.
@@ -48,7 +54,7 @@ fn hex_encode(bytes: &[u8]) -> String {
 
 fn make_tree_node(spec: DecisionSpec, level: CompLevel, depth: usize) -> TreeNode {
     let mut h = Sha256::new();
-    h.update(&spec.id);
+    h.update(spec.id);
     h.update(format!("{depth}").as_bytes());
     let id = hex_encode(&h.finalize());
     TreeNode { id, spec, level, children: Vec::new(), interfaces: Vec::new(), crystal: None, depth }
@@ -88,7 +94,7 @@ impl Archetype {
         }
     }
 
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_str(s: &str) -> Self {
         match s {
             "rest-api" => Archetype::RestApi,
             "cli-tool" => Archetype::CliTool,
@@ -407,7 +413,7 @@ impl TemplateCatalog {
 
             // 2. Tag match — count exact tag matches in intent words
             let tag_overlap = tmpl.tags.iter()
-                .filter(|tag| spec_words.iter().any(|w| *w == tag.as_str()))
+                .filter(|tag| spec_words.contains(&tag.as_str()))
                 .count();
             if !tmpl.tags.is_empty() {
                 score += 0.3 * (tag_overlap as f64 / tmpl.tags.len() as f64);
@@ -635,6 +641,7 @@ pub fn compose_templates(
 
 // ─── Built-In Templates ──────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn make_template(
     name: &str,
     archetype: Archetype,

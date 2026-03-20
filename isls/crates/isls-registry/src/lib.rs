@@ -1,5 +1,7 @@
-// isls-registry: Digest-bound Registry Infrastructure (C12)
-// Provides content-addressed catalogs for operators, profiles, obligations, macros.
+//! Digest-bound registry infrastructure for ISLS (C12).
+//!
+//! Provides content-addressed catalogs for operators, profiles, obligations,
+//! and macros, with integrity verification via SHA-256 digests.
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
@@ -121,7 +123,7 @@ impl Registry {
 
     /// Verify that a named entry matches the expected digest
     pub fn verify_digest(&self, name: &str, expected: &Hash256) -> bool {
-        self.entries.get(name).map_or(false, |e| &e.digest == expected)
+        self.entries.get(name).is_some_and(|e| &e.digest == expected)
     }
 
     /// Recompute and return the registry digest

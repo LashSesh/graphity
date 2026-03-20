@@ -142,11 +142,11 @@ fn to_snake_case(s: &str) -> String {
         if ch.is_uppercase() && i > 0 { out.push('_'); }
         out.push(ch.to_lowercase().next().unwrap_or(ch));
     }
-    out.replace('-', "_").replace(' ', "_")
+    out.replace(['-', ' '], "_")
 }
 
 fn to_pascal_case(s: &str) -> String {
-    s.split(|c: char| c == '_' || c == '-' || c == ' ')
+    s.split(['_', '-', ' '])
         .filter(|p| !p.is_empty())
         .map(|p| {
             let mut chars = p.chars();

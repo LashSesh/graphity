@@ -1,3 +1,8 @@
+//! Observation ingestion layer for ISLS (Layer L0).
+//!
+//! Provides canonicalization adapters that convert raw input bytes into
+//! content-addressed, typed observations with provenance tracking.
+
 // isls-observe: Observation adapters (Layer L0)
 // C2 — depends on isls-types only
 

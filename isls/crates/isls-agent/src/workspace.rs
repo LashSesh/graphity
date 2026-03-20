@@ -24,17 +24,14 @@ impl std::error::Error for WorkspaceError {}
 // ─── CrateType ────────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum CrateType {
     Bin,
+    #[default]
     Lib,
     Workspace,
 }
 
-impl Default for CrateType {
-    fn default() -> Self {
-        CrateType::Lib
-    }
-}
 
 // ─── ModuleInfo ───────────────────────────────────────────────────────────────
 
@@ -66,7 +63,7 @@ pub struct TypeInfo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FunctionInfo {
     pub name: String,
-    /// Full signature line, e.g. "pub async fn get_user(id: i64) -> Option<User>"
+    /// Full signature line, e.g. `pub async fn get_user(id: i64) -> Option<User>`
     pub signature: String,
     pub is_public: bool,
     pub has_test: bool,
@@ -269,6 +266,7 @@ fn parse_dependencies(cargo_toml: &str) -> Vec<String> {
 }
 
 /// Recursively walk `dir`, parse each .rs file, accumulate results.
+#[allow(clippy::too_many_arguments)]
 fn collect_files(
     dir: &Path,
     root: &Path,
@@ -405,14 +403,16 @@ fn parse_file(
 
         // ── Struct detection ───────────────────────────────────────────────
         if t.starts_with("pub struct ") || t.starts_with("pub(crate) struct ") {
-            let after = if t.starts_with("pub struct ") {
-                &t["pub struct ".len()..]
+            let after = if let Some(rest) = t.strip_prefix("pub struct ") {
+                rest
+            } else if let Some(rest) = t.strip_prefix("pub(crate) struct ") {
+                rest
             } else {
-                &t["pub(crate) struct ".len()..]
+                unreachable!()
             };
             let name = ident_head(after);
             if !name.is_empty() {
-                let derives: Vec<String> = pending_derives.drain(..).collect();
+                let derives: Vec<String> = std::mem::take(&mut pending_derives);
                 struct_brace_depth = 0;
                 let mut is_unit_struct = false;
                 let mut opened_brace = false;
@@ -457,14 +457,16 @@ fn parse_file(
 
         // ── Enum detection ─────────────────────────────────────────────────
         if t.starts_with("pub enum ") || t.starts_with("pub(crate) enum ") {
-            let after = if t.starts_with("pub enum ") {
-                &t["pub enum ".len()..]
+            let after = if let Some(rest) = t.strip_prefix("pub enum ") {
+                rest
+            } else if let Some(rest) = t.strip_prefix("pub(crate) enum ") {
+                rest
             } else {
-                &t["pub(crate) enum ".len()..]
+                unreachable!()
             };
             let name = ident_head(after);
             if !name.is_empty() {
-                let derives = pending_derives.drain(..).collect();
+                let derives = std::mem::take(&mut pending_derives);
                 struct_brace_depth = 0;
                 for c in t.chars() {
                     if c == '{' { struct_brace_depth += 1; }

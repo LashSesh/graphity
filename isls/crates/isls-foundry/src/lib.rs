@@ -1,3 +1,9 @@
+//! Closed-loop software fabrication foundry for ISLS (C27).
+//!
+//! Drives a `DecisionSpec` through oracle synthesis, writes source to disk, and
+//! iterates through `cargo check / test / clippy` until the artifact compiles
+//! and passes all validations, producing a proven `SemanticCrystal`.
+
 // ── C27: The Foundry — Closed-Loop Software Fabrication ─────────────
 //
 //  DecisionSpec → PMHD → ArtifactIR → Oracle → String
@@ -538,11 +544,11 @@ impl Foundry {
         dir: &Path,
         files: &[GeneratedFile],
     ) -> Result<FoundryValidation> {
-        let mut validation = FoundryValidation::default();
-
-        // Count LOC and tests from files
-        validation.loc = files.iter().map(|f| f.loc).sum();
-        validation.test_count = files.iter().map(|f| f.test_count).sum();
+        let mut validation = FoundryValidation {
+            loc: files.iter().map(|f| f.loc).sum(),
+            test_count: files.iter().map(|f| f.test_count).sum(),
+            ..Default::default()
+        };
 
         // Dry-run: skip toolchain entirely
         if self.config.dry_run {
@@ -584,12 +590,11 @@ impl Foundry {
                 .matches("warning:")
                 .count();
             // Clippy errors (not warnings) trigger correction
-            if !clippy.success && self.config.require_clippy_clean {
-                if attempt < self.config.max_attempts {
+            if !clippy.success && self.config.require_clippy_clean
+                && attempt < self.config.max_attempts {
                     self.attempt_correction(dir, &clippy.stderr, "lint")?;
                     continue;
                 }
-            }
 
             // Step 3: auto-format
             if self.config.auto_fmt {

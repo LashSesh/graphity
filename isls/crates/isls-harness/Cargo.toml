@@ -3,6 +3,8 @@ name = "isls-harness"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Validation Harness — benchmark runners, validators, metric collectors, reporters (C10)"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

@@ -308,13 +308,13 @@ impl LiveValidator {
     ) -> Vec<crate::metrics::Alert> {
         self.tick += 1;
         // 1. Check alerts
-        let alerts = collector.check_alerts(snap);
+        
         // 2. Every N steps: compute rolling aggregates (handled by caller via summary_interval)
-        alerts
+        collector.check_alerts(snap)
     }
 
     pub fn should_summarize(&self) -> bool {
-        self.tick % self.summary_interval == 0
+        self.tick.is_multiple_of(self.summary_interval)
     }
 
     pub fn tick(&self) -> u64 {

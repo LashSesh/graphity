@@ -85,7 +85,7 @@ fn to_kebab_case(s: &str) -> String {
         if ch.is_uppercase() && i > 0 { out.push('-'); }
         out.push(ch.to_lowercase().next().unwrap_or(ch));
     }
-    out.replace('_', "-").replace(' ', "-")
+    out.replace(['_', ' '], "-")
 }
 
 #[cfg(test)]

@@ -1,3 +1,8 @@
+//! Multi-language code generation bridge for ISLS (Babylon Bridge).
+//!
+//! Transforms ISLS artifacts into a glyph intermediate representation, validates
+//! via H5 embedding, and scaffolds target-language code through pluggable backends.
+
 // isls-multilang: C28 — Babylon Bridge
 // IR-Validated Multi-Language Forge.
 //

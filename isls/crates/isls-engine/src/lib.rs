@@ -1,3 +1,8 @@
+//! ISLS analytical engine and orchestrator.
+//!
+//! Coordinates the full pipeline from observation ingestion through consensus,
+//! carrier geometry, morphogenic updates, and crystal archival.
+
 // isls-engine: State machine, orchestrator (C9)
 // depends on all other crates
 
@@ -536,6 +541,7 @@ pub fn run_with_descriptor(
 // ─── Execute Mode (Extension: C15 + Generative Mode) ─────────────────────────
 
 /// Input variants for execute mode (ISLS Extension Def ExecuteInput)
+#[allow(clippy::large_enum_variant)]
 pub enum ExecuteInput {
     Crystal(isls_types::SemanticCrystal),
     Program(isls_types::ConstraintProgram),

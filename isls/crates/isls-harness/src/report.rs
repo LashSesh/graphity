@@ -280,7 +280,7 @@ footer {{ color: #475569; font-size: 0.75em; text-align: center; margin-top: 24p
             edge_count = report.overview.edge_count,
             crystal_count = report.overview.crystal_count,
             uptime = format_uptime(report.overview.uptime_secs),
-            storage = format!("{:.1} GB", report.overview.storage_bytes as f64 / 1e9),
+            storage = format_args!("{:.1} GB", report.overview.storage_bytes as f64 / 1e9),
             layer_rows = layer_rows,
             quality_rows = quality_rows,
             perf_rows = perf_rows,

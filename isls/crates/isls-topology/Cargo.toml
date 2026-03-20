@@ -3,6 +3,8 @@ name = "isls-topology"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Topological-Spectral Orbit Core (C16): spectral graph analysis, CTQW, Kuramoto, DTL, fixpoint detection"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

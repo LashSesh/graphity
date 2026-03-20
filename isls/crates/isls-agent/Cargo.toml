@@ -3,6 +3,8 @@ name = "isls-agent"
 version = "1.0.0"
 edition = "2021"
 description = "C30 — Autonomous Goal-Directed Agent"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types     = { path = "../isls-types" }

@@ -1,1 +1,10 @@
-/target/
+/target
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+*.db
+*.db-journal
+.isls/
+bench_history.jsonl
+full-report.html

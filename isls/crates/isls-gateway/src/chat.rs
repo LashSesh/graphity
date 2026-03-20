@@ -22,7 +22,7 @@ use tokio::sync::RwLock;
 use isls_agent::{
     accumulation::AccumulationMetrics,
     apply::{ApplyOracle, CargoCheck, apply_and_verify},
-    conversation::{Conversation, ConversationTurn},
+    conversation::ConversationTurn,
     workspace::AgentWorkspace,
     build_workspace_prompt,
 };
@@ -109,6 +109,12 @@ pub type BoundProject = Arc<RwLock<Option<PathBuf>>>;
 /// if an API key is available.  Falls back gracefully when unavailable.
 pub struct GatewayOracle {
     pub available: bool,
+}
+
+impl Default for GatewayOracle {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl GatewayOracle {

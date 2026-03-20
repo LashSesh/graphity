@@ -1,3 +1,8 @@
+//! Persistent hash-DAG storage layer for ISLS (Layer L1).
+//!
+//! Manages the in-memory directed graph of vertices with 5D state, tensor
+//! archives, edge annotations, and commit-indexed history.
+
 // isls-persist: Persistent HDAG engine (Layer L1 / MCCE assimilated)
 // C3 — depends on isls-types, isls-observe
 
@@ -392,7 +397,7 @@ impl PersistentGraph {
         // Betti-0: connected components (simplified: count weakly connected components)
         let betti_0 = if n == 0 { 0 } else { count_weakly_connected(&self.graph) };
         // Betti-1: cycles estimate = E - V + components
-        let betti_1 = if e + betti_0 > n { e + betti_0 - n } else { 0 };
+        let betti_1 = (e + betti_0).saturating_sub(n);
         // Betti-2: 0 for a graph (no 2-voids in 1-skeleton)
         let betti_2 = 0u64;
         // Spectral gap: simplified estimate (for small graphs)

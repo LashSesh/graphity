@@ -1,11 +1,8 @@
-// isls-forge: Generative Synthesis Engine — C23
-// Takes a DecisionSpec, drills it through PMHD (C21), translates the Monolith
-// into an ArtifactIR (C22), interprets through a domain Matrix, synthesizes a
-// concrete output, evaluates it, stores patterns, and emits the result.
-//
-// The forge crystal is structurally identical to a discovery crystal (same
-// SemanticCrystal format). Only provenance (program_id = "forge:<spec_id_hex>")
-// distinguishes the two.
+//! Generative synthesis engine for ISLS (C23).
+//!
+//! Drives the full forge pipeline: PMHD drill (C21) -> ArtifactIR (C22) ->
+//! domain matrix interpretation -> concrete synthesis, evaluation, and pattern storage.
+//! Forge crystals share the `SemanticCrystal` format, distinguished by provenance.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -371,7 +368,7 @@ impl Emitter for FileEmitter {
             "schema" => "json",
             _ => "txt",
         };
-        let filename = format!("artifact-{}.{}", hex_encode(&crystal.crystal_id)[..8].to_string(), ext);
+        let filename = format!("artifact-{}.{}", &hex_encode(&crystal.crystal_id)[..8], ext);
         let path = config.output_dir.join(&filename);
         std::fs::write(&path, &output.content)?;
         Ok(EmitResult {
@@ -534,6 +531,7 @@ impl ForgePatternMemory {
 
     pub fn memory(&self) -> &PatternMemory { &self.inner }
     pub fn len(&self) -> usize { self.inner.len() }
+    pub fn is_empty(&self) -> bool { self.inner.is_empty() }
 }
 
 // ─── ForgeEngine ─────────────────────────────────────────────────────────────
@@ -697,7 +695,7 @@ impl ForgeEngine {
 
         let spec = DecisionSpec::new(
             format!("Forge artifact from crystal {} (domain: {domain})",
-                hex_encode(&crystal.crystal_id)[..8].to_string()),
+                &hex_encode(&crystal.crystal_id)[..8]),
             goals,
             Vec::new(),
             domain,
@@ -835,7 +833,7 @@ fn build_forge_crystal(
         free_energy,
         carrier_instance_idx: 0,
         scale_tag: format!("forge:{}", spec.domain),
-        universe_id: format!("forge:{}", hex_encode(&spec.id)[..8].to_string()),
+        universe_id: format!("forge:{}", &hex_encode(&spec.id)[..8]),
         sub_crystal_ids: Vec::new(),
         parent_crystal_ids: Vec::new(),
         genesis_metadata: None,

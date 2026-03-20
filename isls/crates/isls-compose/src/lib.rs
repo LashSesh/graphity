@@ -1,3 +1,9 @@
+//! Recursive decomposition and hierarchical composition engine for ISLS (C24).
+//!
+//! Decomposes a top-level `DecisionSpec` into forgeable atoms, resolves interface
+//! contracts between them, and composes the results upward into a deterministic
+//! `SystemCrystal`.
+
 // isls-compose: Recursive Decomposition and Hierarchical Composition Engine — C24
 //
 // Extends the Forge (C23) from single artifacts to systems of artifacts.
@@ -154,7 +160,7 @@ pub struct TreeNode {
 impl TreeNode {
     fn new(spec: DecisionSpec, level: CompLevel, depth: usize) -> Self {
         let mut h = Sha256::new();
-        h.update(&spec.id);
+        h.update(spec.id);
         h.update(format!("{depth}").as_bytes());
         let id = hex_encode(&h.finalize());
         Self { id, spec, level, children: Vec::new(), interfaces: Vec::new(), crystal: None, depth }
@@ -316,7 +322,7 @@ fn split_spec(
     }
 
     // Split goals into two halves (deterministic: sorted keys, then split at midpoint)
-    let mid = (goals.len() + 1) / 2;
+    let mid = goals.len().div_ceil(2);
     let (left_goals, right_goals) = goals.split_at(mid);
 
     let left_map: BTreeMap<String, f64> = left_goals.iter().cloned().collect();
@@ -406,7 +412,7 @@ fn count_tree(node: &TreeNode) -> (usize, usize) {
 
 fn tree_depth(node: &TreeNode) -> usize {
     if node.children.is_empty() { return node.depth; }
-    node.children.iter().map(|c| tree_depth(c)).max().unwrap_or(node.depth)
+    node.children.iter().map(tree_depth).max().unwrap_or(node.depth)
 }
 
 // ─── Interface Resolution ────────────────────────────────────────────────────
@@ -540,7 +546,7 @@ fn build_molecule_crystal(
         free_energy,
         carrier_instance_idx: 0,
         scale_tag: "compose:molecule".to_string(),
-        universe_id: format!("mol:{}", hex_encode(&crystal_id)[..8].to_string()),
+        universe_id: format!("mol:{}", &hex_encode(&crystal_id)[..8]),
         sub_crystal_ids: atom_crystal_ids.iter().map(|id| hex_encode(id)).collect(),
         parent_crystal_ids: Vec::new(),
         genesis_metadata: None,
@@ -575,7 +581,7 @@ fn build_system_crystal(
         digest: ev_digest,
         content: ev_data,
         provenance: ProvenanceEnvelope {
-            origin: format!("compose:system:{}", hex_encode(&spec.id)[..8].to_string()),
+            origin: format!("compose:system:{}", &hex_encode(&spec.id)[..8]),
             chain: molecule_crystal_ids.iter().map(|id| hex_encode(id)).collect(),
             sig: None,
         },
@@ -624,7 +630,7 @@ fn build_system_crystal(
         free_energy,
         carrier_instance_idx: 0,
         scale_tag: "compose:system".to_string(),
-        universe_id: format!("sys:{}", hex_encode(&spec.id)[..8].to_string()),
+        universe_id: format!("sys:{}", &hex_encode(&spec.id)[..8]),
         sub_crystal_ids: molecule_crystal_ids.iter().map(|id| hex_encode(id)).collect(),
         parent_crystal_ids: Vec::new(),
         genesis_metadata: None,
@@ -806,27 +812,21 @@ impl CompositionEngine {
         let result = self.forge.forge(spec.clone())
             .map_err(|e| ComposeError::AtomForgeFailed(node_id.clone(), e.to_string()))?;
 
-        let mut atom_artifacts = Vec::new();
-        for (i, (fa, crystal)) in result.artifacts.into_iter().zip(result.crystals.into_iter()).enumerate() {
-            let file_path = format!("{}/{}-{i}.artifact", node_id, node_id);
-            let atom = AtomArtifact {
-                node_id: node_id.clone(),
-                spec_id: spec.id,
-                crystal: crystal.clone(),
-                ir: fa.ir.clone(),
-                synthesis: fa.synthesis.clone(),
-                file_path,
-                forge_artifact: fa,
-            };
-            // Set the crystal on the tree node (first one)
-            if i == 0 { node.crystal = Some(crystal); }
-            atom_artifacts.push(atom);
-            break; // one artifact per atom node
-        }
-        if atom_artifacts.is_empty() {
-            return Err(ComposeError::AtomForgeFailed(node_id, "no artifacts produced".to_string()));
-        }
-        Ok(atom_artifacts)
+        let (fa, crystal) = result.artifacts.into_iter().zip(result.crystals.into_iter())
+            .next()
+            .ok_or_else(|| ComposeError::AtomForgeFailed(node_id.clone(), "no artifacts produced".to_string()))?;
+        let file_path = format!("{}/{}-0.artifact", node_id, node_id);
+        let atom = AtomArtifact {
+            node_id: node_id.clone(),
+            spec_id: spec.id,
+            crystal: crystal.clone(),
+            ir: fa.ir.clone(),
+            synthesis: fa.synthesis.clone(),
+            file_path,
+            forge_artifact: fa,
+        };
+        node.crystal = Some(crystal);
+        Ok(vec![atom])
     }
 
     /// Resolve interfaces between a set of atom artifacts and their contracts.
@@ -1066,12 +1066,12 @@ impl CompositionEngine {
         // atoms/
         for atom in &artifact.atoms {
             std::fs::write(
-                output_dir.join(format!("atom-{}.artifact", hex_encode(&atom.crystal.crystal_id)[..8].to_string())),
+                output_dir.join(format!("atom-{}.artifact", &hex_encode(&atom.crystal.crystal_id)[..8])),
                 atom.synthesis.content.as_bytes(),
             )?;
             let crystal_json = serde_json::to_string_pretty(&atom.crystal)?;
             std::fs::write(
-                output_dir.join(format!("atom-{}.crystal.json", hex_encode(&atom.crystal.crystal_id)[..8].to_string())),
+                output_dir.join(format!("atom-{}.crystal.json", &hex_encode(&atom.crystal.crystal_id)[..8])),
                 crystal_json,
             )?;
         }

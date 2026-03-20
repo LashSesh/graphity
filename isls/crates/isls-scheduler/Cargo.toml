@@ -3,6 +3,8 @@ name = "isls-scheduler"
 version = "1.0.0"
 edition = "2021"
 description = "ISLS Spiral Scheduler — C15: adaptive tick granularity"
+authors = ["Sebastian Klemm"]
+license = "MIT"
 
 [dependencies]
 isls-types = { path = "../isls-types" }

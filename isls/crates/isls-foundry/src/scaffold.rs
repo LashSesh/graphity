@@ -153,6 +153,7 @@ impl ProjectScaffold {
     /// Write a complete project scaffold to `dir`.
     ///
     /// Returns the list of files written.
+    #[allow(clippy::too_many_arguments)]
     pub fn write_project(
         dir: &Path,
         name: &str,
@@ -243,9 +244,7 @@ impl ProjectScaffold {
         }
 
         // Stub integration test
-        let test_content = format!(
-            "#[test]\nfn project_compiles() {{\n    // Smoke test: the project compiles.\n    assert!(true);\n}}\n"
-        );
+        let test_content = "#[test]\nfn project_compiles() {\n    // Smoke test: the project compiles.\n    assert!(true);\n}\n".to_string();
         fs::write(dir.join("tests/integration.rs"), &test_content)?;
         files.push(GeneratedFile::new("tests/integration.rs", &test_content, SynthesisSource::Static));
 
