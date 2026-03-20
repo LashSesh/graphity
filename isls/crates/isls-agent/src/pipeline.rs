@@ -482,7 +482,7 @@ mod tests {
 
         match result2 {
             AgentResult::Success {
-                features, events, ..
+                features, ..
             } => {
                 // Should only add the delete feature, not rebuild everything
                 assert!(

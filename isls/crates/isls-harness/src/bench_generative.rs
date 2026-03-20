@@ -464,20 +464,66 @@ pub fn bench_template_match_accuracy(git_commit: &str) -> BenchResult {
 // ─── B23: gateway_latency ─────────────────────────────────────────────────────
 
 /// B23: Average round-trip for key Gateway endpoints (ms/request).
-/// Measures in-process overhead (no actual HTTP in mock mode).
+/// Sends real HTTP requests to the gateway at localhost:8420.
+/// The gateway must be running (run_all_scenarios scripts handle lifecycle).
 pub fn bench_gateway_latency(git_commit: &str) -> BenchResult {
-    // In mock mode: measure the overhead of route dispatch logic
-    const N: usize = 100;
-    let start = Instant::now();
-    for _ in 0..N {
-        // Simulate a lightweight health-check equivalent
-        let _ = std::hint::black_box(format!("{{\"status\":\"ok\",\"ts\":{}}}", Utc::now().timestamp_millis()));
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+
+    const HOST: &str = "127.0.0.1:8420";
+    const N: usize = 50;
+
+    let endpoints = [
+        ("GET", "/health"),
+        ("GET", "/crystals"),
+        ("GET", "/health"),
+    ];
+
+    // Try to connect; if gateway is not running, fall back to mock measurement
+    let gateway_up = TcpStream::connect(HOST).is_ok();
+
+    if gateway_up {
+        let start = Instant::now();
+        let mut success = 0usize;
+        for i in 0..N {
+            let (method, path) = endpoints[i % endpoints.len()];
+            if let Ok(mut stream) = TcpStream::connect(HOST) {
+                let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+                let request = format!(
+                    "{} {} HTTP/1.1\r\nHost: 127.0.0.1:8420\r\nConnection: close\r\n\r\n",
+                    method, path
+                );
+                if stream.write_all(request.as_bytes()).is_ok() {
+                    let mut buf = vec![0u8; 4096];
+                    let _ = stream.read(&mut buf);
+                    success += 1;
+                }
+            }
+        }
+        let elapsed = start.elapsed();
+        let ms_per_req = if success > 0 {
+            elapsed.as_secs_f64() * 1000.0 / success as f64
+        } else {
+            0.0
+        };
+        let mut params = BTreeMap::new();
+        params.insert("endpoints".to_string(), "GET /health,GET /crystals".to_string());
+        params.insert("requests".to_string(), success.to_string());
+        params.insert("mode".to_string(), "live".to_string());
+        make_result_with_params("B23", git_commit, "gateway_latency", ms_per_req, "ms/request", params)
+    } else {
+        // Fallback: measure string-format overhead so the benchmark always produces a result
+        let start = Instant::now();
+        for _ in 0..N {
+            let _ = std::hint::black_box(format!("{{\"status\":\"ok\",\"ts\":{}}}", Utc::now().timestamp_millis()));
+        }
+        let elapsed = start.elapsed();
+        let ms_per_req = elapsed.as_secs_f64() * 1000.0 / N as f64;
+        let mut params = BTreeMap::new();
+        params.insert("endpoints".to_string(), "GET /health,GET /crystals,POST /forge".to_string());
+        params.insert("mode".to_string(), "mock (gateway not running)".to_string());
+        make_result_with_params("B23", git_commit, "gateway_latency", ms_per_req, "ms/request", params)
     }
-    let elapsed = start.elapsed();
-    let ms_per_req = elapsed.as_millis() as f64 / N as f64;
-    let mut params = BTreeMap::new();
-    params.insert("endpoints".to_string(), "GET /health,GET /crystals,POST /forge".to_string());
-    make_result_with_params("B23", git_commit, "gateway_latency", ms_per_req, "ms/request", params)
 }
 
 // ─── B24: full_fabrication_time ───────────────────────────────────────────────
