@@ -16,7 +16,7 @@ Built entirely in Rust. No garbage collector. No runtime exceptions. One binary.
 
 | Metric | Value |
 |--------|-------|
-| Observation throughput | 853 K obs/sec (single laptop) |
+| Observation throughput | >800 K obs/sec (single laptop) |
 | Crystal validation | 146 crystals, 100% pass rate, 5 scenarios |
 | Live code generation | 100% compile rate (6 consecutive runs) |
 | Oracle latency | ~800 ms (OpenAI gpt-4o-mini) |
