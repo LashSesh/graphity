@@ -504,9 +504,7 @@ ISLS is governed by the **ADAMANT Protocol** &mdash; 21 machine-verifiable const
 
 If you use ISLS in academic work, please cite:
 
-> Klemm, S. (2026). *ISLS &mdash; Intelligent Semantic Ledger Substrate* (Version 1.0.0). Zenodo. [https://doi.org/10.5281/zenodo.XXXXXXX](https://doi.org/10.5281/zenodo.XXXXXXX)
-
-*(Zenodo DOI will be assigned upon first release.)*
+Klemm, S. (2026). ISLS: Evidence-Based Software Intelligence Through Adversarial Crystallization and Progressive Autonomy. Zenodo. https://doi.org/10.5281/zenodo.19138863
 
 ---
 
