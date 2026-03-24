@@ -1,0 +1,15 @@
+[package]
+name = "isls-integrator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cross-module interface verification for ISLS full-stack generation"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+isls-reader = { path = "../isls-reader" }
+isls-planner = { path = "../isls-planner" }
+regex.workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "isls-langgen"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Grammar and language generation for ISLS (condensed from Die Schmiede)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

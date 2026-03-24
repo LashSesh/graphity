@@ -34,6 +34,9 @@ isls-gateway = { path = "../isls-gateway" }
 isls-multilang = { path = "../isls-multilang" }
 isls-navigator = { path = "../isls-navigator" }
 isls-agent = { path = "../isls-agent" }
+isls-orchestrator = { path = "../isls-orchestrator" }
+isls-planner = { path = "../isls-planner" }
+isls-blueprint = { path = "../isls-blueprint" }
 
 serde = { workspace = true }
 tokio = { workspace = true }

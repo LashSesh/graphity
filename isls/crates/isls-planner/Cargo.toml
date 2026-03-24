@@ -1,0 +1,14 @@
+[package]
+name = "isls-planner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "AppSpec parsing and architecture planning for ISLS full-stack generation"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+isls-blueprint = { path = "../isls-blueprint" }

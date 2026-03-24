@@ -1,0 +1,32 @@
+# Warehouse Management System — ISLS Full-Stack Autonomy constraint file
+# Usage: isls forge-fullstack --constraints examples/warehouse.toml --output ./output/warehouse --mock-oracle
+
+[app]
+name = "warehouse-system"
+description = "Warehouse management with inventory, orders, reporting"
+
+[app.modules]
+inventory = "Product catalog, stock levels, reorder alerts"
+orders = "Order creation, fulfillment, cancellation, tracking"
+reporting = "Daily/weekly/monthly reports, KPI dashboard"
+auth = "JWT authentication, role-based access (admin, operator)"
+
+[backend]
+language = "rust"
+framework = "actix-web"
+database = "postgresql"
+auth_method = "jwt"
+
+[frontend]
+type = "spa"
+framework = "vanilla"
+styling = "minimal"
+
+[deployment]
+containerized = true
+compose = true
+
+[constraints]
+max_crates = 1
+test_coverage = "integration"
+evidence_chain = true

@@ -92,6 +92,8 @@ enum Command {
     // C28 Babylon Bridge commands
     ForgeMultilang { spec: Option<String>, lang: String, template: Option<String>, dump_ir: Option<String>, oracle: Option<String> },
     BabylonCheck { ir: Option<String> },
+    // Full-Stack Autonomy pipeline
+    ForgeFullStack { app: Option<String>, constraints: String, output: String, mock_oracle: bool, verify_compilation: bool },
     Validate { formal: bool, retro: bool },
     Report { json: bool, html: bool, full_html: bool },
     Status,
@@ -417,6 +419,22 @@ fn parse_args(args: &[String]) -> Command {
             } else {
                 Command::Help
             }
+        }
+        "forge-fullstack" => {
+            let app = args.iter().position(|a| a == "--app")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let constraints = args.iter().position(|a| a == "--constraints")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "warehouse.toml".to_string());
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "./output".to_string());
+            let mock_oracle = args.contains(&"--mock-oracle".to_string());
+            let verify_compilation = args.contains(&"--verify".to_string());
+            Command::ForgeFullStack { app, constraints, output, mock_oracle, verify_compilation }
         }
         "validate" => {
             let formal = args.contains(&"--formal".to_string());
@@ -1867,6 +1885,105 @@ fn cmd_forge_multilang(
             }
         }
         Err(e) => eprintln!("Forge failed: {e}"),
+    }
+}
+
+// ─── Full-Stack Autonomy: forge-fullstack ─────────────────────────────────────
+
+fn cmd_forge_fullstack(
+    app: Option<&str>,
+    constraints_path: &str,
+    output: &str,
+    mock_oracle: bool,
+    verify_compilation: bool,
+) {
+    use isls_orchestrator::{Orchestrator, OrchestratorConfig};
+    use isls_planner::parse_toml;
+    use std::path::Path;
+    use std::time::Instant;
+
+    let start = Instant::now();
+
+    println!("╔══════════════════════════════════════════════════════╗");
+    println!("║       ISLS Full-Stack Autonomy Pipeline v1.0         ║");
+    println!("╚══════════════════════════════════════════════════════╝");
+    println!();
+
+    // Stage 0: Parse constraint TOML
+    let constraints_file = Path::new(constraints_path);
+    if !constraints_file.exists() {
+        eprintln!("[ERROR] Constraints file not found: {}", constraints_path);
+        std::process::exit(1);
+    }
+
+    let mut spec = match parse_toml(constraints_file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[ERROR] Failed to parse {}: {}", constraints_path, e);
+            std::process::exit(1);
+        }
+    };
+
+    // Override app name if provided via --app flag
+    if let Some(app_name) = app {
+        if !app_name.is_empty() {
+            spec.name = app_name.replace(' ', "-").to_lowercase();
+        }
+    }
+
+    println!("[Stage 0] DESCRIBE");
+    println!("  app:      {}", spec.name);
+    println!("  modules:  {}", spec.modules.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join(", "));
+    println!("  backend:  {} / {}", spec.backend.language, spec.backend.framework);
+    println!("  frontend: {} / {}", spec.frontend.framework, spec.frontend.app_type);
+    println!("  oracle:   {}", if mock_oracle { "mock (template-based)" } else { "live (LLM)" });
+    println!();
+
+    let output_dir = Path::new(output);
+
+    // Build orchestrator config
+    let config = OrchestratorConfig {
+        mock_oracle,
+        verify_compilation,
+        blueprint_path: Some(output_dir.join("evidence/blueprint_registry.json")),
+        ..OrchestratorConfig::default()
+    };
+
+    let mut orchestrator = Orchestrator::new(config);
+
+    // Run the full pipeline
+    match orchestrator.run(spec, output_dir) {
+        Ok(report) => {
+            let elapsed = start.elapsed().as_secs_f64();
+            println!();
+            println!("╔══════════════════════════════════════════════════════╗");
+            println!("║                 GENERATION COMPLETE                  ║");
+            println!("╚══════════════════════════════════════════════════════╝");
+            println!();
+            println!("  App:              {}", report.app_name);
+            println!("  Files generated:  {}", report.total_files_generated);
+            println!("  Total LOC:        {}", report.total_loc);
+            println!("  Oracle calls:     {}", report.oracle_calls);
+            println!("  Blueprint hits:   {} ({:.0}%)", report.blueprint_hits,
+                report.blueprint_hit_rate * 100.0);
+            println!("  Blueprints total: {}", report.crystals_created);
+            println!("  Evidence chain:   {}", if report.evidence_chain_valid { "VALID" } else { "INVALID" });
+            println!("  Total time:       {:.1}s", elapsed);
+            println!();
+            println!("  Output:           {}", output);
+            println!("  Backend:          {}/backend/", output);
+            println!("  Frontend:         {}/frontend/", output);
+            println!("  Evidence:         {}/evidence/", output);
+            println!();
+            println!("Next steps:");
+            println!("  cd {}/backend && cargo build", output);
+            println!("  cd {} && docker-compose up -d", output);
+        }
+        Err(e) => {
+            eprintln!();
+            eprintln!("[ERROR] Pipeline failed: {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
@@ -4390,6 +4507,9 @@ fn main() {
             cmd_forge_multilang(spec.as_deref(), &lang, template.as_deref(), dump_ir.as_deref(), oracle.as_deref());
         }
         Command::BabylonCheck { ir } => cmd_babylon_check(ir.as_deref()),
+        Command::ForgeFullStack { app, constraints, output, mock_oracle, verify_compilation } => {
+            cmd_forge_fullstack(app.as_deref(), &constraints, &output, mock_oracle, verify_compilation);
+        }
         Command::Validate { formal, retro } => cmd_validate(formal, retro),
         Command::Report { json, html, full_html } => {
             if full_html { cmd_report_full_html(); } else { cmd_report(json, html); }
