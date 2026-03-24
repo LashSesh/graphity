@@ -8,3 +8,4 @@ Thumbs.db
 .isls/
 bench_history.jsonl
 full-report.html
+/output/
