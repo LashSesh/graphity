@@ -627,6 +627,19 @@ fn build_interfaces(spec: &AppSpec) -> Vec<Interface> {
     interfaces
 }
 
+fn layer_priority(layer: &str) -> usize {
+    match layer {
+        "models" => 0,
+        "database" => 1,
+        "services" => 2,
+        "api" => 3,
+        "tests" => 4,
+        "deploy" => 5,
+        "frontend" => 6,
+        _ => 7,
+    }
+}
+
 fn topological_sort(components: &[Component]) -> Vec<GenerationStep> {
     let mut in_degree: BTreeMap<String, usize> = BTreeMap::new();
     let mut adjacency: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -639,10 +652,17 @@ fn topological_sort(components: &[Component]) -> Vec<GenerationStep> {
         }
     }
 
-    let mut queue: VecDeque<String> = in_degree.iter()
+    // Sort zero-in-degree nodes by layer priority so models always come first.
+    let mut initial: Vec<String> = in_degree.iter()
         .filter(|(_, &deg)| deg == 0)
         .map(|(name, _)| name.clone())
         .collect();
+    initial.sort_by_key(|name| {
+        let layer = components.iter().find(|c| &c.name == name)
+            .map(|c| c.layer.as_str()).unwrap_or("");
+        (layer_priority(layer), name.clone())
+    });
+    let mut queue: VecDeque<String> = initial.into_iter().collect();
 
     let mut steps = Vec::new();
     let mut order = 1;
@@ -665,13 +685,19 @@ fn topological_sort(components: &[Component]) -> Vec<GenerationStep> {
             });
             order += 1;
         }
-        if let Some(dependents) = adjacency.get(&name) {
-            for dep in dependents {
+        if let Some(dependents) = adjacency.get(&name).cloned() {
+            let mut newly_free: Vec<String> = dependents.iter().filter_map(|dep| {
                 let deg = in_degree.entry(dep.clone()).or_insert(0);
                 if *deg > 0 { *deg -= 1; }
-                if *deg == 0 {
-                    queue.push_back(dep.clone());
-                }
+                if *deg == 0 { Some(dep.clone()) } else { None }
+            }).collect();
+            newly_free.sort_by_key(|n| {
+                let layer = components.iter().find(|c| &c.name == n)
+                    .map(|c| c.layer.as_str()).unwrap_or("");
+                (layer_priority(layer), n.clone())
+            });
+            for dep in newly_free {
+                queue.push_back(dep);
             }
         }
     }
