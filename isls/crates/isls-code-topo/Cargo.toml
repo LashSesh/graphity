@@ -1,0 +1,13 @@
+[package]
+name = "isls-code-topo"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Code topology computation for ISLS (ported from Barbara codex-topo)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+isls-reader = { path = "../isls-reader" }

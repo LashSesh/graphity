@@ -1,0 +1,13 @@
+[package]
+name = "isls-blueprint"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Blueprint registry for structural code generation patterns"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true

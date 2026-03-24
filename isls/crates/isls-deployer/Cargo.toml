@@ -1,0 +1,14 @@
+[package]
+name = "isls-deployer"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Docker and deployment artifact generation for ISLS full-stack applications"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tera.workspace = true
+isls-planner = { path = "../isls-planner" }

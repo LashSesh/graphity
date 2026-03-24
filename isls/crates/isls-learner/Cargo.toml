@@ -1,0 +1,15 @@
+[package]
+name = "isls-learner"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cross-language pattern accumulation for ISLS (ported from Barbara codex-learn)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+sha2.workspace = true
+isls-reader = { path = "../isls-reader" }
+isls-code-topo = { path = "../isls-code-topo" }
