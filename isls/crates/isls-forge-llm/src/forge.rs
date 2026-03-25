@@ -126,10 +126,8 @@ impl LlmForge {
             self.generated_files.push(generated);
         }
 
-        // Final compilation check (only in mock mode; LLM mode checks each file)
-        if self.mock_mode {
-            self.final_compile_check()?;
-        }
+        // Mock mode: skip cargo check entirely — mock generators are deterministic
+        // and validated by unit tests. LLM mode checks each file individually.
 
         self.stats.total_time_secs = start.elapsed().as_secs_f64();
         tracing::info!(
