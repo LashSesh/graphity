@@ -140,7 +140,7 @@ enum Command {
     TemplateDistill { crystal_id: String, name: String },
     TemplateCompose { name: String, includes: Vec<String> },
     // C19 Gateway / Studio
-    Serve { port: u16 },
+    Serve { port: u16, api_key: Option<String> },
     // C29 Navigator
     Navigate {
         mode: String,
@@ -539,7 +539,10 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(8420);
-            Command::Serve { port }
+            let api_key = args.iter().position(|a| a == "--api-key")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Serve { port, api_key }
         }
         "navigate" => {
             if args.len() > 2 {
@@ -4332,8 +4335,18 @@ fn cmd_open(capsule_path: &str) {
     }
 }
 
-fn cmd_serve(port: u16) {
-    println!("ISLS Gateway starting on port {}...", port);
+fn cmd_serve(port: u16, api_key: Option<String>) {
+    // Set API key in environment if provided via --api-key flag
+    if let Some(ref key) = api_key {
+        std::env::set_var("OPENAI_API_KEY", key);
+    }
+
+    let has_key = api_key.is_some()
+        || std::env::var("OPENAI_API_KEY").is_ok()
+        || std::env::var("ANTHROPIC_API_KEY").is_ok();
+
+    println!("ISLS Gateway v3.2 starting on port {}...", port);
+    println!("Mode: {}", if has_key { "LLM generation (API key provided)" } else { "Mock mode (no API key)" });
     println!("Studio available at http://localhost:{}/studio", port);
     println!("API available at http://localhost:{}/", port);
     println!("WebSocket events at ws://localhost:{}/events", port);
@@ -4958,7 +4971,7 @@ fn main() {
         Command::TemplateCreate { name, structure } => cmd_template_create(&name, &structure),
         Command::TemplateDistill { crystal_id, name } => cmd_template_distill(&crystal_id, &name),
         Command::TemplateCompose { name, includes } => cmd_template_compose(&name, &includes),
-        Command::Serve { port } => cmd_serve(port),
+        Command::Serve { port, api_key } => cmd_serve(port, api_key),
         // C29 Navigator
         Command::Navigate { mode, steps, domain, template } => {
             cmd_navigate(&mode, steps, domain.as_deref(), template.as_deref());
@@ -5158,7 +5171,10 @@ mod tests {
     fn test_parse_serve() {
         let cmd = parse_args(&args(&["isls", "serve"]));
         match cmd {
-            Command::Serve { port } => assert_eq!(port, 8420),
+            Command::Serve { port, api_key } => {
+                assert_eq!(port, 8420);
+                assert!(api_key.is_none());
+            }
             _ => panic!("expected Serve"),
         }
     }
@@ -5167,8 +5183,23 @@ mod tests {
     fn test_parse_serve_port() {
         let cmd = parse_args(&args(&["isls", "serve", "--port", "9090"]));
         match cmd {
-            Command::Serve { port } => assert_eq!(port, 9090),
+            Command::Serve { port, api_key } => {
+                assert_eq!(port, 9090);
+                assert!(api_key.is_none());
+            }
             _ => panic!("expected Serve with port"),
+        }
+    }
+
+    #[test]
+    fn test_parse_serve_api_key() {
+        let cmd = parse_args(&args(&["isls", "serve", "--api-key", "sk-test123"]));
+        match cmd {
+            Command::Serve { port, api_key } => {
+                assert_eq!(port, 8420);
+                assert_eq!(api_key.as_deref(), Some("sk-test123"));
+            }
+            _ => panic!("expected Serve with api_key"),
         }
     }
 }

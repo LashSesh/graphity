@@ -9,6 +9,7 @@ description = "ISLS v3.1 — LLM-driven, compile-verified code generation engine
 [dependencies]
 isls-renderloop = { path = "../isls-renderloop" }
 isls-hypercube   = { path = "../isls-hypercube" }
+isls-norms       = { path = "../isls-norms" }
 thiserror = { workspace = true }
 tracing   = { workspace = true }
 serde     = { workspace = true }
