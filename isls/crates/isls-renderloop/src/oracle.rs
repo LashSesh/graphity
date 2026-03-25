@@ -20,18 +20,42 @@ pub fn estimate_tokens(text: &str) -> u64 {
 
 /// Strip markdown code fences from an LLM response.
 ///
-/// Handles fenced blocks introduced by ` ```rust `, ` ```toml `, ` ```json `,
-/// ` ```javascript `, ` ```sql `, ` ```html `, ` ```css `, or plain ` ``` `.
-/// If the response is not wrapped in fences it is returned unchanged.
+/// Handles both ` ``` ` and `~~~` fence delimiters, with any language tag on
+/// the opening line (e.g. ` ```rust `, ` ```toml `, `~~~javascript `).
+/// Searches for the **first** closing fence from the end, so any trailing
+/// explanation the LLM appends after the block is also discarded.
+/// If no complete fence pair is found the input is returned unchanged.
 fn strip_markdown_fences(response: &str) -> String {
     let trimmed = response.trim();
-    if trimmed.starts_with("```") {
-        let lines: Vec<&str> = trimmed.lines().collect();
-        if lines.len() >= 2 && lines.last().map_or(false, |l| l.trim() == "```") {
-            return lines[1..lines.len() - 1].join("\n");
+
+    let delimiter = if trimmed.starts_with("```") {
+        "```"
+    } else if trimmed.starts_with("~~~") {
+        "~~~"
+    } else {
+        return response.to_string();
+    };
+
+    let lines: Vec<&str> = trimmed.lines().collect();
+    if lines.len() < 2 {
+        return response.to_string();
+    }
+
+    // Find the first closing fence scanning from the end
+    let mut end = lines.len(); // sentinel: "not found"
+    for i in (1..lines.len()).rev() {
+        if lines[i].trim() == delimiter {
+            end = i;
+            break;
         }
     }
-    response.to_string()
+
+    if end == lines.len() {
+        // No closing fence — leave unchanged
+        return response.to_string();
+    }
+
+    lines[1..end].join("\n")
 }
 
 // ─── Oracle trait ─────────────────────────────────────────────────────────────
@@ -261,5 +285,26 @@ mod tests {
         // No closing ``` — must not strip anything
         let input = "```rust\nfn main() {}";
         assert_eq!(strip_markdown_fences(input), input);
+    }
+
+    #[test]
+    fn strips_tilde_fence() {
+        let input = "~~~rust\nfn foo() {}\n~~~";
+        assert_eq!(strip_markdown_fences(input), "fn foo() {}");
+    }
+
+    #[test]
+    fn unclosed_tilde_fence_unchanged() {
+        let input = "~~~rust\nfn foo() {}";
+        assert_eq!(strip_markdown_fences(input), input);
+    }
+
+    #[test]
+    fn trailing_explanation_discarded() {
+        // LLM sometimes appends prose after the closing fence
+        let input = "```rust\nfn foo() {}\n```\nThis implements foo.";
+        // The closing fence is found on the first scan from the end, so
+        // everything from the fence onward is dropped.
+        assert_eq!(strip_markdown_fences(input), "fn foo() {}");
     }
 }
