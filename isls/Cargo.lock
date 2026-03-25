@@ -1126,6 +1126,7 @@ version = "1.0.0"
 dependencies = [
  "isls-blueprint",
  "isls-code-topo",
+ "isls-forge-llm",
  "isls-hypercube",
  "isls-orchestrator",
  "isls-renderloop",
@@ -1134,6 +1135,7 @@ dependencies = [
  "sha2",
  "tera",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -1194,6 +1196,18 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "isls-forge-llm"
+version = "1.0.0"
+dependencies = [
+ "isls-hypercube",
+ "isls-renderloop",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

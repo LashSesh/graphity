@@ -1,0 +1,15 @@
+[package]
+name = "isls-forge-llm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "ISLS v3.1 — LLM-driven, compile-verified code generation engine"
+
+[dependencies]
+isls-renderloop = { path = "../isls-renderloop" }
+isls-hypercube   = { path = "../isls-hypercube" }
+thiserror = { workspace = true }
+tracing   = { workspace = true }
+serde     = { workspace = true }
+serde_json = { workspace = true }

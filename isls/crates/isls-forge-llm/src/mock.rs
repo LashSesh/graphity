@@ -1,0 +1,1059 @@
+// Copyright (c) 2026 Sebastian Klemm
+// SPDX-License-Identifier: MIT
+//
+//! Mock code generators for ISLS v3.1 (no LLM required).
+//!
+//! These are pure Rust functions that build compilable code strings from
+//! entity field definitions.  They are NOT Tera templates — they cannot break
+//! due to field-name mismatches because they read the actual field names and
+//! Rust types from the entity definition.
+//!
+//! Mock mode produces thin but compile-correct code.  It is used when:
+//! - `--mock-oracle` flag is passed
+//! - No OpenAI API key is available
+//! - Tests that don't need real LLM output
+
+use crate::{AppSpec, EntityDef};
+
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+/// Return only the "user input" fields (not id/created_at/updated_at).
+fn user_fields(entity: &EntityDef) -> Vec<&isls_hypercube::domain::FieldDef> {
+    entity
+        .fields
+        .iter()
+        .filter(|f| !matches!(f.name.as_str(), "id" | "created_at" | "updated_at"))
+        .collect()
+}
+
+/// Make an Option wrapper if the type isn't already Option<…>.
+fn as_option(rust_type: &str) -> String {
+    if rust_type.starts_with("Option<") {
+        rust_type.to_string()
+    } else {
+        format!("Option<{}>", rust_type)
+    }
+}
+
+// ─── Foundation ───────────────────────────────────────────────────────────────
+
+/// Generate `backend/src/errors.rs` — compilable AppError enum.
+pub fn mock_generate_errors() -> String {
+    r#"// Copyright (c) 2026 Sebastian Klemm — ISLS v3.1 mock generated
+use actix_web::{HttpResponse, ResponseError};
+use serde::Serialize;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum AppError {
+    #[error("not found: {0}")]
+    NotFound(String),
+    #[error("validation error")]
+    ValidationError(Vec<String>),
+    #[error("unauthorized")]
+    Unauthorized,
+    #[error("forbidden")]
+    Forbidden,
+    #[error("conflict: {0}")]
+    Conflict(String),
+    #[error("internal error: {0}")]
+    InternalError(String),
+}
+
+#[derive(Serialize)]
+struct ErrorBody {
+    error: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    messages: Vec<String>,
+}
+
+impl ResponseError for AppError {
+    fn error_response(&self) -> HttpResponse {
+        let (status, messages) = match self {
+            AppError::NotFound(msg) => (
+                actix_web::http::StatusCode::NOT_FOUND,
+                vec![msg.clone()],
+            ),
+            AppError::ValidationError(msgs) => (
+                actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+                msgs.clone(),
+            ),
+            AppError::Unauthorized => (actix_web::http::StatusCode::UNAUTHORIZED, vec![]),
+            AppError::Forbidden => (actix_web::http::StatusCode::FORBIDDEN, vec![]),
+            AppError::Conflict(msg) => (actix_web::http::StatusCode::CONFLICT, vec![msg.clone()]),
+            AppError::InternalError(msg) => (
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                vec![msg.clone()],
+            ),
+        };
+        HttpResponse::build(status).json(ErrorBody {
+            error: self.to_string(),
+            messages,
+        })
+    }
+}
+
+impl From<sqlx::Error> for AppError {
+    fn from(e: sqlx::Error) -> Self {
+        match e {
+            sqlx::Error::RowNotFound => AppError::NotFound("record not found".into()),
+            _ => AppError::InternalError(e.to_string()),
+        }
+    }
+}
+"#
+    .into()
+}
+
+/// Generate `backend/src/config.rs` — environment-based configuration.
+pub fn mock_generate_config(app_name: &str) -> String {
+    format!(
+        r#"// ISLS v3.1 mock generated — {app}
+use crate::AppError;
+
+#[derive(Clone, Debug)]
+pub struct AppConfig {{
+    pub database_url: String,
+    pub jwt_secret: String,
+    pub port: u16,
+}}
+
+impl AppConfig {{
+    pub fn from_env() -> Result<Self, AppError> {{
+        let database_url = std::env::var("DATABASE_URL")
+            .map_err(|_| AppError::InternalError("DATABASE_URL not set".into()))?;
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "dev-secret-change-in-production".into());
+        let port = std::env::var("PORT")
+            .unwrap_or_else(|_| "8080".into())
+            .parse::<u16>()
+            .unwrap_or(8080);
+        Ok(Self {{ database_url, jwt_secret, port }})
+    }}
+}}
+"#,
+        app = app_name
+    )
+}
+
+/// Generate `backend/src/pagination.rs`.
+pub fn mock_generate_pagination() -> String {
+    r#"// ISLS v3.1 mock generated
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaginationParams {
+    #[serde(default = "default_page")]
+    pub page: u64,
+    #[serde(default = "default_per_page")]
+    pub per_page: u64,
+}
+
+fn default_page() -> u64 { 1 }
+fn default_per_page() -> u64 { 20 }
+
+impl PaginationParams {
+    pub fn offset(&self) -> i64 {
+        ((self.page.saturating_sub(1)) * self.per_page) as i64
+    }
+    pub fn limit(&self) -> i64 {
+        self.per_page as i64
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PaginatedResponse<T: Serialize> {
+    pub items: Vec<T>,
+    pub total: i64,
+    pub page: u64,
+    pub per_page: u64,
+}
+
+impl<T: Serialize> PaginatedResponse<T> {
+    pub fn new(items: Vec<T>, total: i64, params: &PaginationParams) -> Self {
+        Self { items, total, page: params.page, per_page: params.per_page }
+    }
+}
+"#
+    .into()
+}
+
+/// Generate `backend/src/auth.rs` — JWT skeleton.
+pub fn mock_generate_auth() -> String {
+    r#"// ISLS v3.1 mock generated
+use actix_web::{dev::Payload, FromRequest, HttpRequest};
+use futures::future::{ready, Ready};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use serde::{Deserialize, Serialize};
+use std::future::Future;
+use std::pin::Pin;
+
+use crate::AppError;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: i64,
+    pub email: String,
+    pub role: String,
+    pub exp: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthUser {
+    pub id: i64,
+    pub email: String,
+    pub role: String,
+}
+
+pub fn encode_jwt(claims: &Claims, secret: &str) -> Result<String, AppError> {
+    encode(
+        &Header::default(),
+        claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| AppError::InternalError(format!("JWT encode error: {}", e)))
+}
+
+pub fn decode_jwt(token: &str, secret: &str) -> Result<Claims, AppError> {
+    decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map(|d| d.claims)
+    .map_err(|_| AppError::Unauthorized)
+}
+
+pub fn require_role(user: &AuthUser, min_role: &str) -> Result<(), AppError> {
+    let rank = |r: &str| match r {
+        "admin" => 3,
+        "operator" => 2,
+        "viewer" => 1,
+        _ => 0,
+    };
+    if rank(&user.role) >= rank(min_role) {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
+fn jwt_secret() -> String {
+    std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret".into())
+}
+
+impl FromRequest for AuthUser {
+    type Error = AppError;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        let token = req
+            .headers()
+            .get("Authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "))
+            .unwrap_or("");
+
+        let result = decode_jwt(token, &jwt_secret()).map(|claims| AuthUser {
+            id: claims.sub,
+            email: claims.email,
+            role: claims.role,
+        });
+
+        ready(result)
+    }
+}
+"#
+    .into()
+}
+
+// ─── Models ───────────────────────────────────────────────────────────────────
+
+/// Generate a model file for `entity` (struct + Create/Update payloads).
+pub fn mock_generate_model(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let mut code = String::new();
+
+    code.push_str("// ISLS v3.1 mock generated\n");
+    code.push_str("use serde::{Deserialize, Serialize};\n");
+    code.push_str("use sqlx::FromRow;\n\n");
+
+    // Main struct
+    code.push_str(&format!(
+        "#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]\npub struct {} {{\n",
+        n
+    ));
+    for f in &entity.fields {
+        code.push_str(&format!("    pub {}: {},\n", f.name, f.rust_type));
+    }
+    code.push_str("}\n\n");
+
+    // Create payload
+    let ufields = user_fields(entity);
+    code.push_str(&format!(
+        "#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct Create{}Payload {{\n",
+        n
+    ));
+    for f in &ufields {
+        code.push_str(&format!("    pub {}: {},\n", f.name, f.rust_type));
+    }
+    code.push_str("}\n\n");
+
+    // Update payload
+    code.push_str(&format!(
+        "#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct Update{}Payload {{\n",
+        n
+    ));
+    for f in &ufields {
+        code.push_str(&format!(
+            "    pub {}: {},\n",
+            f.name,
+            as_option(&f.rust_type)
+        ));
+    }
+    code.push_str("}\n\n");
+
+    // validate() method
+    code.push_str(&format!("impl {} {{\n", n));
+    code.push_str("    pub fn validate(&self) -> Vec<String> {\n");
+    code.push_str("        let mut errors: Vec<String> = Vec::new();\n");
+    for v in &entity.validations {
+        code.push_str(&format!(
+            "        if !({}) {{ errors.push(\"{}\".into()); }}\n",
+            v.condition, v.message
+        ));
+    }
+    code.push_str("        errors\n");
+    code.push_str("    }\n");
+    code.push_str("}\n");
+
+    code
+}
+
+/// Generate `backend/src/models/user.rs`.
+pub fn mock_generate_user_model() -> String {
+    r#"// ISLS v3.1 mock generated
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct User {
+    pub id: i64,
+    pub email: String,
+    #[serde(skip_serializing)]
+    pub password_hash: String,
+    pub role: String,
+    pub is_active: bool,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateUserPayload {
+    pub email: String,
+    pub password: String,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateUserPayload {
+    pub email: Option<String>,
+    pub role: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+impl User {
+    pub fn validate_email(email: &str) -> Vec<String> {
+        let mut errors = Vec::new();
+        if email.trim().is_empty() { errors.push("Email must not be empty".into()); }
+        if !email.contains('@') { errors.push("Email must contain @".into()); }
+        errors
+    }
+}
+"#
+    .into()
+}
+
+// ─── Database ─────────────────────────────────────────────────────────────────
+
+/// Generate the initial SQL migration for all entities.
+pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
+    let mut sql = String::new();
+
+    sql.push_str("-- ISLS v3.1 mock generated\n\n");
+
+    // users table always first
+    sql.push_str(
+        r#"CREATE TABLE IF NOT EXISTS users (
+    id            BIGSERIAL PRIMARY KEY,
+    email         VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role          VARCHAR(50)  NOT NULL DEFAULT 'operator',
+    is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Seed admin user (password: admin123)
+INSERT INTO users (email, password_hash, role)
+VALUES ('admin@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiHK6L1GWWO', 'admin')
+ON CONFLICT (email) DO NOTHING;
+
+"#,
+    );
+
+    for entity in entities.iter().filter(|e| e.name != "User") {
+        sql.push_str(&format!(
+            "CREATE TABLE IF NOT EXISTS {}s (\n",
+            entity.snake_name
+        ));
+        for f in &entity.fields {
+            let notnull = if f.nullable { "" } else { " NOT NULL" };
+            let default = f
+                .default_value
+                .as_deref()
+                .map(|d| format!(" DEFAULT {}", d))
+                .unwrap_or_default();
+            sql.push_str(&format!(
+                "    {} {}{}{},\n",
+                f.name, f.sql_type, notnull, default
+            ));
+        }
+        // Remove trailing comma from last field
+        if let Some(pos) = sql.rfind(",\n") {
+            sql.replace_range(pos..pos + 2, "\n");
+        }
+        sql.push_str(");\n\n");
+    }
+
+    sql
+}
+
+/// Generate a `{entity}_queries.rs` file.
+pub fn mock_generate_queries(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let sn = &entity.snake_name;
+
+    // Build the column list (all fields)
+    let cols: Vec<&str> = entity.fields.iter().map(|f| f.name.as_str()).collect();
+    let col_list = cols.join(", ");
+
+    // User-input fields for INSERT
+    let ufields = user_fields(entity);
+    let unames: Vec<&str> = ufields.iter().map(|f| f.name.as_str()).collect();
+    let placeholders: Vec<String> = (1..=unames.len()).map(|i| format!("${}", i)).collect();
+
+    format!(
+        r#"// ISLS v3.1 mock generated
+use sqlx::PgPool;
+use crate::{{AppError, errors::*}};
+use crate::models::{sn}::{{{n}, Create{n}Payload, Update{n}Payload}};
+use crate::pagination::{{PaginationParams, PaginatedResponse}};
+
+pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
+    sqlx::query_as!(
+        {n},
+        "SELECT {col_list} FROM {sn}s WHERE id = $1",
+        id
+    )
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("{n} {{}} not found", id)))
+}}
+
+pub async fn list_{sn}s(
+    pool: &PgPool,
+    params: &PaginationParams,
+) -> Result<PaginatedResponse<{n}>, AppError> {{
+    let total: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM {sn}s")
+        .fetch_one(pool)
+        .await?
+        .unwrap_or(0);
+
+    let items = sqlx::query_as!(
+        {n},
+        "SELECT {col_list} FROM {sn}s ORDER BY id DESC LIMIT $1 OFFSET $2",
+        params.limit(),
+        params.offset()
+    )
+    .fetch_all(pool)
+    .await?;
+
+    Ok(PaginatedResponse::new(items, total, params))
+}}
+
+pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
+    sqlx::query_as!(
+        {n},
+        "INSERT INTO {sn}s ({uname_list}) VALUES ({ph_list}) RETURNING {col_list}",
+        {payload_fields}
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
+}}
+
+pub async fn update_{sn}(
+    pool: &PgPool,
+    id: i64,
+    payload: Update{n}Payload,
+) -> Result<{n}, AppError> {{
+    // Fetch current, apply patches, update
+    let mut current = get_{sn}(pool, id).await?;
+    {update_fields}
+    sqlx::query_as!(
+        {n},
+        "UPDATE {sn}s SET ({set_cols}) = ({set_ph}) WHERE id = $1 RETURNING {col_list}",
+        id{current_vals}
+    )
+    .fetch_one(pool)
+    .await
+    .map_err(AppError::from)
+}}
+
+pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
+    let result = sqlx::query!("DELETE FROM {sn}s WHERE id = $1", id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {{
+        return Err(AppError::NotFound(format!("{n} {{}} not found", id)));
+    }}
+    Ok(())
+}}
+"#,
+        n = n,
+        sn = sn,
+        col_list = col_list,
+        uname_list = unames.join(", "),
+        ph_list = placeholders.join(", "),
+        payload_fields = unames
+            .iter()
+            .map(|f| format!("payload.{}", f))
+            .collect::<Vec<_>>()
+            .join(",\n        "),
+        update_fields = ufields
+            .iter()
+            .map(|f| format!(
+                "    if let Some(v) = payload.{name} {{ current.{name} = v; }}",
+                name = f.name
+            ))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        set_cols = unames.join(", "),
+        set_ph = (2..=unames.len() + 1)
+            .map(|i| format!("${}", i))
+            .collect::<Vec<_>>()
+            .join(", "),
+        current_vals = ufields
+            .iter()
+            .map(|f| format!(", current.{}", f.name))
+            .collect::<Vec<_>>()
+            .join(""),
+    )
+}
+
+/// Generate a `services/{entity}.rs` file.
+pub fn mock_generate_service(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let sn = &entity.snake_name;
+    format!(
+        r#"// ISLS v3.1 mock generated
+use sqlx::PgPool;
+use crate::{{AppError}};
+use crate::models::{sn}::{{{n}, Create{n}Payload, Update{n}Payload}};
+use crate::pagination::{{PaginationParams, PaginatedResponse}};
+use crate::database::{sn}_queries;
+
+pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
+    tracing::debug!("getting {sn} id={{}}", id);
+    {sn}_queries::get_{sn}(pool, id).await
+}}
+
+pub async fn list_{sn}s(
+    pool: &PgPool,
+    params: &PaginationParams,
+) -> Result<PaginatedResponse<{n}>, AppError> {{
+    tracing::debug!("listing {sn}s page={{}}", params.page);
+    {sn}_queries::list_{sn}s(pool, params).await
+}}
+
+pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
+    tracing::info!("creating {sn}");
+    {sn}_queries::create_{sn}(pool, payload).await
+}}
+
+pub async fn update_{sn}(
+    pool: &PgPool,
+    id: i64,
+    payload: Update{n}Payload,
+) -> Result<{n}, AppError> {{
+    tracing::info!("updating {sn} id={{}}", id);
+    {sn}_queries::update_{sn}(pool, id, payload).await
+}}
+
+pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
+    tracing::info!("deleting {sn} id={{}}", id);
+    {sn}_queries::delete_{sn}(pool, id).await
+}}
+"#,
+        n = n,
+        sn = sn
+    )
+}
+
+/// Generate an `api/{entity}.rs` file.
+pub fn mock_generate_api(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let sn = &entity.snake_name;
+    format!(
+        r#"// ISLS v3.1 mock generated
+use actix_web::{{web, HttpResponse, Responder}};
+use sqlx::PgPool;
+use crate::{{AppError, auth::AuthUser}};
+use crate::models::{sn}::{{Create{n}Payload, Update{n}Payload}};
+use crate::pagination::PaginationParams;
+use crate::services::{sn} as {sn}_service;
+
+pub async fn list_{sn}s(
+    pool: web::Data<PgPool>,
+    params: web::Query<PaginationParams>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::list_{sn}s(&pool, &params).await?;
+    Ok(HttpResponse::Ok().json(result))
+}}
+
+pub async fn get_{sn}(
+    pool: web::Data<PgPool>,
+    path: web::Path<i64>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::get_{sn}(&pool, path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(result))
+}}
+
+pub async fn create_{sn}(
+    pool: web::Data<PgPool>,
+    body: web::Json<Create{n}Payload>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::create_{sn}(&pool, body.into_inner()).await?;
+    Ok(HttpResponse::Created().json(result))
+}}
+
+pub async fn update_{sn}(
+    pool: web::Data<PgPool>,
+    path: web::Path<i64>,
+    body: web::Json<Update{n}Payload>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::update_{sn}(&pool, path.into_inner(), body.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(result))
+}}
+
+pub async fn delete_{sn}(
+    pool: web::Data<PgPool>,
+    path: web::Path<i64>,
+    user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    crate::auth::require_role(&user, "admin")?;
+    {sn}_service::delete_{sn}(&pool, path.into_inner()).await?;
+    Ok(HttpResponse::NoContent().finish())
+}}
+
+pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
+    cfg.service(
+        web::scope("/api/{sn}s")
+            .route("", web::get().to(list_{sn}s))
+            .route("", web::post().to(create_{sn}))
+            .route("/{{id}}", web::get().to(get_{sn}))
+            .route("/{{id}}", web::put().to(update_{sn}))
+            .route("/{{id}}", web::delete().to(delete_{sn})),
+    );
+}}
+"#,
+        n = n,
+        sn = sn
+    )
+}
+
+/// Generate `backend/src/database/pool.rs`.
+pub fn mock_generate_pool() -> String {
+    r#"// ISLS v3.1 mock generated
+use sqlx::PgPool;
+use crate::AppError;
+
+pub async fn create_pool() -> Result<PgPool, AppError> {
+    let url = std::env::var("DATABASE_URL")
+        .map_err(|_| AppError::InternalError("DATABASE_URL not set".into()))?;
+    PgPool::connect(&url)
+        .await
+        .map_err(|e| AppError::InternalError(format!("database connection failed: {}", e)))
+}
+"#
+    .into()
+}
+
+/// Generate `backend/src/main.rs`.
+pub fn mock_generate_main(spec: &AppSpec) -> String {
+    let entity_routes: Vec<String> = spec
+        .entities
+        .iter()
+        .filter(|e| e.name != "User")
+        .map(|e| format!("        api::{}::{}routes(cfg);", e.snake_name, e.snake_name.clone() + "_"))
+        .collect();
+
+    format!(
+        r#"// ISLS v3.1 mock generated
+use actix_cors::Cors;
+use actix_web::{{middleware, web, App, HttpServer}};
+use tracing_subscriber::EnvFilter;
+
+mod api;
+mod auth;
+mod config;
+mod database;
+mod errors;
+mod models;
+mod pagination;
+mod services;
+
+use errors::AppError;
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {{
+    dotenvy::dotenv().ok();
+
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    let port = std::env::var("PORT").unwrap_or_else(|_| "8080".into());
+    let pool = database::pool::create_pool()
+        .await
+        .expect("failed to connect to database");
+
+    tracing::info!("starting {app} on port {{}}", port);
+
+    HttpServer::new(move || {{
+        let cors = Cors::default()
+            .allowed_origin("http://localhost:3000")
+            .allow_any_method()
+            .allow_any_header()
+            .max_age(3600);
+
+        App::new()
+            .wrap(cors)
+            .wrap(middleware::Logger::default())
+            .app_data(web::Data::new(pool.clone()))
+            .configure(api::configure_routes)
+    }})
+    .bind(format!("0.0.0.0:{{}}", port))?
+    .run()
+    .await
+}}
+"#,
+        app = spec.app_name
+    )
+}
+
+/// Generate `backend/src/api/auth_routes.rs`.
+pub fn mock_generate_auth_routes() -> String {
+    r#"// ISLS v3.1 mock generated
+use actix_web::{web, HttpResponse, Responder};
+use bcrypt::{hash, verify, DEFAULT_COST};
+use chrono::{Duration, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::{AppError, auth::{encode_jwt, Claims, AuthUser}};
+use crate::models::user::{User, CreateUserPayload};
+
+#[derive(Deserialize)]
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Serialize)]
+pub struct LoginResponse {
+    pub token: String,
+}
+
+pub async fn register(
+    pool: web::Data<PgPool>,
+    body: web::Json<CreateUserPayload>,
+) -> Result<impl Responder, AppError> {
+    let payload = body.into_inner();
+    let errs = User::validate_email(&payload.email);
+    if !errs.is_empty() {
+        return Err(AppError::ValidationError(errs));
+    }
+    let hash = hash(&payload.password, DEFAULT_COST)
+        .map_err(|e| AppError::InternalError(e.to_string()))?;
+
+    let user = sqlx::query_as!(
+        User,
+        "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3)
+         RETURNING id, email, password_hash, role, is_active, created_at",
+        payload.email,
+        hash,
+        payload.role.as_deref().unwrap_or("operator")
+    )
+    .fetch_one(pool.get_ref())
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(db) if db.constraint() == Some("users_email_key") =>
+            AppError::Conflict("email already registered".into()),
+        _ => AppError::from(e),
+    })?;
+
+    tracing::info!("registered user {}", user.email);
+    Ok(HttpResponse::Created().json(user))
+}
+
+pub async fn login(
+    pool: web::Data<PgPool>,
+    body: web::Json<LoginRequest>,
+) -> Result<impl Responder, AppError> {
+    let req = body.into_inner();
+    let user = sqlx::query_as!(
+        User,
+        "SELECT id, email, password_hash, role, is_active, created_at FROM users WHERE email = $1",
+        req.email
+    )
+    .fetch_optional(pool.get_ref())
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    let valid = verify(&req.password, &user.password_hash)
+        .map_err(|_| AppError::Unauthorized)?;
+    if !valid { return Err(AppError::Unauthorized); }
+
+    let secret = std::env::var("JWT_SECRET").unwrap_or_else(|_| "dev-secret".into());
+    let exp = (Utc::now() + Duration::hours(24)).timestamp() as usize;
+    let claims = Claims { sub: user.id, email: user.email.clone(), role: user.role.clone(), exp };
+    let token = encode_jwt(&claims, &secret)?;
+
+    Ok(HttpResponse::Ok().json(LoginResponse { token }))
+}
+
+pub async fn me(user: AuthUser) -> Result<impl Responder, AppError> {
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "id": user.id,
+        "email": user.email,
+        "role": user.role,
+    })))
+}
+
+pub async fn health() -> impl Responder {
+    HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
+}
+
+pub fn auth_routes(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::scope("/api")
+            .route("/health", web::get().to(health))
+            .route("/auth/register", web::post().to(register))
+            .route("/auth/login", web::post().to(login))
+            .route("/auth/me", web::get().to(me)),
+    );
+}
+"#
+    .into()
+}
+
+// ─── Frontend ─────────────────────────────────────────────────────────────────
+
+/// Generate `frontend/index.html`.
+pub fn mock_generate_frontend_index(spec: &AppSpec) -> String {
+    let app = &spec.app_name;
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{app}</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav id="nav" style="display:none">
+    <span id="nav-user"></span>
+    <button onclick="logout()">Logout</button>
+  </nav>
+
+  <div id="login-form">
+    <h2>Login to {app}</h2>
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="pwd" placeholder="Password">
+    <button onclick="doLogin()">Login</button>
+    <p id="login-error" style="color:red"></p>
+  </div>
+
+  <div id="app-content" style="display:none">
+    <div id="content"></div>
+  </div>
+
+  <script src="src/api/client.js"></script>
+  <script>
+    const token = localStorage.getItem('token');
+    if (token) showApp();
+
+    async function doLogin() {{
+      const email = document.getElementById('email').value;
+      const pwd = document.getElementById('pwd').value;
+      try {{
+        const r = await login(email, pwd);
+        localStorage.setItem('token', r.token);
+        showApp();
+      }} catch (e) {{
+        document.getElementById('login-error').textContent = e.message;
+      }}
+    }}
+
+    function showApp() {{
+      document.getElementById('login-form').style.display = 'none';
+      document.getElementById('nav').style.display = 'flex';
+      document.getElementById('app-content').style.display = 'block';
+      document.getElementById('content').textContent = 'Application loaded.';
+    }}
+
+    function logout() {{
+      localStorage.removeItem('token');
+      location.reload();
+    }}
+  </script>
+</body>
+</html>
+"#,
+        app = app
+    )
+}
+
+/// Generate `frontend/style.css`.
+pub fn mock_generate_style_css() -> String {
+    r#"/* ISLS v3.1 mock generated */
+*, *::before, *::after { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; margin: 0; padding: 0; background: #f5f5f5; }
+nav { display: flex; align-items: center; padding: 0.5rem 1rem; background: #1a1a2e; color: white; gap: 1rem; }
+nav button { background: #e94560; border: none; color: white; padding: 0.25rem 0.75rem; border-radius: 4px; cursor: pointer; }
+#login-form { max-width: 360px; margin: 4rem auto; background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); display: flex; flex-direction: column; gap: 1rem; }
+#login-form h2 { margin: 0 0 0.5rem; }
+input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+button { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; background: #1a1a2e; color: white; }
+table { border-collapse: collapse; width: 100%; background: white; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #eee; }
+th { background: #f0f0f0; font-weight: 600; }
+"#
+    .into()
+}
+
+/// Generate `frontend/src/api/client.js`.
+pub fn mock_generate_api_client() -> String {
+    r#"// ISLS v3.1 mock generated — fetch-based API client
+const API = '';
+
+async function apiFetch(method, path, body) {
+  const token = localStorage.getItem('token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch(`${API}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ error: resp.statusText }));
+    throw new Error(err.error || resp.statusText);
+  }
+  if (resp.status === 204) return null;
+  return resp.json();
+}
+
+async function login(email, password) {
+  return apiFetch('POST', '/api/auth/login', { email, password });
+}
+
+async function register(email, password, role) {
+  return apiFetch('POST', '/api/auth/register', { email, password, role });
+}
+
+async function getMe() {
+  return apiFetch('GET', '/api/auth/me');
+}
+"#
+    .into()
+}
+
+/// Generate a frontend page JS module for the given entity.
+pub fn mock_generate_entity_page(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let sn = &entity.snake_name;
+    format!(
+        r#"// ISLS v3.1 mock generated — {n} page
+async function render{n}Page(container) {{
+  container.innerHTML = '<h2>{n}s</h2><div id="{sn}-list">Loading...</div>';
+  try {{
+    const data = await apiFetch('GET', '/api/{sn}s');
+    const list = document.getElementById('{sn}-list');
+    if (!data.items || data.items.length === 0) {{
+      list.textContent = 'No {sn}s found.';
+      return;
+    }}
+    const table = document.createElement('table');
+    const headers = Object.keys(data.items[0]);
+    table.innerHTML = '<thead><tr>' + headers.map(h => `<th>${{h}}</th>`).join('') + '</tr></thead>';
+    const tbody = document.createElement('tbody');
+    data.items.forEach(item => {{
+      const tr = document.createElement('tr');
+      tr.innerHTML = headers.map(h => `<td>${{item[h] ?? ''}}</td>`).join('');
+      tbody.appendChild(tr);
+    }});
+    table.appendChild(tbody);
+    list.innerHTML = '';
+    list.appendChild(table);
+  }} catch (e) {{
+    document.getElementById('{sn}-list').textContent = 'Error: ' + e.message;
+  }}
+}}
+"#,
+        n = n,
+        sn = sn
+    )
+}
+
+/// Generate `backend/tests/api_tests.rs`.
+pub fn mock_generate_integration_tests(spec: &AppSpec) -> String {
+    let first_entity = spec
+        .entities
+        .iter()
+        .find(|e| e.name != "User")
+        .map(|e| e.snake_name.as_str())
+        .unwrap_or("item");
+
+    format!(
+        r#"// ISLS v3.1 mock generated integration tests
+// Run with: cargo test --test api_tests (requires DATABASE_URL env var)
+use actix_web::{{test, web, App}};
+
+#[actix_web::test]
+async fn test_health_endpoint() {{
+    // Health check should always return 200
+    // Full integration test setup omitted in mock mode
+    assert!(true, "placeholder: connect to running server for real tests");
+}}
+
+#[actix_web::test]
+async fn test_login_flow() {{
+    // POST /api/auth/login with admin credentials should return token
+    assert!(true, "placeholder: requires running postgres");
+}}
+
+#[actix_web::test]
+async fn test_{first_entity}_crud() {{
+    // Full CRUD cycle for {first_entity}
+    assert!(true, "placeholder: requires running postgres and jwt");
+}}
+"#,
+        first_entity = first_entity
+    )
+}
