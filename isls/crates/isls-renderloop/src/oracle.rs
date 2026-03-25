@@ -119,6 +119,9 @@ impl OpenAiOracle {
             ]
         });
 
+        eprintln!("[Oracle] Calling {} ({} chars prompt, max_tokens={})...",
+            self.model, user.len(), max_tokens);
+
         let resp = self.client
             .post(&url)
             .bearer_auth(&self.api_key)
@@ -126,20 +129,30 @@ impl OpenAiOracle {
             .send()
             .map_err(|e| RenderloopError::OracleCall(e.to_string()))?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let text = resp.text().unwrap_or_default();
+        let status = resp.status();
+        let text = resp.text()
+            .map_err(|e| RenderloopError::OracleCall(
+                format!("Failed to read response: {}", e)
+            ))?;
+
+        eprintln!("[Oracle] Response status: {}, {} bytes", status, text.len());
+
+        if !status.is_success() {
             return Err(RenderloopError::OracleCall(
                 format!("OpenAI API error {}: {}", status, text)
             ));
         }
 
-        let json: serde_json::Value = resp.json()
-            .map_err(|e| RenderloopError::OracleCall(e.to_string()))?;
+        let json: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| RenderloopError::OracleCall(
+                format!("Failed to parse response: {e}: {text}")
+            ))?;
 
         let content = json["choices"][0]["message"]["content"]
             .as_str()
-            .unwrap_or("")
+            .ok_or_else(|| RenderloopError::OracleCall(
+                format!("No content in response: {}", text)
+            ))?
             .to_string();
 
         Ok(content)
