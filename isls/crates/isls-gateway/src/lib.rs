@@ -21,8 +21,9 @@ use axum::{
     extract::{Path, Query, State, WebSocketUpgrade},
     http::StatusCode,
     response::{Html, IntoResponse, Json, Response},
-    routing::{get, post},
+    routing::{delete, get, post},
 };
+use isls_norms::NormRegistry;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -46,6 +47,10 @@ pub struct AppState {
     pub chat_jobs: ChatJobStore,
     /// Default project path for /agent/chat when no `project` field is set
     pub bound_project: BoundProject,
+    /// Norm registry shared across API handlers.
+    pub norm_registry: Arc<RwLock<NormRegistry>>,
+    /// Projects created via POST /api/projects (in-memory, keyed by id).
+    pub project_store: Arc<RwLock<BTreeMap<String, ProjectEntry>>>,
 }
 
 impl AppState {
@@ -58,6 +63,8 @@ impl AppState {
             foundry_state: Arc::new(RwLock::new(FoundryState::default())),
             chat_jobs: Arc::new(RwLock::new(std::collections::HashMap::new())),
             bound_project: Arc::new(RwLock::new(None)),
+            norm_registry: Arc::new(RwLock::new(NormRegistry::default())),
+            project_store: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 }
@@ -284,6 +291,61 @@ pub struct CommandResponse {
     pub data: Option<serde_json::Value>,
 }
 
+// ─── Norm / Project / Chat API types ────────────────────────────────────────
+
+/// A project created via POST /api/projects.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectEntry {
+    pub id: String,
+    pub name: String,
+    pub toml_content: String,
+    pub domain: Option<String>,
+    pub output_dir: Option<String>,
+    pub status: String,
+    pub created_at: String,
+}
+
+/// Summary of a norm returned by GET /api/norms.
+#[derive(Debug, Serialize)]
+pub struct NormSummary {
+    pub id: String,
+    pub name: String,
+    pub level: String,
+    pub description: String,
+}
+
+/// Request body for POST /api/projects.
+#[derive(Debug, Deserialize)]
+pub struct CreateProjectRequest {
+    pub name: String,
+    pub toml_content: String,
+    pub domain: Option<String>,
+}
+
+/// Request body for POST /api/chat (norm-aware).
+#[derive(Debug, Deserialize)]
+pub struct ApiChatRequest {
+    pub message: String,
+}
+
+/// Response for POST /api/chat.
+#[derive(Debug, Serialize)]
+pub struct ApiChatResponse {
+    pub message: String,
+    pub intent: String,
+    pub norms_activated: Vec<String>,
+    pub estimated_files: usize,
+    pub action_buttons: Vec<ActionButton>,
+}
+
+/// An action button in the chat response UI.
+#[derive(Debug, Serialize)]
+pub struct ActionButton {
+    pub label: String,
+    pub action: String,
+    pub style: String,
+}
+
 // ─── Router ─────────────────────────────────────────────────────────────────
 
 pub fn build_router(state: AppState) -> Router {
@@ -320,6 +382,19 @@ pub fn build_router(state: AppState) -> Router {
         .route("/agent/chat", post(agent_chat_start))
         .route("/agent/chat/{job_id}/events", get(agent_chat_events))
         .route("/agent/bind", post(agent_bind))
+        // v3 Norm API
+        .route("/api/norms", get(api_list_norms))
+        .route("/api/norms/candidates", get(api_list_norm_candidates))
+        .route("/api/norms/{id}", get(api_get_norm))
+        // v3 Projects API
+        .route("/api/projects", get(api_list_projects).post(api_create_project))
+        .route("/api/projects/{id}", get(api_get_project).delete(api_delete_project))
+        // v3 Chat API (norm-aware)
+        .route("/api/chat", post(api_chat))
+        .route("/api/chat/history", get(api_chat_history))
+        // v3 Crystals + Health
+        .route("/api/crystals", get(api_crystals))
+        .route("/api/health", get(api_health))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)
@@ -883,6 +958,159 @@ async fn agent_chat_events(
             "error": "job not found",
         })),
     }
+}
+
+// ─── v3 Norm API handlers ─────────────────────────────────────────────────
+
+/// GET /api/norms — list all norms in the registry.
+async fn api_list_norms(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let registry = state.norm_registry.read().await;
+    let summaries: Vec<NormSummary> = registry.all_norms().into_iter().map(|n| NormSummary {
+        id:          n.id.clone(),
+        name:        n.name.clone(),
+        level:       format!("{:?}", n.level),
+        description: n.name.clone(),
+    }).collect();
+    Json(serde_json::json!({ "ok": true, "norms": summaries }))
+}
+
+/// GET /api/norms/candidates — list self-discovered norm candidates.
+async fn api_list_norm_candidates(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let registry = state.norm_registry.read().await;
+    let candidates: Vec<serde_json::Value> = registry.candidates().into_iter().map(|c| serde_json::json!({
+        "id":           c.id,
+        "observations": c.observation_count,
+        "consistency":  c.consistency,
+        "status":       format!("{:?}", c.status),
+    })).collect();
+    Json(serde_json::json!({ "ok": true, "candidates": candidates }))
+}
+
+/// GET /api/norms/:id — get a single norm by id.
+async fn api_get_norm(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let registry = state.norm_registry.read().await;
+    match registry.get(&id) {
+        Some(n) => Json(serde_json::json!({ "ok": true, "norm": n })),
+        None    => Json(serde_json::json!({ "ok": false, "error": "norm not found" })),
+    }
+}
+
+// ─── v3 Projects API handlers ─────────────────────────────────────────────
+
+/// GET /api/projects — list all projects.
+async fn api_list_projects(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let store = state.project_store.read().await;
+    let projects: Vec<&ProjectEntry> = store.values().collect();
+    Json(serde_json::json!({ "ok": true, "projects": projects }))
+}
+
+/// POST /api/projects — create a new project entry.
+async fn api_create_project(
+    State(state): State<AppState>,
+    Json(req): Json<CreateProjectRequest>,
+) -> Json<serde_json::Value> {
+    let id = format!("proj-{:08x}", rand_u32());
+    let entry = ProjectEntry {
+        id: id.clone(),
+        name: req.name,
+        toml_content: req.toml_content,
+        domain: req.domain,
+        output_dir: None,
+        status: "created".to_string(),
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    state.project_store.write().await.insert(id.clone(), entry);
+    Json(serde_json::json!({ "ok": true, "id": id }))
+}
+
+/// GET /api/projects/:id — get a single project.
+async fn api_get_project(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let store = state.project_store.read().await;
+    match store.get(&id) {
+        Some(p) => Json(serde_json::json!({ "ok": true, "project": p })),
+        None    => Json(serde_json::json!({ "ok": false, "error": "project not found" })),
+    }
+}
+
+/// DELETE /api/projects/:id — delete a project.
+async fn api_delete_project(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let removed = state.project_store.write().await.remove(&id).is_some();
+    Json(serde_json::json!({ "ok": removed }))
+}
+
+// ─── v3 Chat API handlers ─────────────────────────────────────────────────
+
+/// POST /api/chat — norm-aware chat endpoint.
+async fn api_chat(
+    State(state): State<AppState>,
+    Json(req): Json<ApiChatRequest>,
+) -> Json<serde_json::Value> {
+    let registry = state.norm_registry.read().await;
+    let intent = isls_chat::extract_intent_keywords(&req.message);
+    let ops = isls_chat::intent_to_norm_ops(&intent, &registry);
+
+    let activated: Vec<String> = if let Some(isls_chat::NormOperation::ComposeNew(ref norms)) = ops.first() {
+        norms.iter().map(|a| a.norm.id.clone()).collect()
+    } else {
+        vec![]
+    };
+
+    let estimated_files: usize = ops.iter()
+        .map(|op| isls_chat::affected_files(op).len())
+        .sum();
+
+    let intent_str = format!("{:?}", intent.intent_type);
+    let action_buttons = if intent.intent_type == isls_chat::IntentType::CreateApplication {
+        vec![ActionButton {
+            label: "Generate".to_string(),
+            action: "forge".to_string(),
+            style: "primary".to_string(),
+        }]
+    } else {
+        vec![]
+    };
+
+    let message = format!(
+        "Detected intent: {}. {} norms activated. {} files affected.",
+        intent_str, activated.len(), estimated_files
+    );
+
+    let resp = ApiChatResponse { message, intent: intent_str, norms_activated: activated, estimated_files, action_buttons };
+    Json(serde_json::to_value(resp).unwrap_or(serde_json::json!({ "ok": false })))
+}
+
+/// GET /api/chat/history — placeholder (jobs are ephemeral in-process).
+async fn api_chat_history(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let jobs = state.chat_jobs.read().await;
+    let history: Vec<serde_json::Value> = jobs.values().map(|j| serde_json::json!({
+        "job_id": j.id,
+        "complete": j.complete,
+        "event_count": j.events.len(),
+    })).collect();
+    Json(serde_json::json!({ "ok": true, "history": history }))
+}
+
+// ─── v3 Crystals + Health ─────────────────────────────────────────────────
+
+/// GET /api/crystals — crystals list under /api prefix.
+async fn api_crystals(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let engine = state.engine_state.read().await;
+    Json(serde_json::json!({ "ok": true, "crystals": engine.crystals }))
+}
+
+/// GET /api/health — health check under /api prefix.
+async fn api_health(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let uptime = state.start_time.elapsed().as_secs();
+    Json(serde_json::json!({ "status": "ok", "uptime_secs": uptime, "version": "3.0.0" }))
 }
 
 /// POST /agent/bind — set the default project for subsequent /agent/chat calls

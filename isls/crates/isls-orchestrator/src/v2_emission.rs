@@ -233,20 +233,35 @@ fn emit_simple(
     Ok(())
 }
 
+/// Returns `true` for fields that are managed by the database or the
+/// application internally and must not appear in Create/Update payloads.
+fn is_system_field(name: &str) -> bool {
+    matches!(
+        name,
+        "id"
+            | "created_at"
+            | "updated_at"
+            | "shipped_at"
+            | "delivered_at"
+            | "last_login_at"
+            | "deleted_at"
+    )
+}
+
 fn build_model_context(entity: &EntityTemplate) -> serde_json::Value {
     let fields: Vec<serde_json::Value> = entity.fields.iter().map(|f| {
         json!({"name": f.name, "rust_type": f.rust_type})
     }).collect();
 
-    // Create fields: skip id and timestamps
+    // Create fields: skip id, timestamps, and system-managed fields
     let create_fields: Vec<serde_json::Value> = entity.fields.iter()
-        .filter(|f| f.name != "id" && f.name != "created_at" && f.name != "updated_at")
+        .filter(|f| !is_system_field(&f.name))
         .map(|f| json!({"name": f.name, "rust_type": f.rust_type}))
         .collect();
 
-    // Update fields: skip id/timestamps, all become Optional
+    // Update fields: skip id/timestamps/system fields, all become Optional
     let update_fields: Vec<serde_json::Value> = entity.fields.iter()
-        .filter(|f| f.name != "id" && f.name != "created_at" && f.name != "updated_at")
+        .filter(|f| !is_system_field(&f.name))
         .map(|f| {
             let base_type = if f.rust_type.starts_with("Option<") {
                 f.rust_type.trim_start_matches("Option<").trim_end_matches('>').to_string()

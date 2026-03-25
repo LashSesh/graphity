@@ -491,6 +491,8 @@ select { cursor: pointer; width: auto; }
         <button class="nav-btn" data-view="navigator" title="Navigator (Ctrl+8)">N</button>
         <button class="nav-btn" data-view="agent" title="Agent (Ctrl+9)">A</button>
         <button class="nav-btn active" data-view="chat" title="Chat (Ctrl+0)" style="font-size:10px">CH</button>
+        <button class="nav-btn" data-view="norms" title="Norm Explorer" style="font-size:10px">NR</button>
+        <button class="nav-btn" data-view="projects" title="Projects" style="font-size:10px">PJ</button>
         <div class="sidebar-bottom">
             <div class="status-pill" id="statusPill"></div><br>
             <span id="sidebarUptime">0m</span><br>
@@ -937,6 +939,80 @@ select { cursor: pointer; width: auto; }
             </div>
         </div>
 
+        <!-- ═══ View 11: Norm Explorer ═══════════════════════════════════ -->
+        <div class="view" id="view-norms">
+            <div style="display:flex;gap:8px;padding:0 0 12px 0;align-items:center">
+                <input id="norm-search" type="text" placeholder="Search norms…"
+                    style="flex:1;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px"
+                    oninput="filterNorms()">
+                <select id="norm-level-filter" onchange="filterNorms()"
+                    style="padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px">
+                    <option value="">All levels</option>
+                    <option value="Atom">Atom</option>
+                    <option value="Molecule">Molecule</option>
+                    <option value="Organism">Organism</option>
+                </select>
+                <button class="btn" onclick="loadNorms()">Refresh</button>
+            </div>
+            <div class="card" style="overflow-y:auto;flex:1">
+                <table class="data-table" id="normsTable">
+                    <thead><tr><th>ID</th><th>Name</th><th>Level</th><th>Type</th></tr></thead>
+                    <tbody id="normsBody"><tr><td colspan="4" style="color:var(--text-dim)">Click Refresh to load norms.</td></tr></tbody>
+                </table>
+            </div>
+            <div class="card" id="norm-detail" style="margin-top:12px;display:none">
+                <h3 id="norm-detail-title">Norm Detail</h3>
+                <pre id="norm-detail-json" style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all"></pre>
+            </div>
+            <div class="card" style="margin-top:12px">
+                <h3>Candidates <span style="font-size:11px;color:var(--text-dim)">(auto-discovered)</span></h3>
+                <table class="data-table" id="candidatesTable">
+                    <thead><tr><th>ID</th><th>Observations</th><th>Consistency</th><th>Status</th></tr></thead>
+                    <tbody id="candidatesBody"><tr><td colspan="4" style="color:var(--text-dim)">No candidates yet.</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ═══ View 12: Projects ════════════════════════════════════════ -->
+        <div class="view" id="view-projects">
+            <div style="display:flex;gap:8px;padding:0 0 12px 0;align-items:center">
+                <h3 style="margin:0;flex:1">Projects</h3>
+                <button class="btn" onclick="showCreateProjectModal()">+ New Project</button>
+                <button class="btn" onclick="loadProjects()">Refresh</button>
+            </div>
+            <div class="card" style="overflow-y:auto">
+                <table class="data-table" id="projectsTable">
+                    <thead><tr><th>ID</th><th>Name</th><th>Domain</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+                    <tbody id="projectsBody"><tr><td colspan="6" style="color:var(--text-dim)">Click Refresh to load projects.</td></tr></tbody>
+                </table>
+            </div>
+            <!-- Create project modal -->
+            <div id="createProjectModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
+                <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:24px;width:560px;max-width:90vw">
+                    <h3 style="margin:0 0 16px 0">New Project</h3>
+                    <div style="margin-bottom:12px">
+                        <label style="font-size:12px;color:var(--text-dim)">Name</label>
+                        <input id="proj-name" type="text" placeholder="my-ecommerce-app"
+                            style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px;margin-top:4px">
+                    </div>
+                    <div style="margin-bottom:12px">
+                        <label style="font-size:12px;color:var(--text-dim)">TOML Configuration</label>
+                        <textarea id="proj-toml" rows="8" placeholder="[app]&#10;name = &quot;my-app&quot;&#10;description = &quot;...&quot;"
+                            style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:monospace;margin-top:4px;resize:vertical"></textarea>
+                    </div>
+                    <div style="margin-bottom:16px">
+                        <label style="font-size:12px;color:var(--text-dim)">Domain (optional)</label>
+                        <input id="proj-domain" type="text" placeholder="ecommerce, warehouse, project_management…"
+                            style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px;margin-top:4px">
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end">
+                        <button class="btn" onclick="hideCreateProjectModal()">Cancel</button>
+                        <button class="btn" onclick="createProject()">Create</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- Status Bar -->
@@ -996,6 +1072,8 @@ const viewTitles = {
     navigator: ['Navigator', 'C29 — Spectral-Guided Pattern Space Exploration'],
     agent: ['Agent', 'C30 — Autonomous Goal-Directed Agent'],
     chat: ['ISLS Agent', 'Beschreibe was du bauen möchtest'],
+    norms: ['Norm Explorer', 'Built-in, auto-discovered, and candidate norms'],
+    projects: ['Projects', 'Manage generated projects and their output files'],
 };
 
 // ─── Navigation ──────────────────────────────────────────────────────────
@@ -1012,6 +1090,8 @@ function switchView(view) {
     if (view === 'navigator') navigatorRefresh();
     if (view === 'agent') agentRefresh();
     if (view === 'chat') { renderedEventCount = 0; }
+    if (view === 'norms') loadNorms();
+    if (view === 'projects') loadProjects();
     if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ subscribe: getEventsForView(view) }));
     }
@@ -1029,6 +1109,8 @@ function getEventsForView(view) {
         case 'navigator': return ['heartbeat'];
         case 'agent': return ['heartbeat'];
         case 'chat': return ['heartbeat'];
+        case 'norms': return ['heartbeat'];
+        case 'projects': return ['heartbeat'];
         default: return ['heartbeat'];
     }
 }
@@ -1891,6 +1973,140 @@ function updateAccumBar() {
         ' | Gespart: $' + saved.toFixed(2);
     bar.textContent = text;
     if (autoSpan) autoSpan.textContent = text;
+}
+
+// ─── Norm Explorer ────────────────────────────────────────────────────────
+let allNorms = [];
+
+function loadNorms() {
+    Promise.all([
+        fetch('/api/norms').then(r => r.json()),
+        fetch('/api/norms/candidates').then(r => r.json()),
+    ]).then(([nd, cd]) => {
+        allNorms = nd.norms || [];
+        renderNormsTable(allNorms);
+        renderCandidatesTable(cd.candidates || []);
+    }).catch(() => {
+        document.getElementById('normsBody').innerHTML =
+            '<tr><td colspan="4" style="color:var(--danger,#ef4444)">Failed to load norms.</td></tr>';
+    });
+}
+
+function filterNorms() {
+    const q = (document.getElementById('norm-search').value || '').toLowerCase();
+    const lv = document.getElementById('norm-level-filter').value;
+    const filtered = allNorms.filter(n =>
+        (!q || n.name.toLowerCase().includes(q) || n.id.toLowerCase().includes(q)) &&
+        (!lv || n.level === lv)
+    );
+    renderNormsTable(filtered);
+}
+
+function renderNormsTable(norms) {
+    const levelColor = { Atom: '#60a5fa', Molecule: '#34d399', Organism: '#f59e0b', Ecosystem: '#a78bfa' };
+    const tbody = document.getElementById('normsBody');
+    if (!norms.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim)">No norms match.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = norms.map(n => `
+        <tr style="cursor:pointer" onclick="showNormDetail('${n.id}')">
+            <td style="font-family:monospace;font-size:11px">${n.id}</td>
+            <td>${n.name}</td>
+            <td><span style="color:${levelColor[n.level]||'var(--text-primary)'}">${n.level}</span></td>
+            <td style="font-size:11px;color:var(--text-dim)">${n.description || ''}</td>
+        </tr>`).join('');
+}
+
+function showNormDetail(id) {
+    fetch('/api/norms/' + encodeURIComponent(id))
+        .then(r => r.json())
+        .then(d => {
+            const panel = document.getElementById('norm-detail');
+            document.getElementById('norm-detail-title').textContent = d.norm ? d.norm.name : id;
+            document.getElementById('norm-detail-json').textContent = JSON.stringify(d.norm || d, null, 2);
+            panel.style.display = 'block';
+        });
+}
+
+function renderCandidatesTable(candidates) {
+    const tbody = document.getElementById('candidatesBody');
+    if (!candidates.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim)">No candidates yet.</td></tr>';
+        return;
+    }
+    const statusColor = { Observing: 'var(--text-dim)', Eligible: 'var(--gold,#f4c542)', Promoted: 'var(--success,#22c55e)', Rejected: 'var(--danger,#ef4444)' };
+    tbody.innerHTML = candidates.map(c => `
+        <tr>
+            <td style="font-family:monospace;font-size:11px">${c.id}</td>
+            <td>${c.observations}</td>
+            <td>${(c.consistency * 100).toFixed(0)}%</td>
+            <td><span style="color:${statusColor[c.status]||'var(--text-primary)'}">${c.status}</span></td>
+        </tr>`).join('');
+}
+
+// ─── Projects ─────────────────────────────────────────────────────────────
+
+function loadProjects() {
+    fetch('/api/projects').then(r => r.json()).then(d => {
+        renderProjectsTable(d.projects || []);
+    }).catch(() => {
+        document.getElementById('projectsBody').innerHTML =
+            '<tr><td colspan="6" style="color:var(--danger,#ef4444)">Failed to load projects.</td></tr>';
+    });
+}
+
+function renderProjectsTable(projects) {
+    const tbody = document.getElementById('projectsBody');
+    if (!projects.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No projects yet. Click "+ New Project" to create one.</td></tr>';
+        return;
+    }
+    const statusColor = { created: 'var(--text-dim)', generating: 'var(--accent)', done: 'var(--success,#22c55e)', error: 'var(--danger,#ef4444)' };
+    tbody.innerHTML = projects.map(p => `
+        <tr>
+            <td style="font-family:monospace;font-size:11px">${p.id}</td>
+            <td>${p.name}</td>
+            <td style="color:var(--text-dim)">${p.domain || '—'}</td>
+            <td><span style="color:${statusColor[p.status]||'var(--text-primary)'}">${p.status}</span></td>
+            <td style="font-size:11px;color:var(--text-dim)">${(p.created_at||'').replace('T',' ').slice(0,19)}</td>
+            <td><button class="btn" style="font-size:11px;padding:2px 8px" onclick="deleteProject('${p.id}')">Delete</button></td>
+        </tr>`).join('');
+}
+
+function showCreateProjectModal() {
+    const modal = document.getElementById('createProjectModal');
+    modal.style.display = 'flex';
+}
+
+function hideCreateProjectModal() {
+    document.getElementById('createProjectModal').style.display = 'none';
+}
+
+function createProject() {
+    const name = document.getElementById('proj-name').value.trim();
+    const toml_content = document.getElementById('proj-toml').value.trim();
+    const domain = document.getElementById('proj-domain').value.trim() || null;
+    if (!name || !toml_content) { alert('Name and TOML are required.'); return; }
+    fetch('/api/projects', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name, toml_content, domain }),
+    }).then(r => r.json()).then(d => {
+        if (d.ok) {
+            hideCreateProjectModal();
+            loadProjects();
+        } else {
+            alert('Error: ' + (d.error || 'unknown'));
+        }
+    });
+}
+
+function deleteProject(id) {
+    if (!confirm('Delete project ' + id + '?')) return;
+    fetch('/api/projects/' + encodeURIComponent(id), { method: 'DELETE' })
+        .then(r => r.json())
+        .then(() => loadProjects());
 }
 
 // ─── Init ────────────────────────────────────────────────────────────────

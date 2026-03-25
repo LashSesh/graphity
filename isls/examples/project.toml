@@ -1,0 +1,33 @@
+# Project Management Tracker — ISLS Full-Stack Autonomy constraint file
+# Usage: isls forge-v2 --requirements examples/project.toml --mock-oracle --output ./output/project
+
+[app]
+name = "project-tracker"
+description = "Project management tracker with sprints, tasks, teams, and kanban boards"
+
+[app.modules]
+projects = "Project workspaces with team membership and role-based access"
+sprints  = "Time-boxed sprints with velocity tracking and goals"
+tasks    = "Task management with status state machine and priority levels"
+teams    = "Team membership with owner, admin, member, and viewer roles"
+auth     = "JWT authentication, role-based access (admin, manager, member, viewer)"
+
+[backend]
+language  = "rust"
+framework = "actix-web"
+database  = "postgresql"
+auth_method = "jwt"
+
+[frontend]
+type    = "spa"
+framework = "vanilla"
+styling = "minimal"
+
+[deployment]
+containerized = true
+compose = true
+
+[constraints]
+max_crates     = 1
+test_coverage  = "integration"
+evidence_chain = true

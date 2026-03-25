@@ -7,6 +7,8 @@ authors = ["Sebastian Klemm"]
 license = "MIT"
 
 [dependencies]
+isls-norms = { path = "../isls-norms" }
+isls-chat  = { path = "../isls-chat" }
 isls-types = { path = "../isls-types" }
 isls-navigator = { path = "../isls-navigator" }
 isls-agent = { path = "../isls-agent" }

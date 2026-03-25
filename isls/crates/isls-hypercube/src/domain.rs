@@ -525,41 +525,581 @@ fn build_user_entity() -> EntityTemplate {
     }
 }
 
-// ─── Ecommerce Domain (minimal) ─────────────────────────────────────────────
+// ─── Ecommerce Domain ────────────────────────────────────────────────────────
 
 fn build_ecommerce_domain() -> DomainTemplate {
     DomainTemplate {
         name: "ecommerce".into(),
-        keywords: vec!["ecommerce".into(), "cart".into(), "checkout".into(), "payment".into(), "shop".into()],
-        entities: vec![],
-        relationships: vec![],
-        business_rules: vec![],
+        keywords: vec![
+            "ecommerce".into(), "e-commerce".into(), "shop".into(), "store".into(),
+            "cart".into(), "checkout".into(), "payment".into(), "product".into(),
+            "order".into(), "customer".into(), "catalog".into(),
+        ],
+        entities: vec![
+            ec_category_entity(),
+            ec_product_entity(),
+            ec_customer_entity(),
+            ec_address_entity(),
+            ec_cart_entity(),
+            ec_cart_item_entity(),
+            ec_order_entity(),
+            ec_order_line_entity(),
+            ec_review_entity(),
+        ],
+        relationships: vec![
+            Relationship { from_entity: "Product".into(),  to_entity: "Category".into(),  kind: RelationshipKind::BelongsTo, foreign_key: "category_id".into(),  on_delete: OnDelete::SetNull },
+            Relationship { from_entity: "Address".into(),  to_entity: "Customer".into(),  kind: RelationshipKind::BelongsTo, foreign_key: "customer_id".into(),  on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "Cart".into(),     to_entity: "Customer".into(),  kind: RelationshipKind::BelongsTo, foreign_key: "customer_id".into(),  on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "CartItem".into(), to_entity: "Cart".into(),      kind: RelationshipKind::BelongsTo, foreign_key: "cart_id".into(),      on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "CartItem".into(), to_entity: "Product".into(),   kind: RelationshipKind::BelongsTo, foreign_key: "product_id".into(),   on_delete: OnDelete::Restrict },
+            Relationship { from_entity: "Order".into(),    to_entity: "Customer".into(),  kind: RelationshipKind::BelongsTo, foreign_key: "customer_id".into(),  on_delete: OnDelete::Restrict },
+            Relationship { from_entity: "Order".into(),    to_entity: "Address".into(),   kind: RelationshipKind::BelongsTo, foreign_key: "shipping_address_id".into(), on_delete: OnDelete::SetNull },
+            Relationship { from_entity: "OrderLine".into(), to_entity: "Order".into(),    kind: RelationshipKind::BelongsTo, foreign_key: "order_id".into(),     on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "OrderLine".into(), to_entity: "Product".into(),  kind: RelationshipKind::BelongsTo, foreign_key: "product_id".into(),   on_delete: OnDelete::Restrict },
+            Relationship { from_entity: "Review".into(),   to_entity: "Product".into(),   kind: RelationshipKind::BelongsTo, foreign_key: "product_id".into(),   on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "Review".into(),   to_entity: "Customer".into(),  kind: RelationshipKind::BelongsTo, foreign_key: "customer_id".into(),  on_delete: OnDelete::Cascade },
+        ],
+        business_rules: vec![
+            BusinessRule {
+                name: "cart_to_order".into(),
+                description: "Convert active cart to order, clearing cart items".into(),
+                trigger: "on_checkout".into(),
+                logic_pseudocode: "order = create_order(cart); for item in cart.items { create_order_line(order, item); } cart.status = 'checked_out';".into(),
+                service_method: "cart_service::checkout".into(),
+                entities_involved: vec!["Cart".into(), "CartItem".into(), "Order".into(), "OrderLine".into()],
+            },
+            BusinessRule {
+                name: "inventory_check".into(),
+                description: "Verify product inventory_count >= quantity before adding to cart".into(),
+                trigger: "on_add_to_cart".into(),
+                logic_pseudocode: "if product.inventory_count < quantity { return Err(\"insufficient stock\"); }".into(),
+                service_method: "cart_service::add_item".into(),
+                entities_involved: vec!["Product".into(), "CartItem".into()],
+            },
+            BusinessRule {
+                name: "order_state_machine".into(),
+                description: "Order status: pending→confirmed→shipped→delivered; any→cancelled (except delivered)".into(),
+                trigger: "on_status_change".into(),
+                logic_pseudocode: "match (current, next) { (pending, confirmed) | (confirmed, shipped) | (shipped, delivered) => Ok(()), (s, cancelled) if s != delivered => Ok(()), _ => Err(\"invalid transition\") }".into(),
+                service_method: "order_service::update_status".into(),
+                entities_involved: vec!["Order".into()],
+            },
+            BusinessRule {
+                name: "review_moderation".into(),
+                description: "New reviews default to is_approved=false; admin must approve".into(),
+                trigger: "on_create".into(),
+                logic_pseudocode: "review.is_approved = false;".into(),
+                service_method: "review_service::create".into(),
+                entities_involved: vec!["Review".into()],
+            },
+            BusinessRule {
+                name: "no_duplicate_review".into(),
+                description: "One review per customer per product".into(),
+                trigger: "on_create".into(),
+                logic_pseudocode: "if exists(review where product_id=? AND customer_id=?) { return Err(\"already reviewed\"); }".into(),
+                service_method: "review_service::create".into(),
+                entities_involved: vec!["Review".into()],
+            },
+        ],
         api_features: ApiFeatures {
             pagination: true,
-            filtering: vec!["status".into(), "category".into()],
-            sorting: vec!["created_at".into(), "price".into()],
-            search_fields: vec!["name".into(), "description".into()],
-            export_formats: vec!["json".into()],
+            filtering: vec!["status".into(), "category_id".into(), "customer_id".into(), "is_published".into(), "payment_status".into(), "is_approved".into()],
+            sorting: vec!["created_at".into(), "price_cents".into(), "name".into(), "rating".into()],
+            search_fields: vec!["name".into(), "sku".into(), "description".into(), "email".into()],
+            export_formats: vec!["csv".into(), "json".into()],
         },
     }
 }
 
-// ─── Project Management Domain (minimal) ─────────────────────────────────────
+fn ec_category_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Category".into(),
+        description: "Product category (self-referential tree)".into(),
+        fields: vec![
+            f("id",        "i64",           "BIGSERIAL PRIMARY KEY",                             false, None,           "Primary key"),
+            f("name",      "String",        "VARCHAR(255) NOT NULL",                              false, None,           "Category name"),
+            f("slug",      "String",        "VARCHAR(255) NOT NULL UNIQUE",                       false, None,           "URL slug"),
+            f("parent_id", "Option<i64>",   "BIGINT REFERENCES categories(id) ON DELETE SET NULL", true, None,          "Parent category FK"),
+            f("position",  "i32",           "INTEGER NOT NULL",                                   false, Some("0"),     "Sort position"),
+            f("is_active", "bool",          "BOOLEAN NOT NULL",                                   false, Some("true"), "Active flag"),
+            f("created_at","String",        "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                 false, Some("NOW()"), "Creation timestamp"),
+            f("updated_at","String",        "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                 false, Some("NOW()"), "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "name_not_empty".into(), condition: "!self.name.trim().is_empty()".into(), message: "Name must not be empty".into() },
+            ValidationRule { name: "slug_not_empty".into(), condition: "!self.slug.trim().is_empty()".into(), message: "Slug must not be empty".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_categories_slug".into(),   columns: vec!["slug".into()],      unique: true },
+            IndexDef { name: "idx_categories_parent".into(), columns: vec!["parent_id".into()], unique: false },
+        ],
+    }
+}
+
+fn ec_product_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Product".into(),
+        description: "Sellable product in the e-commerce catalog".into(),
+        fields: vec![
+            f("id",              "i64",           "BIGSERIAL PRIMARY KEY",                              false, None,           "Primary key"),
+            f("name",            "String",        "VARCHAR(255) NOT NULL",                               false, None,           "Product name"),
+            f("slug",            "String",        "VARCHAR(255) NOT NULL UNIQUE",                        false, None,           "URL slug"),
+            f("price_cents",     "i64",           "BIGINT NOT NULL",                                     false, Some("0"),     "Selling price in cents"),
+            f("compare_price",   "Option<i64>",   "BIGINT",                                              true,  None,           "Original/compare price in cents"),
+            f("sku",             "String",        "VARCHAR(100) NOT NULL UNIQUE",                        false, None,           "Stock keeping unit"),
+            f("inventory_count", "i32",           "INTEGER NOT NULL",                                    false, Some("0"),     "Available inventory"),
+            f("category_id",     "Option<i64>",   "BIGINT REFERENCES categories(id) ON DELETE SET NULL", true,  None,          "FK to category"),
+            f("is_published",    "bool",          "BOOLEAN NOT NULL",                                    false, Some("false"), "Visible in storefront"),
+            f("image_url",       "Option<String>","VARCHAR(1024)",                                       true,  None,           "Main image URL"),
+            f("weight_grams",    "Option<i32>",   "INTEGER",                                             true,  None,           "Weight for shipping"),
+            f("description",     "Option<String>","TEXT",                                                true,  None,           "Product description"),
+            f("created_at",      "String",        "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                  false, Some("NOW()"), "Creation timestamp"),
+            f("updated_at",      "String",        "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                  false, Some("NOW()"), "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "name_not_empty".into(),  condition: "!self.name.trim().is_empty()".into(), message: "Name must not be empty".into() },
+            ValidationRule { name: "sku_not_empty".into(),   condition: "!self.sku.trim().is_empty()".into(),  message: "SKU must not be empty".into() },
+            ValidationRule { name: "price_nonneg".into(),    condition: "self.price_cents >= 0".into(),        message: "Price must be non-negative".into() },
+            ValidationRule { name: "inventory_nonneg".into(),condition: "self.inventory_count >= 0".into(),    message: "Inventory must be non-negative".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_ec_products_slug".into(),     columns: vec!["slug".into()],        unique: true },
+            IndexDef { name: "idx_ec_products_sku".into(),      columns: vec!["sku".into()],         unique: true },
+            IndexDef { name: "idx_ec_products_category".into(), columns: vec!["category_id".into()], unique: false },
+        ],
+    }
+}
+
+fn ec_customer_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Customer".into(),
+        description: "Registered customer account".into(),
+        fields: vec![
+            f("id",            "i64",          "BIGSERIAL PRIMARY KEY",         false, None,           "Primary key"),
+            f("email",         "String",       "VARCHAR(255) NOT NULL UNIQUE",   false, None,           "Customer email"),
+            f("password_hash", "String",       "VARCHAR(255) NOT NULL",          false, None,           "Bcrypt password hash"),
+            f("first_name",    "String",       "VARCHAR(100) NOT NULL",          false, None,           "First name"),
+            f("last_name",     "String",       "VARCHAR(100) NOT NULL",          false, None,           "Last name"),
+            f("phone",         "Option<String>","VARCHAR(50)",                   true,  None,           "Phone number"),
+            f("is_active",     "bool",         "BOOLEAN NOT NULL",               false, Some("true"), "Active flag"),
+            f("created_at",    "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()", false, Some("NOW()"), "Creation timestamp"),
+            f("updated_at",    "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()", false, Some("NOW()"), "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "email_not_empty".into(),     condition: "!self.email.trim().is_empty()".into(),      message: "Email must not be empty".into() },
+            ValidationRule { name: "first_name_not_empty".into(),condition: "!self.first_name.trim().is_empty()".into(), message: "First name must not be empty".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_customers_email".into(), columns: vec!["email".into()], unique: true },
+        ],
+    }
+}
+
+fn ec_address_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Address".into(),
+        description: "Customer shipping/billing address".into(),
+        fields: vec![
+            f("id",          "i64",    "BIGSERIAL PRIMARY KEY",                               false, None,           "Primary key"),
+            f("customer_id", "i64",    "BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE", false, None,    "FK to customer"),
+            f("label",       "String", "VARCHAR(100) NOT NULL",                                false, None,           "Label (Home, Work…)"),
+            f("street",      "String", "VARCHAR(255) NOT NULL",                                false, None,           "Street address"),
+            f("city",        "String", "VARCHAR(100) NOT NULL",                                false, None,           "City"),
+            f("state",       "Option<String>","VARCHAR(100)",                                  true,  None,           "State/province"),
+            f("postal_code", "String", "VARCHAR(20) NOT NULL",                                 false, None,           "Postal code"),
+            f("country",     "String", "VARCHAR(100) NOT NULL",                                false, Some("'US'"),  "ISO country code"),
+            f("is_default",  "bool",   "BOOLEAN NOT NULL",                                     false, Some("false"), "Default address flag"),
+            f("created_at",  "String", "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                   false, Some("NOW()"), "Creation timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "street_not_empty".into(), condition: "!self.street.trim().is_empty()".into(), message: "Street must not be empty".into() },
+            ValidationRule { name: "city_not_empty".into(),   condition: "!self.city.trim().is_empty()".into(),   message: "City must not be empty".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_addresses_customer".into(), columns: vec!["customer_id".into()], unique: false },
+        ],
+    }
+}
+
+fn ec_cart_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Cart".into(),
+        description: "Shopping cart for a customer session".into(),
+        fields: vec![
+            f("id",          "i64",          "BIGSERIAL PRIMARY KEY",                                    false, None,              "Primary key"),
+            f("customer_id", "Option<i64>",  "BIGINT REFERENCES customers(id) ON DELETE CASCADE",        true,  None,              "FK to customer (null for guest)"),
+            f("session_id",  "String",       "VARCHAR(255) NOT NULL",                                    false, None,              "Session identifier"),
+            f("status",      "String",       "VARCHAR(50) NOT NULL",                                     false, Some("'active'"), "active | checked_out | abandoned"),
+            f("created_at",  "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                       false, Some("NOW()"),    "Creation timestamp"),
+            f("updated_at",  "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                       false, Some("NOW()"),    "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "valid_status".into(), condition: "matches!(self.status.as_str(), \"active\" | \"checked_out\" | \"abandoned\")".into(), message: "Invalid cart status".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_carts_customer".into(), columns: vec!["customer_id".into()], unique: false },
+            IndexDef { name: "idx_carts_session".into(),  columns: vec!["session_id".into()],  unique: false },
+        ],
+    }
+}
+
+fn ec_cart_item_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "CartItem".into(),
+        description: "Line item within a shopping cart".into(),
+        fields: vec![
+            f("id",             "i64", "BIGSERIAL PRIMARY KEY",                                      false, None,       "Primary key"),
+            f("cart_id",        "i64", "BIGINT NOT NULL REFERENCES carts(id) ON DELETE CASCADE",     false, None,       "FK to cart"),
+            f("product_id",     "i64", "BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT", false, None,       "FK to product"),
+            f("quantity",       "i32", "INTEGER NOT NULL",                                            false, Some("1"), "Quantity"),
+            f("unit_price_cents","i64","BIGINT NOT NULL",                                             false, Some("0"), "Price at time of adding"),
+            f("created_at",     "String","TIMESTAMPTZ NOT NULL DEFAULT NOW()",                        false, Some("NOW()"), "Creation timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "qty_positive".into(), condition: "self.quantity > 0".into(), message: "Quantity must be positive".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_cart_items_cart".into(),    columns: vec!["cart_id".into()],    unique: false },
+            IndexDef { name: "idx_cart_items_product".into(), columns: vec!["product_id".into()], unique: false },
+        ],
+    }
+}
+
+fn ec_order_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Order".into(),
+        description: "Placed customer order".into(),
+        fields: vec![
+            f("id",                  "i64",          "BIGSERIAL PRIMARY KEY",                                         false, None,               "Primary key"),
+            f("order_number",        "String",       "VARCHAR(100) NOT NULL UNIQUE",                                  false, None,               "Unique order reference"),
+            f("customer_id",         "Option<i64>",  "BIGINT REFERENCES customers(id) ON DELETE SET NULL",            true,  None,               "FK to customer"),
+            f("status",              "String",       "VARCHAR(50) NOT NULL",                                          false, Some("'pending'"), "Order status"),
+            f("subtotal",            "i64",          "BIGINT NOT NULL",                                               false, Some("0"),         "Subtotal in cents"),
+            f("tax",                 "i64",          "BIGINT NOT NULL",                                               false, Some("0"),         "Tax in cents"),
+            f("shipping",            "i64",          "BIGINT NOT NULL",                                               false, Some("0"),         "Shipping in cents"),
+            f("total",               "i64",          "BIGINT NOT NULL",                                               false, Some("0"),         "Total in cents"),
+            f("payment_status",      "String",       "VARCHAR(50) NOT NULL",                                          false, Some("'unpaid'"), "Payment status"),
+            f("shipping_address_id", "Option<i64>",  "BIGINT REFERENCES addresses(id) ON DELETE SET NULL",            true,  None,               "FK to shipping address"),
+            f("notes",               "Option<String>","TEXT",                                                          true,  None,               "Order notes"),
+            f("created_at",          "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                            false, Some("NOW()"),     "Creation timestamp"),
+            f("updated_at",          "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                            false, Some("NOW()"),     "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "valid_status".into(), condition: "matches!(self.status.as_str(), \"pending\" | \"confirmed\" | \"shipped\" | \"delivered\" | \"cancelled\")".into(), message: "Invalid order status".into() },
+            ValidationRule { name: "valid_payment".into(), condition: "matches!(self.payment_status.as_str(), \"unpaid\" | \"paid\" | \"refunded\" | \"failed\")".into(), message: "Invalid payment status".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_ec_orders_number".into(),   columns: vec!["order_number".into()],  unique: true },
+            IndexDef { name: "idx_ec_orders_customer".into(), columns: vec!["customer_id".into()],   unique: false },
+            IndexDef { name: "idx_ec_orders_status".into(),   columns: vec!["status".into()],        unique: false },
+        ],
+    }
+}
+
+fn ec_order_line_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "OrderLine".into(),
+        description: "Line item within a placed order".into(),
+        fields: vec![
+            f("id",             "i64", "BIGSERIAL PRIMARY KEY",                                      false, None,       "Primary key"),
+            f("order_id",       "i64", "BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE",    false, None,       "FK to order"),
+            f("product_id",     "i64", "BIGINT NOT NULL REFERENCES products(id) ON DELETE RESTRICT", false, None,       "FK to product"),
+            f("quantity",       "i32", "INTEGER NOT NULL",                                            false, None,       "Quantity ordered"),
+            f("unit_price_cents","i64","BIGINT NOT NULL",                                             false, None,       "Unit price at time of order"),
+            f("created_at",     "String","TIMESTAMPTZ NOT NULL DEFAULT NOW()",                        false, Some("NOW()"), "Creation timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "qty_positive".into(), condition: "self.quantity > 0".into(), message: "Quantity must be positive".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_order_lines_order".into(),   columns: vec!["order_id".into()],   unique: false },
+            IndexDef { name: "idx_order_lines_product".into(), columns: vec!["product_id".into()], unique: false },
+        ],
+    }
+}
+
+fn ec_review_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Review".into(),
+        description: "Customer product review".into(),
+        fields: vec![
+            f("id",          "i64",          "BIGSERIAL PRIMARY KEY",                                          false, None,            "Primary key"),
+            f("product_id",  "i64",          "BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE",      false, None,            "FK to product"),
+            f("customer_id", "i64",          "BIGINT NOT NULL REFERENCES customers(id) ON DELETE CASCADE",     false, None,            "FK to customer"),
+            f("rating",      "i32",          "INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5)",           false, None,            "Rating 1-5"),
+            f("title",       "Option<String>","VARCHAR(255)",                                                   true,  None,            "Review title"),
+            f("body",        "Option<String>","TEXT",                                                           true,  None,            "Review body"),
+            f("is_approved", "bool",         "BOOLEAN NOT NULL",                                               false, Some("false"), "Approved by moderator"),
+            f("created_at",  "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                             false, Some("NOW()"), "Creation timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "rating_range".into(), condition: "self.rating >= 1 && self.rating <= 5".into(), message: "Rating must be 1-5".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_reviews_product".into(),  columns: vec!["product_id".into()],  unique: false },
+            IndexDef { name: "idx_reviews_customer".into(), columns: vec!["customer_id".into()], unique: false },
+            IndexDef { name: "idx_reviews_approved".into(), columns: vec!["is_approved".into()], unique: false },
+        ],
+    }
+}
+
+// ─── Project Management Domain ───────────────────────────────────────────────
 
 fn build_pm_domain() -> DomainTemplate {
     DomainTemplate {
         name: "project_management".into(),
-        keywords: vec!["project".into(), "task".into(), "sprint".into(), "milestone".into(), "kanban".into()],
-        entities: vec![],
-        relationships: vec![],
-        business_rules: vec![],
+        keywords: vec![
+            "project".into(), "task".into(), "sprint".into(), "milestone".into(),
+            "kanban".into(), "scrum".into(), "agile".into(), "backlog".into(),
+            "issue".into(), "ticket".into(), "tracker".into(), "jira".into(),
+        ],
+        entities: vec![
+            pm_user_entity(),
+            pm_project_entity(),
+            pm_sprint_entity(),
+            pm_task_entity(),
+            pm_comment_entity(),
+            pm_label_entity(),
+            pm_task_label_entity(),
+            pm_team_member_entity(),
+        ],
+        relationships: vec![
+            Relationship { from_entity: "Project".into(),    to_entity: "User".into(),    kind: RelationshipKind::BelongsTo, foreign_key: "owner_id".into(),    on_delete: OnDelete::Restrict },
+            Relationship { from_entity: "Sprint".into(),     to_entity: "Project".into(), kind: RelationshipKind::BelongsTo, foreign_key: "project_id".into(),  on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "Task".into(),       to_entity: "Project".into(), kind: RelationshipKind::BelongsTo, foreign_key: "project_id".into(),  on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "Task".into(),       to_entity: "Sprint".into(),  kind: RelationshipKind::BelongsTo, foreign_key: "sprint_id".into(),   on_delete: OnDelete::SetNull },
+            Relationship { from_entity: "Task".into(),       to_entity: "User".into(),    kind: RelationshipKind::BelongsTo, foreign_key: "assignee_id".into(),  on_delete: OnDelete::SetNull },
+            Relationship { from_entity: "Comment".into(),    to_entity: "Task".into(),    kind: RelationshipKind::BelongsTo, foreign_key: "task_id".into(),     on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "Comment".into(),    to_entity: "User".into(),    kind: RelationshipKind::BelongsTo, foreign_key: "author_id".into(),   on_delete: OnDelete::Restrict },
+            Relationship { from_entity: "Label".into(),      to_entity: "Project".into(), kind: RelationshipKind::BelongsTo, foreign_key: "project_id".into(),  on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "TaskLabel".into(),  to_entity: "Task".into(),    kind: RelationshipKind::BelongsTo, foreign_key: "task_id".into(),     on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "TaskLabel".into(),  to_entity: "Label".into(),   kind: RelationshipKind::BelongsTo, foreign_key: "label_id".into(),    on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "TeamMember".into(), to_entity: "User".into(),    kind: RelationshipKind::BelongsTo, foreign_key: "user_id".into(),     on_delete: OnDelete::Cascade },
+            Relationship { from_entity: "TeamMember".into(), to_entity: "Project".into(), kind: RelationshipKind::BelongsTo, foreign_key: "project_id".into(),  on_delete: OnDelete::Cascade },
+        ],
+        business_rules: vec![
+            BusinessRule {
+                name: "task_state_machine".into(),
+                description: "Task status: todo→in_progress→in_review→done; any→blocked".into(),
+                trigger: "on_status_change".into(),
+                logic_pseudocode: "match (current, next) { (todo, in_progress) | (in_progress, in_review) | (in_review, done) | (_, blocked) => Ok(()), _ => Err(\"invalid transition\") }".into(),
+                service_method: "task_service::update_status".into(),
+                entities_involved: vec!["Task".into()],
+            },
+            BusinessRule {
+                name: "sprint_velocity".into(),
+                description: "Calculate sprint velocity as sum of estimate_hours for completed tasks".into(),
+                trigger: "on_sprint_close".into(),
+                logic_pseudocode: "velocity = tasks.filter(status == done).sum(estimate_hours);".into(),
+                service_method: "sprint_service::calculate_velocity".into(),
+                entities_involved: vec!["Sprint".into(), "Task".into()],
+            },
+            BusinessRule {
+                name: "role_based_assignment".into(),
+                description: "Only project members can be assigned tasks".into(),
+                trigger: "on_task_assign".into(),
+                logic_pseudocode: "if !team_members.contains(assignee_id) { return Err(\"not a project member\"); }".into(),
+                service_method: "task_service::assign".into(),
+                entities_involved: vec!["Task".into(), "TeamMember".into()],
+            },
+        ],
         api_features: ApiFeatures {
             pagination: true,
-            filtering: vec!["status".into(), "priority".into(), "assignee".into()],
-            sorting: vec!["created_at".into(), "due_date".into(), "priority".into()],
-            search_fields: vec!["title".into(), "description".into()],
+            filtering: vec!["status".into(), "priority".into(), "assignee_id".into(), "sprint_id".into(), "project_id".into()],
+            sorting: vec!["created_at".into(), "due_date".into(), "priority".into(), "position".into()],
+            search_fields: vec!["title".into(), "description".into(), "name".into()],
             export_formats: vec!["json".into(), "csv".into()],
         },
+    }
+}
+
+fn pm_user_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "User".into(),
+        description: "System user".into(),
+        fields: vec![
+            f("id",            "i64",          "BIGSERIAL PRIMARY KEY",           false, None,           "Primary key"),
+            f("email",         "String",       "VARCHAR(255) NOT NULL UNIQUE",     false, None,           "User email"),
+            f("password_hash", "String",       "VARCHAR(255) NOT NULL",            false, None,           "Bcrypt hash"),
+            f("display_name",  "String",       "VARCHAR(255) NOT NULL",            false, None,           "Display name"),
+            f("avatar_url",    "Option<String>","VARCHAR(1024)",                   true,  None,           "Avatar URL"),
+            f("is_active",     "bool",         "BOOLEAN NOT NULL",                 false, Some("true"), "Active flag"),
+            f("created_at",    "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()", false, Some("NOW()"), "Creation timestamp"),
+            f("updated_at",    "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()", false, Some("NOW()"), "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "email_not_empty".into(),   condition: "!self.email.trim().is_empty()".into(),        message: "Email must not be empty".into() },
+            ValidationRule { name: "name_not_empty".into(),    condition: "!self.display_name.trim().is_empty()".into(), message: "Display name must not be empty".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_pm_users_email".into(), columns: vec!["email".into()], unique: true },
+        ],
+    }
+}
+
+fn pm_project_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Project".into(),
+        description: "Top-level project container".into(),
+        fields: vec![
+            f("id",             "i64",          "BIGSERIAL PRIMARY KEY",                              false, None,              "Primary key"),
+            f("name",           "String",       "VARCHAR(255) NOT NULL",                               false, None,              "Project name"),
+            f("description",    "Option<String>","TEXT",                                               true,  None,              "Project description"),
+            f("owner_id",       "i64",          "BIGINT NOT NULL REFERENCES users(id)",                false, None,              "FK to owner"),
+            f("status",         "String",       "VARCHAR(50) NOT NULL",                                false, Some("'active'"), "active | archived | completed"),
+            f("start_date",     "Option<String>","DATE",                                               true,  None,              "Start date"),
+            f("target_end_date","Option<String>","DATE",                                               true,  None,              "Target end date"),
+            f("created_at",     "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                  false, Some("NOW()"),    "Creation timestamp"),
+            f("updated_at",     "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                  false, Some("NOW()"),    "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "name_not_empty".into(), condition: "!self.name.trim().is_empty()".into(), message: "Name must not be empty".into() },
+            ValidationRule { name: "valid_status".into(), condition: "matches!(self.status.as_str(), \"active\" | \"archived\" | \"completed\")".into(), message: "Invalid project status".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_projects_owner".into(),  columns: vec!["owner_id".into()],  unique: false },
+            IndexDef { name: "idx_projects_status".into(), columns: vec!["status".into()],    unique: false },
+        ],
+    }
+}
+
+fn pm_sprint_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Sprint".into(),
+        description: "Time-boxed sprint within a project".into(),
+        fields: vec![
+            f("id",         "i64",          "BIGSERIAL PRIMARY KEY",                                  false, None,              "Primary key"),
+            f("project_id", "i64",          "BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE", false, None,           "FK to project"),
+            f("name",       "String",       "VARCHAR(255) NOT NULL",                                   false, None,              "Sprint name"),
+            f("goal",       "Option<String>","TEXT",                                                   true,  None,              "Sprint goal"),
+            f("start_date", "Option<String>","DATE",                                                   true,  None,              "Start date"),
+            f("end_date",   "Option<String>","DATE",                                                   true,  None,              "End date"),
+            f("status",     "String",       "VARCHAR(50) NOT NULL",                                    false, Some("'planned'"),"planned | active | completed"),
+            f("created_at", "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                      false, Some("NOW()"),    "Creation timestamp"),
+            f("updated_at", "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                      false, Some("NOW()"),    "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "name_not_empty".into(), condition: "!self.name.trim().is_empty()".into(), message: "Name must not be empty".into() },
+            ValidationRule { name: "valid_status".into(), condition: "matches!(self.status.as_str(), \"planned\" | \"active\" | \"completed\")".into(), message: "Invalid sprint status".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_sprints_project".into(), columns: vec!["project_id".into()], unique: false },
+            IndexDef { name: "idx_sprints_status".into(),  columns: vec!["status".into()],     unique: false },
+        ],
+    }
+}
+
+fn pm_task_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Task".into(),
+        description: "Work item within a project".into(),
+        fields: vec![
+            f("id",             "i64",          "BIGSERIAL PRIMARY KEY",                                   false, None,              "Primary key"),
+            f("project_id",     "i64",          "BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE",false, None,             "FK to project"),
+            f("sprint_id",      "Option<i64>",  "BIGINT REFERENCES sprints(id) ON DELETE SET NULL",        true,  None,              "FK to sprint"),
+            f("title",          "String",       "VARCHAR(500) NOT NULL",                                   false, None,              "Task title"),
+            f("description",    "Option<String>","TEXT",                                                   true,  None,              "Task description"),
+            f("assignee_id",    "Option<i64>",  "BIGINT REFERENCES users(id) ON DELETE SET NULL",          true,  None,              "FK to assignee"),
+            f("reporter_id",    "i64",          "BIGINT NOT NULL REFERENCES users(id)",                    false, None,              "FK to reporter"),
+            f("status",         "String",       "VARCHAR(50) NOT NULL",                                    false, Some("'todo'"),   "todo|in_progress|in_review|done|blocked"),
+            f("priority",       "String",       "VARCHAR(50) NOT NULL",                                    false, Some("'medium'"),"low|medium|high|critical"),
+            f("estimate_hours", "Option<f64>",  "NUMERIC(6,2)",                                            true,  None,              "Estimated hours"),
+            f("actual_hours",   "Option<f64>",  "NUMERIC(6,2)",                                            true,  None,              "Actual hours logged"),
+            f("due_date",       "Option<String>","DATE",                                                   true,  None,              "Due date"),
+            f("position",       "i32",          "INTEGER NOT NULL",                                        false, Some("0"),        "Sort position in column"),
+            f("created_at",     "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                      false, Some("NOW()"),    "Creation timestamp"),
+            f("updated_at",     "String",       "TIMESTAMPTZ NOT NULL DEFAULT NOW()",                      false, Some("NOW()"),    "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "title_not_empty".into(), condition: "!self.title.trim().is_empty()".into(), message: "Title must not be empty".into() },
+            ValidationRule { name: "valid_status".into(), condition: "matches!(self.status.as_str(), \"todo\" | \"in_progress\" | \"in_review\" | \"done\" | \"blocked\")".into(), message: "Invalid task status".into() },
+            ValidationRule { name: "valid_priority".into(), condition: "matches!(self.priority.as_str(), \"low\" | \"medium\" | \"high\" | \"critical\")".into(), message: "Invalid priority".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_tasks_project".into(),  columns: vec!["project_id".into()],  unique: false },
+            IndexDef { name: "idx_tasks_sprint".into(),   columns: vec!["sprint_id".into()],   unique: false },
+            IndexDef { name: "idx_tasks_assignee".into(), columns: vec!["assignee_id".into()], unique: false },
+            IndexDef { name: "idx_tasks_status".into(),   columns: vec!["status".into()],      unique: false },
+        ],
+    }
+}
+
+fn pm_comment_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Comment".into(),
+        description: "Comment on a task".into(),
+        fields: vec![
+            f("id",        "i64",   "BIGSERIAL PRIMARY KEY",                                   false, None,           "Primary key"),
+            f("task_id",   "i64",   "BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE",  false, None,           "FK to task"),
+            f("author_id", "i64",   "BIGINT NOT NULL REFERENCES users(id)",                    false, None,           "FK to author"),
+            f("body",      "String","TEXT NOT NULL",                                            false, None,           "Comment text"),
+            f("created_at","String","TIMESTAMPTZ NOT NULL DEFAULT NOW()",                       false, Some("NOW()"), "Creation timestamp"),
+            f("updated_at","String","TIMESTAMPTZ NOT NULL DEFAULT NOW()",                       false, Some("NOW()"), "Update timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "body_not_empty".into(), condition: "!self.body.trim().is_empty()".into(), message: "Comment body must not be empty".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_comments_task".into(),   columns: vec!["task_id".into()],   unique: false },
+            IndexDef { name: "idx_comments_author".into(), columns: vec!["author_id".into()], unique: false },
+        ],
+    }
+}
+
+fn pm_label_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "Label".into(),
+        description: "Coloured label for tagging tasks".into(),
+        fields: vec![
+            f("id",         "i64",   "BIGSERIAL PRIMARY KEY",                                     false, None,           "Primary key"),
+            f("project_id", "i64",   "BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE", false, None,           "FK to project"),
+            f("name",       "String","VARCHAR(100) NOT NULL",                                      false, None,           "Label name"),
+            f("color",      "String","VARCHAR(20) NOT NULL",                                       false, Some("'#808080'"),"Hex color"),
+            f("created_at", "String","TIMESTAMPTZ NOT NULL DEFAULT NOW()",                         false, Some("NOW()"), "Creation timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "name_not_empty".into(), condition: "!self.name.trim().is_empty()".into(), message: "Label name must not be empty".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_labels_project".into(), columns: vec!["project_id".into()], unique: false },
+        ],
+    }
+}
+
+fn pm_task_label_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "TaskLabel".into(),
+        description: "Join table: task ↔ label".into(),
+        fields: vec![
+            f("task_id",  "i64","BIGINT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE",  false, None, "FK to task"),
+            f("label_id", "i64","BIGINT NOT NULL REFERENCES labels(id) ON DELETE CASCADE", false, None, "FK to label"),
+        ],
+        validations: vec![],
+        indices: vec![
+            IndexDef { name: "pk_task_labels".into(), columns: vec!["task_id".into(), "label_id".into()], unique: true },
+        ],
+    }
+}
+
+fn pm_team_member_entity() -> EntityTemplate {
+    EntityTemplate {
+        name: "TeamMember".into(),
+        description: "Project team membership with role".into(),
+        fields: vec![
+            f("id",         "i64",   "BIGSERIAL PRIMARY KEY",                                      false, None,               "Primary key"),
+            f("user_id",    "i64",   "BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE",     false, None,               "FK to user"),
+            f("project_id", "i64",   "BIGINT NOT NULL REFERENCES projects(id) ON DELETE CASCADE",  false, None,               "FK to project"),
+            f("role",       "String","VARCHAR(50) NOT NULL",                                        false, Some("'member'"), "owner|admin|member|viewer"),
+            f("created_at", "String","TIMESTAMPTZ NOT NULL DEFAULT NOW()",                          false, Some("NOW()"),    "Creation timestamp"),
+        ],
+        validations: vec![
+            ValidationRule { name: "valid_role".into(), condition: "matches!(self.role.as_str(), \"owner\" | \"admin\" | \"member\" | \"viewer\")".into(), message: "Invalid team role".into() },
+        ],
+        indices: vec![
+            IndexDef { name: "idx_team_members_user".into(),    columns: vec!["user_id".into()],    unique: false },
+            IndexDef { name: "idx_team_members_project".into(), columns: vec!["project_id".into()], unique: false },
+            IndexDef { name: "uk_team_members".into(),          columns: vec!["user_id".into(), "project_id".into()], unique: true },
+        ],
     }
 }
 

@@ -1,0 +1,15 @@
+[package]
+name = "isls-chat"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Chat-driven intent recognition and norm operation mapping for ISLS v3.0"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+isls-norms  = { path = "../isls-norms" }
+isls-renderloop = { path = "../isls-renderloop" }
