@@ -94,13 +94,15 @@ enum Command {
     BabylonCheck { ir: Option<String> },
     // Full-Stack Autonomy pipeline
     ForgeFullStack { app: Option<String>, constraints: String, output: String, mock_oracle: bool, verify_compilation: bool },
-    // V2 Hypercube Decomposer pipeline (with optional v2.1 render loop)
+    // V2/V3.1 Hypercube Decomposer pipeline (with optional v2.1 render loop)
     ForgeV2 {
         requirements: String,
         output: String,
         mock_oracle: bool,
         trace: bool,
         verify_compilation: bool,
+        // v3.1: use --legacy-templates to revert to Tera emission
+        legacy_templates: bool,
         // v2.1 render-loop flags
         api_key: Option<String>,
         model: String,
@@ -465,6 +467,7 @@ fn parse_args(args: &[String]) -> Command {
             let mock_oracle = args.contains(&"--mock-oracle".to_string());
             let trace = args.contains(&"--trace".to_string());
             let verify_compilation = args.contains(&"--verify".to_string());
+            let legacy_templates = args.contains(&"--legacy-templates".to_string());
             // v2.1 render-loop flags
             let api_key = args.iter().position(|a| a == "--api-key")
                 .and_then(|i| args.get(i + 1))
@@ -497,6 +500,7 @@ fn parse_args(args: &[String]) -> Command {
             }
             Command::ForgeV2 {
                 requirements, output, mock_oracle, trace, verify_compilation,
+                legacy_templates,
                 api_key, model, passes, skip_passes, token_budget, crystal_path,
             }
         }
@@ -2076,6 +2080,7 @@ fn cmd_forge_v2(
     mock_oracle: bool,
     trace: bool,
     _verify_compilation: bool,
+    legacy_templates: bool,
     api_key: Option<String>,
     model: &str,
     passes: u32,
@@ -2083,9 +2088,77 @@ fn cmd_forge_v2(
     token_budget: Option<u64>,
     crystal_path: Option<&str>,
 ) {
-    use isls_decomposer::{forge_v2, DecomposerConfig};
+    use isls_decomposer::{forge_v2, forge_v31, DecomposerConfig};
     use std::path::Path;
 
+    // v3.1 path (default) — template-free LLM generation
+    if !legacy_templates {
+        println!("╔══════════════════════════════════════════════════════╗");
+        println!("║     ISLS v3.1 Template-Free Generation               ║");
+        println!("║     Norms + LLM + Compile Verification               ║");
+        println!("╚══════════════════════════════════════════════════════╝");
+        println!();
+
+        let req_path = Path::new(requirements_path);
+        if !req_path.exists() {
+            eprintln!("[ERROR] Requirements file not found: {}", requirements_path);
+            std::process::exit(1);
+        }
+        let output_dir = Path::new(output);
+        let _ = dotenv::dotenv();
+        let use_mock = mock_oracle
+            || (api_key.is_none() && std::env::var("OPENAI_API_KEY").is_err());
+
+        if use_mock {
+            println!("[Mode] Mock oracle — no LLM calls (compilable output)");
+        } else {
+            println!("[Mode] LLM oracle — {}", model);
+        }
+
+        let config = DecomposerConfig {
+            trace,
+            mock_oracle: use_mock,
+            blueprint_path: Some(output_dir.join("evidence/blueprint_registry.json")),
+            api_key,
+            model: model.to_string(),
+            passes,
+            skip_passes: skip_passes.to_vec(),
+            token_budget_override: token_budget,
+            crystal_path: crystal_path.map(|p| std::path::PathBuf::from(p)),
+        };
+
+        match forge_v31(req_path, output_dir, &config) {
+            Ok(result) => {
+                println!();
+                println!("╔══════════════════════════════════════════════════════╗");
+                println!("║              V3.1 GENERATION COMPLETE                ║");
+                println!("╚══════════════════════════════════════════════════════╝");
+                println!();
+                println!("  App:              {}", result.app_name);
+                println!("  Files generated:  {}", result.total_files);
+                println!("  Total LOC:        {}", result.total_loc);
+                println!("  Domain:           {}", result.domain_name);
+                println!("  Total tokens:     {}", result.total_tokens_used);
+                println!("  Total time:       {:.2}s", result.time_secs);
+                println!();
+                println!("  Output:           {}", output);
+                println!("  Backend:          {}/backend/", output);
+                println!("  Frontend:         {}/frontend/", output);
+                println!();
+                println!("Next steps:");
+                println!("  cd {} && docker-compose up -d", output);
+                println!("  # or: cd {}/backend && cargo build", output);
+            }
+            Err(e) => {
+                eprintln!();
+                eprintln!("[ERROR] V3.1 pipeline failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // Legacy v2 path (Tera templates)
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║     ISLS v2.1 Hypercube + Multi-Pass Renderer        ║");
     println!("╚══════════════════════════════════════════════════════╝");
@@ -4842,10 +4915,12 @@ fn main() {
         }
         Command::ForgeV2 {
             requirements, output, mock_oracle, trace, verify_compilation,
+            legacy_templates,
             api_key, model, passes, skip_passes, token_budget, crystal_path,
         } => {
             cmd_forge_v2(
                 &requirements, &output, mock_oracle, trace, verify_compilation,
+                legacy_templates,
                 api_key, &model, passes, &skip_passes, token_budget,
                 crystal_path.as_deref(),
             );

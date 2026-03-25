@@ -32,6 +32,129 @@ pub struct TypeContext {
 }
 
 impl TypeContext {
+    /// Add a freshly generated file's types to the growing context.
+    ///
+    /// Called after each successful file generation in the v3.1 LLM forge pipeline.
+    /// Dispatches on the file path to extract the appropriate types.
+    pub fn add_file(&mut self, path: &str, content: &str) {
+        let path_norm = path.replace('\\', "/");
+        if path_norm.ends_with("errors.rs") {
+            let extracted = extract_enum_definition(content, "AppError");
+            if !extracted.is_empty() {
+                self.error_enum = extracted;
+            }
+        } else if path_norm.ends_with("pagination.rs") {
+            let params = extract_struct_full(content, "PaginationParams");
+            let resp = extract_struct_full(content, "PaginatedResponse");
+            if !params.is_empty() || !resp.is_empty() {
+                self.pagination_types = format!("{}\n\n{}", params, resp);
+            }
+        } else if path_norm.ends_with("auth.rs") && !path_norm.contains("auth_routes") {
+            let user = extract_struct_full(content, "AuthUser");
+            let claims = extract_struct_full(content, "Claims");
+            if !user.is_empty() || !claims.is_empty() {
+                self.auth_types = format!("{}\n\n{}", user, claims);
+            }
+        } else if path_norm.contains("models/") && path_norm.ends_with(".rs")
+            && !path_norm.ends_with("mod.rs")
+        {
+            // Extract entity name from file stem
+            let stem = path_norm
+                .split('/')
+                .last()
+                .and_then(|f| f.strip_suffix(".rs"))
+                .unwrap_or("unknown");
+            let entity = to_pascal_case(stem);
+            let main_struct = extract_struct_full(content, &entity);
+            let create_payload =
+                extract_struct_full(content, &format!("Create{}Payload", entity));
+            let update_payload =
+                extract_struct_full(content, &format!("Update{}Payload", entity));
+            let validation_impl = extract_impl_validate(content, &entity);
+            // Replace existing entry for this entity or push new one
+            if let Some(existing) = self.models.iter_mut().find(|m| {
+                m.entity_name.eq_ignore_ascii_case(&entity)
+            }) {
+                existing.main_struct = main_struct;
+                existing.create_payload = create_payload;
+                existing.update_payload = update_payload;
+                existing.validation_impl = validation_impl;
+            } else {
+                self.models.push(ModelDef {
+                    entity_name: entity,
+                    main_struct,
+                    create_payload,
+                    update_payload,
+                    validation_impl,
+                });
+            }
+        } else if path_norm.contains("database/") && path_norm.ends_with("_queries.rs") {
+            let name = path_norm
+                .split('/')
+                .last()
+                .and_then(|f| f.strip_suffix("_queries.rs"))
+                .unwrap_or("unknown")
+                .to_string();
+            let sigs = extract_fn_signatures(content);
+            self.query_signatures.insert(name, sigs);
+        }
+    }
+
+    /// Format ALL accumulated types into a prompt-injectable string.
+    ///
+    /// Used by the v3.1 LLM forge to inject the growing type context into
+    /// every subsequent file's prompt, eliminating hallucinated field names.
+    pub fn to_prompt_string_full(&self) -> String {
+        let mut parts = Vec::new();
+        parts.push("// === TYPE CONTEXT (do not modify — injected by ISLS v3.1) ===".to_string());
+
+        if !self.error_enum.is_empty() {
+            parts.push(format!("// --- AppError enum ---\n{}", self.error_enum));
+        }
+        if !self.pagination_types.is_empty() {
+            parts.push(format!("// --- Pagination types ---\n{}", self.pagination_types));
+        }
+        if !self.auth_types.is_empty() {
+            parts.push(format!("// --- Auth types ---\n{}", self.auth_types));
+        }
+        for model in &self.models {
+            if !model.main_struct.is_empty() {
+                parts.push(format!("// --- {} struct ---\n{}", model.entity_name, model.main_struct));
+            }
+            if !model.create_payload.is_empty() {
+                parts.push(format!(
+                    "// --- Create{}Payload ---\n{}",
+                    model.entity_name, model.create_payload
+                ));
+            }
+            if !model.update_payload.is_empty() {
+                parts.push(format!(
+                    "// --- Update{}Payload ---\n{}",
+                    model.entity_name, model.update_payload
+                ));
+            }
+        }
+        for (entity, sigs) in &self.query_signatures {
+            if !sigs.is_empty() {
+                parts.push(format!("// --- {}_queries.rs signatures ---", entity));
+                for sig in sigs {
+                    parts.push(format!("// {}", sig));
+                }
+            }
+        }
+
+        parts.push("// === RULES ===".to_string());
+        parts.push("// - Use tracing::info!/warn!/error! — NEVER use log::".to_string());
+        parts.push("// - AppError::ValidationError takes Vec<String>".to_string());
+        parts.push("// - Use exact field names from the structs above".to_string());
+        parts.push(
+            "// - Compare Option<T> fields with .is_some()/.is_none(), not as T".to_string(),
+        );
+        parts.push("// === END TYPE CONTEXT ===".to_string());
+
+        parts.join("\n")
+    }
+
     /// Build a `TypeContext` by scanning `output_dir` for generated source files.
     ///
     /// Reads:
