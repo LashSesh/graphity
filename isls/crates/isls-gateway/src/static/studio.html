@@ -1796,13 +1796,165 @@ function agentRefresh() {
         });
 }
 
-// ─── Chat (C30 Phase 12) ─────────────────────────────────────────────────
+// ─── Chat (v3.2 norm-aware wiring) ───────────────────────────────────────
 let chatJobId = null;
 let chatPolling = null;
 let renderedEventCount = 0;
 let chatTotalRequests = 0, chatMemoryHits = 0, chatOracleCost = 0, chatPatterns = 0;
+let lastPlanId = null;
+let activatedNormIds = [];
 
 function sendChat() {
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+    input.value = '';
+    appendChatMsg('user', message);
+
+    // Use norm-aware /api/chat endpoint (v3.2)
+    fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message}),
+    })
+    .then(r => r.json())
+    .then(data => {
+        appendChatMsg('agent', data.message || 'No response', 'analysis');
+
+        // Store plan_id for forge action
+        if (data.plan_id) {
+            lastPlanId = data.plan_id;
+        }
+
+        // Track activated norms
+        if (data.norms_activated && data.norms_activated.length > 0) {
+            activatedNormIds = data.norms_activated;
+            appendChatMsg('agent',
+                data.norms_activated.length + ' Norms aktiviert: ' + data.norms_activated.join(', '),
+                'progress');
+            updateNormExplorer(data.norms_activated);
+        }
+
+        // Show plan description
+        if (data.plan_description) {
+            appendChatMsg('agent', data.plan_description, 'analysis');
+        }
+
+        // Render action buttons
+        if (data.action_buttons && data.action_buttons.length > 0) {
+            renderActionButtons(data.action_buttons);
+        }
+    })
+    .catch(err => appendChatMsg('agent', 'Network error: ' + err, 'error'));
+}
+
+function renderActionButtons(buttons) {
+    const msgs = document.getElementById('chat-messages');
+    if (!msgs) return;
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px 0;display:flex;gap:8px';
+    buttons.forEach(btn => {
+        const el = document.createElement('button');
+        el.className = 'btn';
+        el.textContent = btn.label;
+        el.style.cssText = btn.style === 'primary'
+            ? 'background:var(--accent);color:#fff;padding:6px 16px;font-size:13px;cursor:pointer;border:none;border-radius:4px'
+            : 'background:var(--bg-tertiary);color:var(--text-primary);padding:6px 16px;font-size:13px;cursor:pointer;border:1px solid var(--border);border-radius:4px';
+        el.onclick = () => handleAction(btn.action);
+        div.appendChild(el);
+    });
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+}
+
+function handleAction(action) {
+    if (action === 'forge' && lastPlanId) {
+        appendChatMsg('agent', 'Starte Generierung...', 'progress');
+        const apiKey = localStorage.getItem('isls-api-key') || null;
+        fetch('/api/projects/forge', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({plan_id: lastPlanId, api_key: apiKey}),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                appendChatMsg('agent',
+                    'Generierung abgeschlossen!\n' +
+                    '  Dateien: ' + data.files_generated + '\n' +
+                    '  Zeilen: ' + data.total_loc + '\n' +
+                    '  Tokens: ' + data.total_tokens + '\n' +
+                    '  Kompilierung: ' + data.compile_status + '\n' +
+                    '  Projekt-ID: ' + data.project_id,
+                    'complete');
+                // Offer to browse files
+                const msgs = document.getElementById('chat-messages');
+                const browseDiv = document.createElement('div');
+                browseDiv.style.cssText = 'padding:8px 0';
+                const browseBtn = document.createElement('button');
+                browseBtn.className = 'btn';
+                browseBtn.textContent = 'Dateien durchsuchen';
+                browseBtn.style.cssText = 'background:var(--bg-tertiary);color:var(--text-primary);padding:6px 16px;font-size:13px;cursor:pointer;border:1px solid var(--border);border-radius:4px';
+                browseBtn.onclick = () => viewProjectFiles(data.project_id);
+                browseDiv.appendChild(browseBtn);
+                msgs.appendChild(browseDiv);
+                // Refresh projects list
+                loadProjects();
+            } else {
+                appendChatMsg('agent', 'Fehler: ' + (data.error || 'unknown'), 'error');
+            }
+        })
+        .catch(err => appendChatMsg('agent', 'Network error: ' + err, 'error'));
+    } else if (action === 'customize') {
+        appendChatMsg('agent', 'Beschreibe deine Anpassungen — z.B. "Füge ein barcode-Feld zu Product hinzu" oder "Entferne die Supplier-Entität".', 'analysis');
+    }
+}
+
+function viewProjectFiles(projectId) {
+    fetch('/api/projects/' + encodeURIComponent(projectId) + '/files')
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok && data.files) {
+                let tree = 'Generierte Dateien (' + data.count + '):\n';
+                data.files.sort((a, b) => a.path.localeCompare(b.path));
+                data.files.forEach(f => {
+                    const icon = f.is_rust ? '🦀' : '📄';
+                    tree += '  ' + icon + ' ' + f.path + ' (' + f.size + ' bytes)\n';
+                });
+                appendChatMsg('agent', tree, 'analysis');
+
+                // Show clickable file links
+                const msgs = document.getElementById('chat-messages');
+                const fileDiv = document.createElement('div');
+                fileDiv.style.cssText = 'padding:4px 0;font-size:12px';
+                data.files.slice(0, 20).forEach(f => {
+                    const link = document.createElement('a');
+                    link.href = '#';
+                    link.textContent = f.path;
+                    link.style.cssText = 'display:block;color:var(--accent);padding:2px 0;cursor:pointer;text-decoration:none';
+                    link.onclick = (e) => { e.preventDefault(); showFileContent(projectId, f.path); };
+                    fileDiv.appendChild(link);
+                });
+                msgs.appendChild(fileDiv);
+                msgs.scrollTop = msgs.scrollHeight;
+            }
+        });
+}
+
+function showFileContent(projectId, path) {
+    fetch('/api/projects/' + encodeURIComponent(projectId) + '/file?path=' + encodeURIComponent(path))
+        .then(r => r.json())
+        .then(data => {
+            if (data.ok) {
+                appendChatMsg('agent', '── ' + path + ' ──\n' + data.content, 'analysis');
+            } else {
+                appendChatMsg('agent', 'Fehler beim Laden: ' + (data.error || path), 'error');
+            }
+        });
+}
+
+// Legacy agent/chat support (backward compatible)
+function sendChatLegacy() {
     const input = document.getElementById('chat-input');
     const project = (document.getElementById('chatProject').value || '').trim() || null;
     const message = input.value.trim();
@@ -2009,13 +2161,26 @@ function renderNormsTable(norms) {
         tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim)">No norms match.</td></tr>';
         return;
     }
-    tbody.innerHTML = norms.map(n => `
-        <tr style="cursor:pointer" onclick="showNormDetail('${n.id}')">
-            <td style="font-family:monospace;font-size:11px">${n.id}</td>
+    tbody.innerHTML = norms.map(n => {
+        const isActive = activatedNormIds.includes(n.id);
+        const bg = isActive ? 'background:rgba(34,197,94,0.15);' : '';
+        const indicator = isActive ? '<span style="color:var(--success,#22c55e)" title="Activated">●</span> ' : '';
+        return `<tr style="cursor:pointer;${bg}" onclick="showNormDetail('${n.id}')">
+            <td style="font-family:monospace;font-size:11px">${indicator}${n.id}</td>
             <td>${n.name}</td>
             <td><span style="color:${levelColor[n.level]||'var(--text-primary)'}">${n.level}</span></td>
             <td style="font-size:11px;color:var(--text-dim)">${n.description || ''}</td>
-        </tr>`).join('');
+        </tr>`;
+    }).join('');
+}
+
+function updateNormExplorer(normIds) {
+    activatedNormIds = normIds || [];
+    if (allNorms.length > 0) {
+        renderNormsTable(allNorms);
+    } else {
+        loadNorms();
+    }
 }
 
 function showNormDetail(id) {
@@ -2059,19 +2224,25 @@ function loadProjects() {
 function renderProjectsTable(projects) {
     const tbody = document.getElementById('projectsBody');
     if (!projects.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No projects yet. Click "+ New Project" to create one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No projects yet. Use Chat to create one.</td></tr>';
         return;
     }
-    const statusColor = { created: 'var(--text-dim)', generating: 'var(--accent)', done: 'var(--success,#22c55e)', error: 'var(--danger,#ef4444)' };
-    tbody.innerHTML = projects.map(p => `
-        <tr>
+    const statusColor = { created: 'var(--text-dim)', generating: 'var(--accent)', completed: 'var(--success,#22c55e)', failed: 'var(--danger,#ef4444)' };
+    tbody.innerHTML = projects.map(p => {
+        const stats = p.stats ? `${p.stats.files_generated} files, ${p.stats.total_loc} LOC` : '—';
+        const norms = (p.norms_used || []).length > 0 ? p.norms_used.length + ' norms' : '—';
+        const browseBtn = p.status === 'completed' && p.output_dir
+            ? `<button class="btn" style="font-size:11px;padding:2px 8px;margin-right:4px" onclick="viewProjectFiles('${p.id}')">Browse</button>`
+            : '';
+        return `<tr>
             <td style="font-family:monospace;font-size:11px">${p.id}</td>
             <td>${p.name}</td>
-            <td style="color:var(--text-dim)">${p.domain || '—'}</td>
+            <td style="font-size:11px;color:var(--text-dim)">${stats}</td>
             <td><span style="color:${statusColor[p.status]||'var(--text-primary)'}">${p.status}</span></td>
-            <td style="font-size:11px;color:var(--text-dim)">${(p.created_at||'').replace('T',' ').slice(0,19)}</td>
-            <td><button class="btn" style="font-size:11px;padding:2px 8px" onclick="deleteProject('${p.id}')">Delete</button></td>
-        </tr>`).join('');
+            <td style="font-size:11px;color:var(--text-dim)">${norms}</td>
+            <td>${browseBtn}<button class="btn" style="font-size:11px;padding:2px 8px" onclick="deleteProject('${p.id}')">Delete</button></td>
+        </tr>`;
+    }).join('');
 }
 
 function showCreateProjectModal() {

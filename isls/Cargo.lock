@@ -1203,6 +1203,7 @@ name = "isls-forge-llm"
 version = "1.0.0"
 dependencies = [
  "isls-hypercube",
+ "isls-norms",
  "isls-renderloop",
  "serde",
  "serde_json",
@@ -1241,10 +1242,12 @@ dependencies = [
  "isls-archive",
  "isls-chat",
  "isls-forge",
+ "isls-forge-llm",
  "isls-harness",
  "isls-navigator",
  "isls-norms",
  "isls-oracle",
+ "isls-renderloop",
  "isls-store",
  "isls-templates",
  "isls-types",

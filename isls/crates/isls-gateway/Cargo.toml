@@ -17,6 +17,8 @@ isls-harness = { path = "../isls-harness" }
 isls-archive = { path = "../isls-archive" }
 isls-store = { path = "../isls-store" }
 isls-forge = { path = "../isls-forge" }
+isls-forge-llm = { path = "../isls-forge-llm" }
+isls-renderloop = { path = "../isls-renderloop" }
 isls-templates = { path = "../isls-templates" }
 
 serde = { workspace = true }

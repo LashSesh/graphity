@@ -184,6 +184,96 @@ impl ForgePlan {
         }
     }
 
+    /// Build a `ForgePlan` dynamically from a [`ComposedPlan`] (v3.2 wiring).
+    ///
+    /// Converts composed norm artifacts into `EntityDef`s and an `AppSpec`,
+    /// replacing the hardcoded `warehouse_default()` approach with a
+    /// domain-agnostic plan builder.
+    ///
+    /// If no User-like entity exists in the composed plan, a standard User
+    /// entity is injected for JWT authentication support.
+    pub fn from_composed_plan(
+        app_name: &str,
+        description: &str,
+        plan: &isls_norms::composition::ComposedPlan,
+    ) -> Self {
+        use isls_hypercube::domain::FieldDef;
+
+        let mut entities: Vec<EntityDef> = plan.models.iter().map(|model| {
+            let fields: Vec<FieldDef> = model.fields.iter().map(|f| FieldDef {
+                name: f.name.clone(),
+                rust_type: f.rust_type.clone(),
+                sql_type: f.sql_type.clone(),
+                nullable: f.nullable,
+                default_value: f.default_value.clone(),
+                description: f.description.clone(),
+            }).collect();
+
+            let validations: Vec<ValidationRule> = model.validations.iter().map(|v| {
+                ValidationRule {
+                    condition: v.condition.clone(),
+                    message: v.message.clone(),
+                }
+            }).collect();
+
+            // Collect business rules from matching services
+            let snake = to_snake_case(&model.struct_name);
+            let business_rules: Vec<String> = plan.services.iter()
+                .filter(|s| s.name.to_lowercase().contains(&snake))
+                .flat_map(|s| s.business_rules.iter().cloned())
+                .collect();
+
+            // Collect relationships from interfaces
+            let relationships: Vec<String> = plan.interfaces.iter()
+                .filter(|iface| iface.description.contains(&model.struct_name) || iface.types_shared.iter().any(|t| t.contains(&model.struct_name)))
+                .map(|iface| iface.description.clone())
+                .collect();
+
+            EntityDef {
+                name: model.struct_name.clone(),
+                snake_name: snake,
+                fields,
+                validations,
+                business_rules,
+                relationships,
+            }
+        }).collect();
+
+        // Standard User entity injection: if no User-like entity exists, inject one
+        let has_user = entities.iter().any(|e| {
+            let lower = e.name.to_lowercase();
+            lower == "user" || lower == "account" || lower == "admin"
+        });
+        if !has_user {
+            entities.push(standard_user_entity());
+        }
+
+        // Collect top-level business rules from services
+        let business_rules: Vec<String> = plan.services.iter()
+            .flat_map(|s| s.business_rules.iter().cloned())
+            .collect();
+
+        // Infer domain name from app name
+        let domain_name = app_name.replace('-', " ")
+            .split_whitespace()
+            .next()
+            .unwrap_or("app")
+            .to_string();
+
+        let spec = AppSpec {
+            app_name: app_name.to_string(),
+            description: description.to_string(),
+            domain_name,
+            entities,
+            business_rules,
+        };
+
+        Self {
+            spec,
+            norm_ids: plan.contributing_norms.clone(),
+        }
+    }
+
     /// Build a `ForgePlan` from a domain template (detected from TOML).
     pub fn from_domain(
         app_name: &str,
@@ -315,6 +405,32 @@ pub fn to_snake_case(s: &str) -> String {
         out.extend(ch.to_lowercase());
     }
     out
+}
+
+/// Build a standard User entity for authentication when no User-like entity
+/// exists in the composed plan.
+fn standard_user_entity() -> EntityDef {
+    use isls_hypercube::domain::FieldDef;
+    EntityDef {
+        name: "User".to_string(),
+        snake_name: "user".to_string(),
+        fields: vec![
+            FieldDef { name: "id".into(), rust_type: "i64".into(), sql_type: "BIGSERIAL PRIMARY KEY".into(), nullable: false, default_value: None, description: "Primary key".into() },
+            FieldDef { name: "email".into(), rust_type: "String".into(), sql_type: "VARCHAR(255) UNIQUE NOT NULL".into(), nullable: false, default_value: None, description: "User email address".into() },
+            FieldDef { name: "password_hash".into(), rust_type: "String".into(), sql_type: "VARCHAR(255) NOT NULL".into(), nullable: false, default_value: None, description: "Bcrypt password hash".into() },
+            FieldDef { name: "name".into(), rust_type: "String".into(), sql_type: "VARCHAR(255) NOT NULL".into(), nullable: false, default_value: None, description: "Display name".into() },
+            FieldDef { name: "role".into(), rust_type: "String".into(), sql_type: "VARCHAR(50) NOT NULL DEFAULT 'user'".into(), nullable: false, default_value: Some("'user'".into()), description: "User role (admin, manager, user)".into() },
+            FieldDef { name: "is_active".into(), rust_type: "bool".into(), sql_type: "BOOLEAN NOT NULL DEFAULT true".into(), nullable: false, default_value: Some("true".into()), description: "Account active flag".into() },
+            FieldDef { name: "created_at".into(), rust_type: "String".into(), sql_type: "TIMESTAMPTZ NOT NULL DEFAULT NOW()".into(), nullable: false, default_value: Some("NOW()".into()), description: "Account creation timestamp".into() },
+            FieldDef { name: "updated_at".into(), rust_type: "String".into(), sql_type: "TIMESTAMPTZ NOT NULL DEFAULT NOW()".into(), nullable: false, default_value: Some("NOW()".into()), description: "Last update timestamp".into() },
+        ],
+        validations: vec![
+            ValidationRule { condition: "!self.email.is_empty()".into(), message: "Email must not be empty".into() },
+            ValidationRule { condition: "self.email.contains('@')".into(), message: "Email must contain @".into() },
+        ],
+        business_rules: vec!["Password must be hashed before storage".into()],
+        relationships: vec!["Referenced by all authenticated endpoints".into()],
+    }
 }
 
 /// Build a minimal warehouse domain when the registry cannot detect it.

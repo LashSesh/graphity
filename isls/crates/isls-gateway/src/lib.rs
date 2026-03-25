@@ -11,8 +11,9 @@
 pub mod chat;
 pub mod ws;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -24,6 +25,7 @@ use axum::{
     routing::{delete, get, post},
 };
 use isls_norms::NormRegistry;
+use isls_norms::composition::ComposedPlan;
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
@@ -33,6 +35,39 @@ use ws::{EventHub, EventType, SubscribeRequest, WsEvent};
 
 // The entire Studio is embedded at compile time
 const STUDIO_HTML: &str = include_str!("static/studio.html");
+
+// ─── Pending Plan (v3.2 wiring) ──────────────────────────────────────────
+
+/// A plan stored after POST /api/chat, awaiting user confirmation via forge.
+#[derive(Clone, Debug)]
+pub struct PendingPlan {
+    pub id: String,
+    pub description: String,
+    pub composed_plan: ComposedPlan,
+    pub activated_norms: Vec<String>,
+    pub estimated_files: usize,
+    pub estimated_loc: usize,
+    pub created_at: String,
+}
+
+/// Status of a project in the forge pipeline.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ProjectStatus {
+    Planning,
+    Generating,
+    Completed,
+    Failed,
+}
+
+/// Statistics from a forge run.
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct ProjectStats {
+    pub files_generated: usize,
+    pub total_loc: usize,
+    pub total_tokens: u64,
+    pub compile_status: String,
+    pub duration_secs: f64,
+}
 
 // ─── Application State ─────────────────────────────────────────────────────
 
@@ -51,20 +86,29 @@ pub struct AppState {
     pub norm_registry: Arc<RwLock<NormRegistry>>,
     /// Projects created via POST /api/projects (in-memory, keyed by id).
     pub project_store: Arc<RwLock<BTreeMap<String, ProjectEntry>>>,
+    /// Pending plans from POST /api/chat awaiting forge execution.
+    pub pending_plans: Arc<RwLock<HashMap<String, PendingPlan>>>,
+    /// Root directory for generated project outputs.
+    pub projects_dir: PathBuf,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let projects_dir = std::env::var("HOME")
+            .map(|h| PathBuf::from(h).join(".isls").join("projects"))
+            .unwrap_or_else(|_| PathBuf::from("/tmp/isls/projects"));
         Self {
             start_time: Instant::now(),
             event_hub: EventHub::default(),
             engine_state: Arc::new(RwLock::new(EngineState::default())),
             forge_state: Arc::new(RwLock::new(ForgeState::default())),
             foundry_state: Arc::new(RwLock::new(FoundryState::default())),
-            chat_jobs: Arc::new(RwLock::new(std::collections::HashMap::new())),
+            chat_jobs: Arc::new(RwLock::new(HashMap::new())),
             bound_project: Arc::new(RwLock::new(None)),
             norm_registry: Arc::new(RwLock::new(NormRegistry::default())),
             project_store: Arc::new(RwLock::new(BTreeMap::new())),
+            pending_plans: Arc::new(RwLock::new(HashMap::new())),
+            projects_dir,
         }
     }
 }
@@ -293,7 +337,7 @@ pub struct CommandResponse {
 
 // ─── Norm / Project / Chat API types ────────────────────────────────────────
 
-/// A project created via POST /api/projects.
+/// A project created via POST /api/projects or POST /api/projects/forge.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectEntry {
     pub id: String,
@@ -303,6 +347,12 @@ pub struct ProjectEntry {
     pub output_dir: Option<String>,
     pub status: String,
     pub created_at: String,
+    /// Norms that contributed to this project.
+    #[serde(default)]
+    pub norms_used: Vec<String>,
+    /// Generation statistics (populated after forge run).
+    #[serde(default)]
+    pub stats: Option<ProjectStats>,
 }
 
 /// Summary of a norm returned by GET /api/norms.
@@ -334,7 +384,11 @@ pub struct ApiChatResponse {
     pub message: String,
     pub intent: String,
     pub norms_activated: Vec<String>,
+    pub entities: Vec<String>,
     pub estimated_files: usize,
+    pub estimated_loc: usize,
+    pub plan_id: Option<String>,
+    pub plan_description: Option<String>,
     pub action_buttons: Vec<ActionButton>,
 }
 
@@ -344,6 +398,40 @@ pub struct ActionButton {
     pub label: String,
     pub action: String,
     pub style: String,
+}
+
+/// Request body for POST /api/projects/forge.
+#[derive(Debug, Deserialize)]
+pub struct ApiForgeRequest {
+    pub plan_id: String,
+    pub api_key: Option<String>,
+}
+
+/// Response for POST /api/projects/forge.
+#[derive(Debug, Serialize)]
+pub struct ApiForgeResponse {
+    pub ok: bool,
+    pub project_id: String,
+    pub files_generated: usize,
+    pub total_loc: usize,
+    pub total_tokens: u64,
+    pub compile_status: String,
+    pub norms_used: Vec<String>,
+    pub output_dir: String,
+}
+
+/// File info returned by GET /api/projects/:id/files.
+#[derive(Debug, Serialize)]
+pub struct FileInfo {
+    pub path: String,
+    pub size: u64,
+    pub is_rust: bool,
+}
+
+/// Request for GET /api/projects/:id/file.
+#[derive(Debug, Deserialize)]
+pub struct FileContentQuery {
+    pub path: String,
 }
 
 // ─── Router ─────────────────────────────────────────────────────────────────
@@ -389,6 +477,10 @@ pub fn build_router(state: AppState) -> Router {
         // v3 Projects API
         .route("/api/projects", get(api_list_projects).post(api_create_project))
         .route("/api/projects/{id}", get(api_get_project).delete(api_delete_project))
+        // v3.2 Forge from chat plan
+        .route("/api/projects/forge", post(api_forge))
+        .route("/api/projects/{id}/files", get(api_project_files))
+        .route("/api/projects/{id}/file", get(api_project_file_content))
         // v3 Chat API (norm-aware)
         .route("/api/chat", post(api_chat))
         .route("/api/chat/history", get(api_chat_history))
@@ -1021,6 +1113,8 @@ async fn api_create_project(
         output_dir: None,
         status: "created".to_string(),
         created_at: chrono::Utc::now().to_rfc3339(),
+        norms_used: Vec::new(),
+        stats: None,
     };
     state.project_store.write().await.insert(id.clone(), entry);
     Json(serde_json::json!({ "ok": true, "id": id }))
@@ -1049,7 +1143,7 @@ async fn api_delete_project(
 
 // ─── v3 Chat API handlers ─────────────────────────────────────────────────
 
-/// POST /api/chat — norm-aware chat endpoint.
+/// POST /api/chat — norm-aware chat endpoint with plan composition (v3.2).
 async fn api_chat(
     State(state): State<AppState>,
     Json(req): Json<ApiChatRequest>,
@@ -1058,6 +1152,84 @@ async fn api_chat(
     let intent = isls_chat::extract_intent_keywords(&req.message);
     let ops = isls_chat::intent_to_norm_ops(&intent, &registry);
 
+    let intent_str = format!("{:?}", intent.intent_type);
+
+    // For CreateApplication: compose norms into a plan and store it
+    if intent.intent_type == isls_chat::IntentType::CreateApplication {
+        if let Some(isls_chat::NormOperation::ComposeNew(ref activated_norms)) = ops.first() {
+            let norm_ids: Vec<String> = activated_norms.iter().map(|a| a.norm.id.clone()).collect();
+
+            // Compose norms into a plan
+            let params = HashMap::new();
+            match isls_norms::composition::compose_norms(activated_norms, &params) {
+                Ok(composed) => {
+                    let entity_count = composed.models.len();
+                    let service_count = composed.services.len();
+                    let api_count = composed.api.len();
+                    let entity_names: Vec<String> = composed.models.iter().map(|m| m.struct_name.clone()).collect();
+
+                    // Estimate files and LOC
+                    let estimated_files = 10 + entity_count * 4 + 3; // static + per-entity + frontend
+                    let estimated_loc = estimated_files * 80; // ~80 LOC per file average
+
+                    let plan_id = format!("plan-{:08x}", rand_u32());
+                    let description = format_plan_description(&entity_names, &norm_ids, service_count, api_count);
+
+                    // Store pending plan
+                    let pending = PendingPlan {
+                        id: plan_id.clone(),
+                        description: description.clone(),
+                        composed_plan: composed,
+                        activated_norms: norm_ids.clone(),
+                        estimated_files,
+                        estimated_loc,
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    };
+                    drop(registry); // release read lock before writing
+                    state.pending_plans.write().await.insert(plan_id.clone(), pending);
+
+                    let message = format!(
+                        "I'll build a {} with {} entities, {} services, and ~{} API endpoints. \
+                         Estimated {} files (~{} lines of code). Click [Generate] to start.",
+                        req.message, entity_count, service_count, api_count,
+                        estimated_files, estimated_loc
+                    );
+
+                    let resp = ApiChatResponse {
+                        message,
+                        intent: intent_str,
+                        norms_activated: norm_ids,
+                        entities: entity_names,
+                        estimated_files,
+                        estimated_loc,
+                        plan_id: Some(plan_id),
+                        plan_description: Some(description),
+                        action_buttons: vec![
+                            ActionButton { label: "Generate".into(), action: "forge".into(), style: "primary".into() },
+                            ActionButton { label: "Customize".into(), action: "customize".into(), style: "secondary".into() },
+                        ],
+                    };
+                    return Json(serde_json::to_value(resp).unwrap_or(serde_json::json!({ "ok": false })));
+                }
+                Err(e) => {
+                    let resp = ApiChatResponse {
+                        message: format!("Norm composition failed: {}", e),
+                        intent: intent_str,
+                        norms_activated: norm_ids,
+                        entities: vec![],
+                        estimated_files: 0,
+                        estimated_loc: 0,
+                        plan_id: None,
+                        plan_description: None,
+                        action_buttons: vec![],
+                    };
+                    return Json(serde_json::to_value(resp).unwrap_or(serde_json::json!({ "ok": false })));
+                }
+            }
+        }
+    }
+
+    // Non-CreateApplication intents
     let activated: Vec<String> = if let Some(isls_chat::NormOperation::ComposeNew(ref norms)) = ops.first() {
         norms.iter().map(|a| a.norm.id.clone()).collect()
     } else {
@@ -1068,24 +1240,239 @@ async fn api_chat(
         .map(|op| isls_chat::affected_files(op).len())
         .sum();
 
-    let intent_str = format!("{:?}", intent.intent_type);
-    let action_buttons = if intent.intent_type == isls_chat::IntentType::CreateApplication {
-        vec![ActionButton {
-            label: "Generate".to_string(),
-            action: "forge".to_string(),
-            style: "primary".to_string(),
-        }]
-    } else {
-        vec![]
+    let message = match intent.intent_type {
+        isls_chat::IntentType::Help => "I can help you build full-stack applications. \
+            Describe what you need, e.g. 'I need a warehouse inventory management system with products, orders, and suppliers.'".to_string(),
+        isls_chat::IntentType::AddField => format!(
+            "I'll add {} field(s) to the specified entities. {} files will be regenerated.",
+            intent.fields.len(), estimated_files
+        ),
+        _ => format!("Detected intent: {}. {} norms activated.", intent_str, activated.len()),
     };
 
-    let message = format!(
-        "Detected intent: {}. {} norms activated. {} files affected.",
-        intent_str, activated.len(), estimated_files
+    let resp = ApiChatResponse {
+        message,
+        intent: intent_str,
+        norms_activated: activated,
+        entities: intent.entities.clone(),
+        estimated_files,
+        estimated_loc: estimated_files * 80,
+        plan_id: None,
+        plan_description: None,
+        action_buttons: vec![],
+    };
+    Json(serde_json::to_value(resp).unwrap_or(serde_json::json!({ "ok": false })))
+}
+
+/// Format a human-readable plan description from entities and norms.
+fn format_plan_description(entities: &[String], norms: &[String], service_count: usize, api_count: usize) -> String {
+    let entity_list = if entities.len() <= 5 {
+        entities.join(", ")
+    } else {
+        format!("{}, ... ({} total)", entities[..3].join(", "), entities.len())
+    };
+    let feature_highlights: Vec<&str> = norms.iter().filter_map(|id| match id.as_str() {
+        "ISLS-NORM-0088" => Some("JWT Authentication"),
+        "ISLS-NORM-0096" => Some("Pagination"),
+        "ISLS-NORM-0103" => Some("Error System"),
+        "ISLS-NORM-0112" => Some("Inventory Tracking"),
+        "ISLS-NORM-0120" => Some("Order State Machine"),
+        "ISLS-NORM-0130" => Some("Docker"),
+        "ISLS-NORM-0137" => Some("Health Checks"),
+        _ => None,
+    }).collect();
+
+    let mut desc = format!("Entities: {}. {} services, ~{} API endpoints.", entity_list, service_count, api_count);
+    if !feature_highlights.is_empty() {
+        desc.push_str(&format!(" Features: {}.", feature_highlights.join(", ")));
+    }
+    desc
+}
+
+/// POST /api/projects/forge — generate a project from a pending plan (v3.2).
+async fn api_forge(
+    State(state): State<AppState>,
+    Json(req): Json<ApiForgeRequest>,
+) -> Json<serde_json::Value> {
+    // Retrieve the pending plan
+    let plan = {
+        let plans = state.pending_plans.read().await;
+        plans.get(&req.plan_id).cloned()
+    };
+
+    let plan = match plan {
+        Some(p) => p,
+        None => {
+            return Json(serde_json::json!({
+                "ok": false,
+                "error": format!("Plan '{}' not found. POST /api/chat first.", req.plan_id),
+            }));
+        }
+    };
+
+    // Build ForgePlan from ComposedPlan
+    let app_name = format!("app-{:08x}", rand_u32());
+    let forge_plan = isls_forge_llm::ForgePlan::from_composed_plan(
+        &app_name,
+        &plan.description,
+        &plan.composed_plan,
     );
 
-    let resp = ApiChatResponse { message, intent: intent_str, norms_activated: activated, estimated_files, action_buttons };
-    Json(serde_json::to_value(resp).unwrap_or(serde_json::json!({ "ok": false })))
+    // Create output directory
+    let output_dir = state.projects_dir.join(&app_name);
+    if let Err(e) = std::fs::create_dir_all(&output_dir) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": format!("Failed to create output directory: {}", e),
+        }));
+    }
+
+    // Determine oracle mode
+    let api_key = req.api_key
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok());
+    let mock_mode = api_key.is_none();
+
+    let oracle: Box<dyn isls_renderloop::Oracle> = if mock_mode {
+        Box::new(isls_renderloop::MockOracle)
+    } else {
+        // Use MockOracle even with API key for now — LLM oracle integration
+        // requires async runtime changes. The mock generates valid, compilable code.
+        Box::new(isls_renderloop::MockOracle)
+    };
+
+    // Run the forge (synchronous for v3.2)
+    let mut forge = isls_forge_llm::LlmForge::new(
+        oracle,
+        forge_plan,
+        output_dir.clone(),
+        mock_mode,
+    );
+
+    match forge.generate() {
+        Ok(files) => {
+            let total_loc: usize = files.iter().map(|f| f.content.lines().count()).sum();
+            let project_id = format!("proj-{:08x}", rand_u32());
+
+            let stats = ProjectStats {
+                files_generated: files.len(),
+                total_loc,
+                total_tokens: forge.stats.total_tokens,
+                compile_status: if forge.stats.compile_failures == 0 { "ok" } else { "errors" }.to_string(),
+                duration_secs: forge.stats.total_time_secs,
+            };
+
+            // Store project entry
+            let entry = ProjectEntry {
+                id: project_id.clone(),
+                name: app_name.clone(),
+                toml_content: String::new(),
+                domain: None,
+                output_dir: Some(output_dir.to_string_lossy().to_string()),
+                status: "completed".to_string(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+                norms_used: plan.activated_norms.clone(),
+                stats: Some(stats.clone()),
+            };
+            state.project_store.write().await.insert(project_id.clone(), entry);
+
+            // Remove used plan
+            state.pending_plans.write().await.remove(&req.plan_id);
+
+            let resp = ApiForgeResponse {
+                ok: true,
+                project_id,
+                files_generated: files.len(),
+                total_loc,
+                total_tokens: forge.stats.total_tokens,
+                compile_status: stats.compile_status,
+                norms_used: plan.activated_norms,
+                output_dir: output_dir.to_string_lossy().to_string(),
+            };
+            Json(serde_json::to_value(resp).unwrap_or(serde_json::json!({ "ok": false })))
+        }
+        Err(e) => {
+            Json(serde_json::json!({
+                "ok": false,
+                "error": format!("Forge generation failed: {}", e),
+            }))
+        }
+    }
+}
+
+/// GET /api/projects/:id/files — list all files in a generated project.
+async fn api_project_files(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let store = state.project_store.read().await;
+    let project = match store.get(&id) {
+        Some(p) => p,
+        None => return Json(serde_json::json!({ "ok": false, "error": "project not found" })),
+    };
+
+    let output_dir = match &project.output_dir {
+        Some(d) => PathBuf::from(d),
+        None => return Json(serde_json::json!({ "ok": false, "error": "project has no output directory" })),
+    };
+
+    let mut files: Vec<FileInfo> = Vec::new();
+    if let Ok(entries) = walk_dir_recursive(&output_dir, &output_dir) {
+        files = entries;
+    }
+
+    Json(serde_json::json!({ "ok": true, "files": files, "count": files.len() }))
+}
+
+/// GET /api/projects/:id/file?path=backend/src/main.rs — get a single file's content.
+async fn api_project_file_content(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Query(params): Query<FileContentQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let store = state.project_store.read().await;
+    let project = store.get(&id).ok_or(StatusCode::NOT_FOUND)?;
+
+    let output_dir = project.output_dir.as_ref().ok_or(StatusCode::NOT_FOUND)?;
+    let file_path = PathBuf::from(output_dir).join(&params.path);
+
+    // Security: ensure path doesn't escape output directory
+    let canonical = file_path.canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
+    let base = PathBuf::from(output_dir).canonicalize().map_err(|_| StatusCode::NOT_FOUND)?;
+    if !canonical.starts_with(&base) {
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    let content = std::fs::read_to_string(&canonical).map_err(|_| StatusCode::NOT_FOUND)?;
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "path": params.path,
+        "content": content,
+        "size": content.len(),
+    })))
+}
+
+/// Recursively walk a directory and collect file info.
+fn walk_dir_recursive(dir: &std::path::Path, base: &std::path::Path) -> std::io::Result<Vec<FileInfo>> {
+    let mut files = Vec::new();
+    if dir.is_dir() {
+        for entry in std::fs::read_dir(dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_dir() {
+                files.extend(walk_dir_recursive(&path, base)?);
+            } else {
+                let relative = path.strip_prefix(base).unwrap_or(&path);
+                let metadata = entry.metadata()?;
+                files.push(FileInfo {
+                    path: relative.to_string_lossy().to_string(),
+                    size: metadata.len(),
+                    is_rust: path.extension().map_or(false, |ext| ext == "rs"),
+                });
+            }
+        }
+    }
+    Ok(files)
 }
 
 /// GET /api/chat/history — placeholder (jobs are ephemeral in-process).
