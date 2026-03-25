@@ -961,6 +961,8 @@ dependencies = [
 name = "isls-agent"
 version = "1.0.0"
 dependencies = [
+ "isls-chat",
+ "isls-norms",
  "isls-oracle",
  "isls-templates",
  "isls-types",
@@ -1025,6 +1027,18 @@ dependencies = [
  "isls-types",
  "serde",
  "thiserror",
+]
+
+[[package]]
+name = "isls-chat"
+version = "1.0.0"
+dependencies = [
+ "isls-norms",
+ "isls-renderloop",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -1211,9 +1225,11 @@ dependencies = [
  "futures",
  "isls-agent",
  "isls-archive",
+ "isls-chat",
  "isls-forge",
  "isls-harness",
  "isls-navigator",
+ "isls-norms",
  "isls-oracle",
  "isls-store",
  "isls-templates",
@@ -1353,6 +1369,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-norms"
+version = "1.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
 name = "isls-observe"
 version = "1.0.0"
 dependencies = [
@@ -1392,6 +1418,7 @@ dependencies = [
  "isls-code-topo",
  "isls-hypercube",
  "isls-learner",
+ "isls-norms",
  "isls-planner",
  "isls-reader",
  "serde",
@@ -1399,6 +1426,7 @@ dependencies = [
  "sha2",
  "tera",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
