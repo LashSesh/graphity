@@ -503,24 +503,21 @@ fn count_modified(before: &[Artifact], after: &[Artifact]) -> usize {
 /// Returns `true` when an artifact at `path` should be sent to the LLM for
 /// enrichment.  Structural / wiring files are never enriched — the template
 /// output is always authoritative for them.
-fn should_enrich(path: &str) -> bool {
-    // ── Structural files: never touch ──────────────────────────────────────
-    if path.ends_with("Cargo.toml")    { return false; }
-    if path.ends_with("main.rs")       { return false; }
-    if path.ends_with("errors.rs")     { return false; }
-    if path.ends_with("pagination.rs") { return false; }
-    if path.ends_with("config.rs")     { return false; }
-    if path.ends_with("mod.rs")        { return false; }
-    if path.ends_with("pool.rs")       { return false; }
-    if path.contains("models/")        { return false; }
-    // auth.rs is structural; auth_routes.rs contains enrichable logic
-    if path.ends_with("auth.rs")       { return false; }
-
-    // ── Enrich-eligible paths ───────────────────────────────────────────────
-    if path.contains("services/")      { return true; }
-    if path.contains("auth_routes")    { return true; }
-    if path.contains("tests/")         { return true; }
-
+fn should_enrich(_path: &str) -> bool {
+    // v2.1.1: Disable LLM file enrichment until prompts include full type context.
+    // The template-generated code compiles. LLM overwrites break it because the
+    // prompts lack the actual model/error/query type definitions, causing the LLM
+    // to invent field names (price vs unit_price_cents), wrong AppError variants
+    // (ValidationError(String) vs ValidationError(Vec<String>)), wrong import paths
+    // (log:: vs tracing::), and comparison of Option<i64> as i64.
+    // LLM calls still happen (crystal learning), but responses are NOT written to files.
+    // TODO(v2.2): Re-enable when pass_domain_logic sends full type context in the prompt:
+    //   - exact model struct fields
+    //   - CreateX / UpdateX payload structs
+    //   - AppError enum definition
+    //   - PaginationParams definition
+    //   - available query function signatures
+    //   - note that the project uses tracing, not log
     false
 }
 
