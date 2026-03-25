@@ -361,6 +361,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
 name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1026,6 +1032,7 @@ name = "isls-cli"
 version = "1.0.0"
 dependencies = [
  "chrono",
+ "dotenv",
  "isls-agent",
  "isls-archive",
  "isls-artifact-ir",
@@ -1048,6 +1055,7 @@ dependencies = [
  "isls-planner",
  "isls-pmhd",
  "isls-registry",
+ "isls-renderloop",
  "isls-scale",
  "isls-scheduler",
  "isls-store",
@@ -1106,6 +1114,7 @@ dependencies = [
  "isls-code-topo",
  "isls-hypercube",
  "isls-orchestrator",
+ "isls-renderloop",
  "serde",
  "serde_json",
  "sha2",
@@ -1447,6 +1456,21 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+]
+
+[[package]]
+name = "isls-renderloop"
+version = "1.0.0"
+dependencies = [
+ "dotenv",
+ "isls-hypercube",
+ "isls-orchestrator",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tracing",
 ]
 
 [[package]]

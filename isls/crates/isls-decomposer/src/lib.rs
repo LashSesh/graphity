@@ -18,6 +18,7 @@ use isls_hypercube::{
 };
 use isls_blueprint::BlueprintRegistry;
 use isls_orchestrator::v2_emission::{self, EmittedFile};
+use isls_renderloop::{Artifact, CrystalRegistry, MockOracle, OpenAiOracle, Oracle, RenderLoop, RenderPass};
 
 // ─── Error ───────────────────────────────────────────────────────────────────
 
@@ -350,10 +351,39 @@ fn resolve_singularity(dimension: &str, cube: &HyperCube) -> DimValue {
 pub struct DecomposerConfig {
     /// Whether to emit trace output.
     pub trace: bool,
-    /// Whether to use mock oracle (template-only generation).
+    /// Whether to use mock oracle (template-only generation, no LLM calls).
     pub mock_oracle: bool,
     /// Blueprint registry path for persistence.
     pub blueprint_path: Option<PathBuf>,
+    // ── v2.1 render-loop fields ──────────────────────────────────────────────
+    /// OpenAI API key. When `None` (or mock_oracle is true), `MockOracle` is used.
+    pub api_key: Option<String>,
+    /// Model name for LLM oracle (default: `"gpt-4o-mini"`).
+    pub model: String,
+    /// Number of render passes to execute (0 = Structure only, 5 = all passes).
+    pub passes: u32,
+    /// Pass labels to skip (e.g. `["polish"]`).
+    pub skip_passes: Vec<String>,
+    /// Optional global token-budget override applied to every pass.
+    pub token_budget_override: Option<u64>,
+    /// Path where the crystal registry is persisted between runs.
+    pub crystal_path: Option<PathBuf>,
+}
+
+impl Default for DecomposerConfig {
+    fn default() -> Self {
+        DecomposerConfig {
+            trace: false,
+            mock_oracle: true,
+            blueprint_path: None,
+            api_key: None,
+            model: "gpt-4o-mini".to_string(),
+            passes: 0,
+            skip_passes: vec![],
+            token_budget_override: None,
+            crystal_path: None,
+        }
+    }
 }
 
 /// Full result of a v2 forge run.
@@ -383,6 +413,13 @@ pub struct ForgeV2Result {
     pub initial_dof: usize,
     /// Number of couplings.
     pub total_couplings: usize,
+    // ── v2.1 render-loop stats ───────────────────────────────────────────────
+    /// Number of render passes executed (0 when mock_oracle or passes=0).
+    pub render_passes_executed: u32,
+    /// Total tokens consumed across all render passes.
+    pub total_tokens_used: u64,
+    /// Number of crystals updated in the registry after this run.
+    pub crystals_updated: usize,
 }
 
 /// Run the full v2 forge pipeline: TOML → HyperCube → Decompose → Emit.
@@ -464,7 +501,7 @@ pub fn forge_v2(
         output_dir,
     )?;
 
-    ctx.files = emission_result.files;
+    ctx.files = emission_result.files.clone();
 
     // 7. Save blueprints
     if let Some(bp_path) = &config.blueprint_path {
@@ -473,6 +510,10 @@ pub fn forge_v2(
         }
         let _ = ctx.blueprints.save(bp_path);
     }
+
+    // 8. v2.1 Multi-pass render loop (runs when passes > 0)
+    let (render_passes_executed, total_tokens_used, crystals_updated) =
+        run_render_loop(config, &emission_result.files, output_dir, &domain_name)?;
 
     let time_secs = start.elapsed().as_secs_f64();
 
@@ -489,7 +530,118 @@ pub fn forge_v2(
         total_dims,
         initial_dof,
         total_couplings,
+        render_passes_executed,
+        total_tokens_used,
+        crystals_updated,
     })
+}
+
+// ─── Render Loop Integration ─────────────────────────────────────────────────
+
+/// Infer a layer category from a relative file path for pass scoping.
+fn infer_category(rel_path: &str) -> String {
+    if rel_path.contains("service") { return "services".into(); }
+    if rel_path.contains("test") || rel_path.contains("spec") { return "tests".into(); }
+    if rel_path.contains("api") || rel_path.contains("handler") || rel_path.contains("route") {
+        return "api".into();
+    }
+    if rel_path.contains("frontend") || rel_path.ends_with(".html") || rel_path.ends_with(".js") {
+        return "frontend".into();
+    }
+    "other".into()
+}
+
+/// Run the v2.1 multi-pass render loop after emission.
+///
+/// Returns `(passes_executed, total_tokens_used, crystals_updated)`.
+fn run_render_loop(
+    config: &DecomposerConfig,
+    emitted_files: &[EmittedFile],
+    output_dir: &Path,
+    domain_name: &str,
+) -> Result<(u32, u64, usize)> {
+    // Skip render loop when no passes are requested or mock_oracle is set without passes
+    if config.passes == 0 {
+        return Ok((0, 0, 0));
+    }
+
+    // Build oracle
+    let oracle: Box<dyn Oracle> = if config.mock_oracle || config.api_key.is_none() {
+        Box::new(MockOracle)
+    } else {
+        match OpenAiOracle::new(config.api_key.clone(), Some(config.model.clone())) {
+            Ok(o) => Box::new(o),
+            Err(e) => {
+                eprintln!("[render-loop] oracle init failed: {e}; falling back to mock");
+                Box::new(MockOracle)
+            }
+        }
+    };
+
+    // Load or create crystal registry
+    let mut crystals = match &config.crystal_path {
+        Some(p) => CrystalRegistry::load(p).unwrap_or_else(|_| CrystalRegistry::with_builtins()),
+        None => CrystalRegistry::with_builtins(),
+    };
+
+    // Build pass list filtered by config.passes and skip_passes
+    let all_passes = RenderPass::default_passes();
+    let active_passes: Vec<RenderPass> = all_passes
+        .into_iter()
+        .filter(|p| p.depth <= config.passes)
+        .filter(|p| !config.skip_passes.contains(&p.pass_type.label().to_string()))
+        .map(|mut p| {
+            if let Some(budget) = config.token_budget_override {
+                p.token_budget = budget;
+            }
+            p
+        })
+        .collect();
+
+    // Convert EmittedFile → Artifact (read content from disk)
+    let mut artifacts: Vec<Artifact> = Vec::new();
+    for ef in emitted_files {
+        let full_path = output_dir.join(&ef.rel_path);
+        match std::fs::read_to_string(&full_path) {
+            Ok(content) => {
+                let rel = ef.rel_path.to_string_lossy().to_string();
+                let category = infer_category(&rel);
+                artifacts.push(Artifact { rel_path: rel, content, category });
+            }
+            Err(_) => {
+                // File may not have been written yet; skip silently
+            }
+        }
+    }
+
+    if artifacts.is_empty() {
+        return Ok((0, 0, 0));
+    }
+
+    let mut render_loop = RenderLoop::new(oracle)
+        .with_passes(active_passes)
+        .with_crystals(crystals.clone());
+
+    let enriched = render_loop.render(artifacts, domain_name)
+        .map_err(|e| DecomposerError::Failed(format!("render loop failed: {e}")))?;
+
+    // Write enriched artifacts back to disk
+    for artifact in &enriched {
+        let full_path = output_dir.join(&artifact.rel_path);
+        if let Some(parent) = full_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&full_path, &artifact.content);
+    }
+
+    // Persist crystal registry
+    crystals = render_loop.crystals.clone();
+    if let Some(crystal_path) = &config.crystal_path {
+        let _ = crystals.save(crystal_path);
+    }
+
+    let stats = &render_loop.stats;
+    Ok((stats.passes_executed, stats.total_tokens_used, stats.crystals_updated))
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

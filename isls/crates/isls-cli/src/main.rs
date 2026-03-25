@@ -94,8 +94,23 @@ enum Command {
     BabylonCheck { ir: Option<String> },
     // Full-Stack Autonomy pipeline
     ForgeFullStack { app: Option<String>, constraints: String, output: String, mock_oracle: bool, verify_compilation: bool },
-    // V2 Hypercube Decomposer pipeline
-    ForgeV2 { requirements: String, output: String, mock_oracle: bool, trace: bool, verify_compilation: bool },
+    // V2 Hypercube Decomposer pipeline (with optional v2.1 render loop)
+    ForgeV2 {
+        requirements: String,
+        output: String,
+        mock_oracle: bool,
+        trace: bool,
+        verify_compilation: bool,
+        // v2.1 render-loop flags
+        api_key: Option<String>,
+        model: String,
+        passes: u32,
+        skip_passes: Vec<String>,
+        token_budget: Option<u64>,
+        crystal_path: Option<String>,
+    },
+    // v2.1 Crystal registry management
+    Crystals { action: String, name: Option<String>, file: Option<String>, output_file: Option<String>, crystal_path: Option<String> },
     Validate { formal: bool, retro: bool },
     Report { json: bool, html: bool, full_html: bool },
     Status,
@@ -450,7 +465,57 @@ fn parse_args(args: &[String]) -> Command {
             let mock_oracle = args.contains(&"--mock-oracle".to_string());
             let trace = args.contains(&"--trace".to_string());
             let verify_compilation = args.contains(&"--verify".to_string());
-            Command::ForgeV2 { requirements, output, mock_oracle, trace, verify_compilation }
+            // v2.1 render-loop flags
+            let api_key = args.iter().position(|a| a == "--api-key")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            let model = args.iter().position(|a| a == "--model")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "gpt-4o-mini".to_string());
+            let passes: u32 = args.iter().position(|a| a == "--passes")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            let token_budget: Option<u64> = args.iter().position(|a| a == "--token-budget")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok());
+            let crystal_path = args.iter().position(|a| a == "--crystal-path")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            // Collect all --skip-pass values
+            let mut skip_passes: Vec<String> = Vec::new();
+            let mut idx = 0;
+            while idx < args.len() {
+                if args[idx] == "--skip-pass" {
+                    if let Some(val) = args.get(idx + 1) {
+                        skip_passes.push(val.clone());
+                    }
+                }
+                idx += 1;
+            }
+            Command::ForgeV2 {
+                requirements, output, mock_oracle, trace, verify_compilation,
+                api_key, model, passes, skip_passes, token_budget, crystal_path,
+            }
+        }
+        "crystals" => {
+            // crystals <action> [--name <n>] [--file <f>] [--output <o>] [--crystal-path <p>]
+            let action = args.get(2).cloned().unwrap_or_else(|| "list".to_string());
+            let name = args.iter().position(|a| a == "--name")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let file = args.iter().position(|a| a == "--file")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let output_file = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let crystal_path = args.iter().position(|a| a == "--crystal-path")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Crystals { action, name, file, output_file, crystal_path }
         }
         "validate" => {
             let formal = args.contains(&"--formal".to_string());
@@ -2008,15 +2073,21 @@ fn cmd_forge_fullstack(
 fn cmd_forge_v2(
     requirements_path: &str,
     output: &str,
-    _mock_oracle: bool,
+    mock_oracle: bool,
     trace: bool,
     _verify_compilation: bool,
+    api_key: Option<String>,
+    model: &str,
+    passes: u32,
+    skip_passes: &[String],
+    token_budget: Option<u64>,
+    crystal_path: Option<&str>,
 ) {
     use isls_decomposer::{forge_v2, DecomposerConfig};
     use std::path::Path;
 
     println!("╔══════════════════════════════════════════════════════╗");
-    println!("║       ISLS v2 Hypercube Decomposer Pipeline          ║");
+    println!("║     ISLS v2.1 Hypercube + Multi-Pass Renderer        ║");
     println!("╚══════════════════════════════════════════════════════╝");
     println!();
 
@@ -2028,10 +2099,29 @@ fn cmd_forge_v2(
 
     let output_dir = Path::new(output);
 
+    // Load .env if present (best-effort)
+    let _ = dotenv::dotenv();
+
+    let use_mock = mock_oracle || api_key.is_none() && std::env::var("OPENAI_API_KEY").is_err();
+
+    if passes > 0 {
+        if use_mock {
+            println!("[Render] Mode: mock oracle ({} passes, no LLM calls)", passes);
+        } else {
+            println!("[Render] Mode: OpenAI / {} ({} passes)", model, passes);
+        }
+    }
+
     let config = DecomposerConfig {
         trace,
-        mock_oracle: true,
+        mock_oracle: use_mock,
         blueprint_path: Some(output_dir.join("evidence/blueprint_registry.json")),
+        api_key,
+        model: model.to_string(),
+        passes,
+        skip_passes: skip_passes.to_vec(),
+        token_budget_override: token_budget,
+        crystal_path: crystal_path.map(|p| std::path::PathBuf::from(p)),
     };
 
     match forge_v2(req_path, output_dir, &config) {
@@ -2065,9 +2155,18 @@ fn cmd_forge_v2(
                 println!();
             }
 
+            // Print render-loop stats (v2.1)
+            if result.render_passes_executed > 0 {
+                println!("[Render Loop]");
+                println!("  Passes executed:  {}", result.render_passes_executed);
+                println!("  Tokens used:      {}", result.total_tokens_used);
+                println!("  Crystals updated: {}", result.crystals_updated);
+                println!();
+            }
+
             // Print final results
             println!("╔══════════════════════════════════════════════════════╗");
-            println!("║              V2 GENERATION COMPLETE                  ║");
+            println!("║              V2.1 GENERATION COMPLETE                ║");
             println!("╚══════════════════════════════════════════════════════╝");
             println!();
             println!("  App:              {}", result.app_name);
@@ -2091,6 +2190,130 @@ fn cmd_forge_v2(
             eprintln!("[ERROR] V2 pipeline failed: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+// ─── v2.1 Crystal Registry Management ────────────────────────────────────────
+
+fn cmd_crystals(
+    action: &str,
+    name: Option<&str>,
+    file: Option<&str>,
+    output_file: Option<&str>,
+    crystal_path: Option<&str>,
+) {
+    use isls_renderloop::CrystalRegistry;
+    use std::path::PathBuf;
+
+    // Default crystal path: ~/.isls/crystals.json
+    let default_path = dirs_crystal_path();
+    let path = crystal_path.map(PathBuf::from).unwrap_or(default_path);
+
+    let registry = CrystalRegistry::load(&path).unwrap_or_else(|_| CrystalRegistry::with_builtins());
+
+    match action {
+        "list" => {
+            println!("Crystal Registry — {} crystals", registry.len());
+            println!("{:<20} {:<14} {:>10}  Description", "Pattern", "Level", "Confidence");
+            println!("{}", "-".repeat(75));
+            for c in registry.crystals() {
+                let level = format!("{:?}", c.level);
+                println!("{:<20} {:<14} {:>10.3}  {}",
+                    c.pattern_name, level, c.confidence,
+                    truncate_str(&c.description, 45));
+            }
+        }
+        "stats" => {
+            println!("Crystal Stats");
+            println!("{:<20} {:>8} {:>8} {:>8}  Domains", "Pattern", "Used", "Succ.", "Saved tk");
+            println!("{}", "-".repeat(70));
+            for c in registry.crystals() {
+                println!("{:<20} {:>8} {:>8} {:>8.0}  {}",
+                    c.pattern_name,
+                    c.stats.times_used,
+                    c.stats.times_succeeded,
+                    c.stats.avg_tokens_saved,
+                    c.stats.domains_used_in.join(", "));
+            }
+        }
+        "show" => {
+            let target = name.unwrap_or("");
+            match registry.get(target) {
+                Some(c) => {
+                    println!("Crystal: {}", c.pattern_name);
+                    println!("  ID:          {}", c.id);
+                    println!("  Level:       {:?}", c.level);
+                    println!("  Confidence:  {:.3}", c.confidence);
+                    println!("  Description: {}", c.description);
+                    println!("  Used:        {} times ({} succeeded)", c.stats.times_used, c.stats.times_succeeded);
+                    println!("  Domains:     {}", if c.stats.domains_used_in.is_empty() { "none yet".into() } else { c.stats.domains_used_in.join(", ") });
+                    if !c.implementation.body_patterns.is_empty() {
+                        println!("  Body patterns:");
+                        for p in &c.implementation.body_patterns { println!("    - {}", p); }
+                    }
+                    if !c.implementation.error_cases.is_empty() {
+                        println!("  Error cases:");
+                        for e in &c.implementation.error_cases { println!("    - {}", e); }
+                    }
+                    if !c.implementation.test_scenarios.is_empty() {
+                        println!("  Test scenarios:");
+                        for t in &c.implementation.test_scenarios { println!("    - {}", t); }
+                    }
+                }
+                None => {
+                    eprintln!("[ERROR] Crystal '{}' not found in registry", target);
+                    std::process::exit(1);
+                }
+            }
+        }
+        "export" => {
+            let dest = output_file.unwrap_or("crystals.json");
+            match serde_json::to_string_pretty(registry.crystals()) {
+                Ok(json) => {
+                    match std::fs::write(dest, &json) {
+                        Ok(_) => println!("Exported {} crystals to {}", registry.len(), dest),
+                        Err(e) => { eprintln!("[ERROR] Write failed: {}", e); std::process::exit(1); }
+                    }
+                }
+                Err(e) => { eprintln!("[ERROR] Serialisation failed: {}", e); std::process::exit(1); }
+            }
+        }
+        "import" => {
+            let src = file.unwrap_or("crystals.json");
+            match std::fs::read_to_string(src) {
+                Ok(content) => {
+                    match serde_json::from_str::<Vec<isls_renderloop::Crystal>>(&content) {
+                        Ok(imported) => {
+                            let mut reg = registry;
+                            let count = imported.len();
+                            for c in imported { reg.upsert(c); }
+                            match reg.save(&path) {
+                                Ok(_) => println!("Imported {} crystals from {}", count, src),
+                                Err(e) => { eprintln!("[ERROR] Save failed: {}", e); std::process::exit(1); }
+                            }
+                        }
+                        Err(e) => { eprintln!("[ERROR] Parse failed: {}", e); std::process::exit(1); }
+                    }
+                }
+                Err(e) => { eprintln!("[ERROR] Read failed: {}", e); std::process::exit(1); }
+            }
+        }
+        other => {
+            eprintln!("[ERROR] Unknown crystals action '{}'. Use: list, stats, show, export, import", other);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn dirs_crystal_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    std::path::PathBuf::from(home).join(".isls").join("crystals.json")
+}
+
+fn truncate_str(s: &str, max: usize) -> &str {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => &s[..i],
+        None => s,
     }
 }
 
@@ -4617,8 +4840,24 @@ fn main() {
         Command::ForgeFullStack { app, constraints, output, mock_oracle, verify_compilation } => {
             cmd_forge_fullstack(app.as_deref(), &constraints, &output, mock_oracle, verify_compilation);
         }
-        Command::ForgeV2 { requirements, output, mock_oracle, trace, verify_compilation } => {
-            cmd_forge_v2(&requirements, &output, mock_oracle, trace, verify_compilation);
+        Command::ForgeV2 {
+            requirements, output, mock_oracle, trace, verify_compilation,
+            api_key, model, passes, skip_passes, token_budget, crystal_path,
+        } => {
+            cmd_forge_v2(
+                &requirements, &output, mock_oracle, trace, verify_compilation,
+                api_key, &model, passes, &skip_passes, token_budget,
+                crystal_path.as_deref(),
+            );
+        }
+        Command::Crystals { action, name, file, output_file, crystal_path } => {
+            cmd_crystals(
+                &action,
+                name.as_deref(),
+                file.as_deref(),
+                output_file.as_deref(),
+                crystal_path.as_deref(),
+            );
         }
         Command::Validate { formal, retro } => cmd_validate(formal, retro),
         Command::Report { json, html, full_html } => {
