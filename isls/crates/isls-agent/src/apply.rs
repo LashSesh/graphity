@@ -172,6 +172,89 @@ pub fn apply_and_verify(
     })
 }
 
+// ─── Incremental regeneration ────────────────────────────────────────────────
+
+/// Result of an incremental regen pass.
+#[derive(Debug)]
+pub struct IncrementalRegenResult {
+    /// Files that were successfully regenerated.
+    pub regenerated: Vec<String>,
+    /// Files that failed compilation after regeneration.
+    pub failed: Vec<(String, String)>,
+    /// Files that were skipped (content generator returned None).
+    pub skipped: Vec<String>,
+}
+
+/// Regenerate only the files affected by a list of [`isls_chat::NormOperation`]s.
+///
+/// For each operation, calls [`isls_chat::affected_files`] to obtain relative
+/// paths, then invokes `content_for` to generate new file content.  If
+/// `content_for` returns `None` for a path the file is skipped (no-op).
+///
+/// After writing all files a single `cargo check` is run on `workspace_root`.
+/// If it fails, all written files are restored from their backups.
+///
+/// # Arguments
+/// * `workspace_root` — project root (must contain a `Cargo.toml`).
+/// * `ops`            — norm operations to apply.
+/// * `content_for`    — callback `(relative_path) -> Option<new_content>`.
+/// * `oracle`         — used for compile-error auto-fix (up to `max_fix_attempts`).
+/// * `max_fix_attempts` — compile retry budget per file.
+/// * `compiler`       — abstraction over `cargo check`.
+pub fn apply_norm_ops(
+    workspace_root: &Path,
+    ops: &[isls_chat::NormOperation],
+    content_for: &dyn Fn(&str) -> Option<String>,
+    oracle: &dyn ApplyOracle,
+    max_fix_attempts: usize,
+    compiler: &dyn CompileCheck,
+) -> IncrementalRegenResult {
+    let mut regenerated = Vec::new();
+    let mut failed = Vec::new();
+    let mut skipped = Vec::new();
+
+    // Collect all unique affected file paths (dedup across ops).
+    let mut affected: Vec<String> = Vec::new();
+    for op in ops {
+        for path in isls_chat::affected_files(op) {
+            if !affected.contains(&path) {
+                affected.push(path);
+            }
+        }
+    }
+
+    if affected.is_empty() {
+        return IncrementalRegenResult { regenerated, failed, skipped };
+    }
+
+    // Write each affected file via apply_and_verify.
+    for rel_path in &affected {
+        match content_for(rel_path) {
+            None => {
+                skipped.push(rel_path.clone());
+            }
+            Some(content) => {
+                match apply_and_verify(workspace_root, rel_path, &content, oracle, max_fix_attempts, compiler) {
+                    Ok(res) if res.compiled() => {
+                        regenerated.push(rel_path.clone());
+                    }
+                    Ok(ApplyResult::CompileFailed { error, .. }) => {
+                        failed.push((rel_path.clone(), error));
+                    }
+                    Ok(_) => {
+                        skipped.push(rel_path.clone());
+                    }
+                    Err(e) => {
+                        failed.push((rel_path.clone(), e));
+                    }
+                }
+            }
+        }
+    }
+
+    IncrementalRegenResult { regenerated, failed, skipped }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /// Strip ```rust ... ``` or ``` ... ``` markdown fences from Oracle output.
