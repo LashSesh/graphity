@@ -1,0 +1,891 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\geometry{margin=2.3cm,top=2.5cm,bottom=2.5cm}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  pdftitle={ISLS v3.1 --- Template-Free Generation},
+  pdfauthor={Sebastian Klemm},
+}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!50!black}\itshape,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=5pt,
+  tabsize=4,
+  showstringspaces=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small ISLS v3.1 --- Template-Free Generation}
+\fancyhead[R]{\small Klemm, 2026}
+\fancyfoot[C]{\thepage}
+
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+\vspace*{1.5cm}
+{\Huge\bfseries ISLS v3.1}\\[0.4cm]
+{\LARGE\bfseries Template-Free Generation}\\[0.3cm]
+{\LARGE\bfseries Norms + LLM + Compile Verification}\\[0.3cm]
+{\LARGE\bfseries One Domain Perfect End-to-End}\\[1.2cm]
+{\Large Specification v1.0}\\[1.5cm]
+{\large Sebastian Klemm}\\[0.3cm]
+{\small March 2026}\\[2cm]
+
+\begin{tabular}{ll}
+\textbf{Repository:} & \texttt{graphity/isls} \\
+\textbf{Replaces:} & Tera templates in isls-orchestrator \\
+\textbf{Core change:} & Every file is LLM-generated, \\
+ & norm-constrained, compile-verified. \\
+\textbf{Goal:} & \texttt{docker-compose up} $\to$ working app in browser \\
+\textbf{Requires:} & OpenAI API key \\
+\end{tabular}
+
+\vfill
+{\small
+Templates are dead. They break on every domain.\\
+Norms define WHAT. The LLM generates HOW. The compiler verifies.\\
+One domain. Warehouse. Perfect. End-to-end.\\
+Login $\to$ create product $\to$ adjust stock $\to$ create order $\to$
+fulfill $\to$ report. In the browser.
+}
+\end{center}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Why Templates Must Die}
+
+Templates are rigid. Every domain breaks them differently:
+
+\begin{center}
+\small
+\begin{tabular}{llp{5.5cm}}
+\toprule
+\textbf{Domain} & \textbf{Template Bug} & \textbf{Root Cause} \\
+\midrule
+Warehouse & \texttt{CreateUser} has no \texttt{last\_login\_at} & Quality hardening removed field, template still references it \\
+E-Commerce & No \texttt{User} entity at all & Domain has \texttt{Customer}, auth template hardcodes \texttt{User} \\
+Project & \texttt{User} has \texttt{display\_name} not \texttt{name} & Template hardcodes \texttt{user.name} \\
+All & \texttt{as\_deref()} on \texttt{Option<i32>} & Template doesn't know which fields are \texttt{String} vs \texttt{i32} \\
+All & Service bodies are CRUD boilerplate & Templates can't express domain logic \\
+All & Frontend shows empty tables & Templates have no data-aware rendering \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Every fix creates a new break. The template system cannot adapt to
+domain variation because it is fundamentally static.
+
+\subsection{The New Paradigm}
+
+\begin{lstlisting}[title=Old: Template-Driven]
+Norm says: "Generate a CRUD service for Product"
+Template says: "Here's a fixed Rust file with {entity} placeholders"
+Result: Code that compiles if the entity matches the template's assumptions.
+        Breaks if it doesn't.
+\end{lstlisting}
+
+\begin{lstlisting}[title=New: LLM-Driven with Norm Constraints]
+Norm says: "Generate a CRUD service for Product with these 5 functions,
+           these exact types, these error handling patterns"
+LLM says:  "Here's the code, using the exact types you specified"
+Compiler says: "Compiles." or "Error on line 47: no field 'price'"
+If error: LLM gets the error, fixes it, resubmits.
+After 3 attempts: compiled, verified, accepted.
+\end{lstlisting}
+
+The LLM replaces the template. The norm replaces the template's
+structural assumptions. The compiler replaces hope.
+
+% ============================================================
+\section{Architecture}
+
+\subsection{Generation Pipeline (Revised)}
+
+\begin{lstlisting}[title=v3.1 Pipeline]
+TOML Input
+  | isls-hypercube: parse, domain detection, entity inference
+  v
+HyperCube (dimensions, couplings)
+  | isls-norms: match norms, compose, wire dependencies
+  v
+ComposedPlan (every artifact defined: models, queries, services, api, frontend, tests)
+  | isls-decomposer: Fiedler collapse order
+  v
+Ordered Generation Steps
+  | For each step:
+  |   1. Build prompt from norm artifact spec + type context of already-generated files
+  |   2. Call LLM (OpenAI API)
+  |   3. Strip markdown fences
+  |   4. Write to file
+  |   5. Run cargo check (backend) or syntax check (frontend)
+  |   6. If error: feed error back to LLM, retry (max 3)
+  |   7. If success: update type context (new types now available for next file)
+  |   8. Crystallize pattern
+  v
+Complete Application (backend + frontend + docker + migrations)
+  | Final: cargo build && docker-compose config --quiet
+  v
+Verified Output
+\end{lstlisting}
+
+\subsection{Key Insight: Sequential Generation with Growing Context}
+
+Files are generated in dependency order (determined by Fiedler
+decomposition). Each generated file becomes part of the type
+context for the next file:
+
+\begin{lstlisting}
+Step 1: Generate src/errors.rs
+        Context: norm spec only
+        -> errors.rs exists, AppError is now known
+
+Step 2: Generate src/pagination.rs
+        Context: norm spec + errors.rs types
+        -> PaginationParams, PaginatedResponse now known
+
+Step 3: Generate src/auth.rs
+        Context: norm spec + errors.rs + pagination.rs
+        -> AuthUser, Claims, require_role now known
+
+Step 4: Generate src/models/product.rs
+        Context: all above + Product entity spec from norm
+        -> Product, CreateProduct, UpdateProduct now known
+
+Step 5: Generate src/database/product_queries.rs
+        Context: all above (knows exact Product fields)
+        -> list, get_by_id, insert, update, delete now known
+
+Step 6: Generate src/services/product.rs
+        Context: all above (knows queries + models + errors + auth)
+        -> Service functions with REAL business logic
+
+Step 7: Generate src/api/product.rs
+        Context: all above (knows services + auth + pagination)
+        -> Endpoints that call real service functions
+\end{lstlisting}
+
+No file is generated in isolation. Every file sees what came before.
+The LLM cannot hallucinate types because the prompt contains the
+exact definitions from previously generated files.
+
+% ============================================================
+\section{The Generation Engine}
+
+\subsection{New Module: isls-forge-llm}
+
+Replace the Tera template emission in isls-orchestrator with an
+LLM-driven generation engine. This is a new module inside
+\texttt{isls-renderloop} or a new crate \texttt{isls-forge-llm}.
+
+\begin{lstlisting}[language=C]
+pub struct LlmForge {
+    oracle: Box<dyn Oracle>,
+    type_context: TypeContext,
+    norm_plan: ComposedPlan,
+    output_dir: PathBuf,
+    generated_files: Vec<GeneratedFile>,
+    stats: ForgeStats,
+}
+
+pub struct GeneratedFile {
+    pub path: String,
+    pub content: String,
+    pub generation_method: String, // "llm" or "static" (for Cargo.toml, etc.)
+    pub attempts: u32,
+    pub tokens_used: u64,
+}
+
+pub struct ForgeStats {
+    pub files_generated: usize,
+    pub total_tokens: u64,
+    pub compile_checks: usize,
+    pub compile_failures: usize,
+    pub retries: usize,
+    pub total_time_secs: f64,
+}
+
+impl LlmForge {
+    /// Generate the entire application, file by file, in dependency order.
+    pub fn generate(&mut self, spec: &AppSpec) -> Result<Vec<GeneratedFile>> {
+        // 1. Generate static files (no LLM needed)
+        self.generate_static_files(spec)?;
+
+        // 2. Determine file generation order from Fiedler decomposition
+        let order = self.generation_order();
+
+        // 3. Generate each file
+        for file_spec in &order {
+            let result = self.generate_file(file_spec)?;
+            // After each file: update type context
+            self.type_context.add_file(&result.path, &result.content);
+            self.generated_files.push(result);
+        }
+
+        // 4. Final compilation check
+        self.final_compile_check()?;
+
+        Ok(self.generated_files.clone())
+    }
+}
+\end{lstlisting}
+
+\subsection{File Generation Order}
+
+Based on dependency topology (Fiedler decomposition collapses
+most-depended-on first):
+
+\begin{lstlisting}[title=Generation Order for a Typical App]
+LAYER 0 — Infrastructure (static, no LLM):
+  Cargo.toml, .env.example, docker-compose.yml, Dockerfile, README.md
+
+LAYER 1 — Foundation (LLM, no dependencies):
+  src/errors.rs        (AppError enum, ResponseError impl)
+  src/config.rs        (AppConfig, env loading)
+  src/pagination.rs    (PaginationParams, PaginatedResponse)
+
+LAYER 2 — Auth (LLM, depends on Layer 1):
+  src/models/user.rs   (User struct — ADAPTS to domain's user entity)
+  src/auth.rs          (JWT, Claims, AuthUser, middleware, role guard)
+
+LAYER 3 — Models (LLM, depends on Layer 1):
+  src/models/{entity}.rs  for each entity (struct, Create, Update, Validate)
+  src/models/mod.rs       (module declarations)
+
+LAYER 4 — Database (LLM, depends on Layer 3):
+  database/migrations/001_initial.sql  (all tables, FK, indices)
+  src/database/{entity}_queries.rs     (CRUD queries using exact model types)
+  src/database/pool.rs                 (connection pool)
+  src/database/mod.rs
+
+LAYER 5 — Services (LLM, depends on Layer 3+4):
+  src/services/{entity}.rs  (business logic, uses exact query fns + model types)
+  src/services/mod.rs
+
+LAYER 6 — API (LLM, depends on Layer 2+5):
+  src/api/{entity}.rs       (endpoints, uses exact service fns + auth)
+  src/api/auth_routes.rs    (login, register — uses exact User type)
+  src/api/mod.rs
+
+LAYER 7 — Main (LLM, depends on all):
+  src/main.rs               (wires everything together)
+
+LAYER 8 — Frontend (LLM, depends on API spec):
+  frontend/index.html
+  frontend/style.css
+  frontend/src/api/client.js
+  frontend/src/pages/{module}.js
+  frontend/src/components/*.js
+
+LAYER 9 — Tests (LLM, depends on all):
+  tests/api_tests.rs
+\end{lstlisting}
+
+\subsection{Static Files (No LLM)}
+
+Some files are always the same structure. Generate them directly:
+
+\begin{lstlisting}[language=C]
+fn generate_static_files(&mut self, spec: &AppSpec) -> Result<()> {
+    // Cargo.toml — always same structure, deps from norm
+    self.write_file("backend/Cargo.toml", &generate_cargo_toml(spec));
+    // docker-compose.yml
+    self.write_file("docker-compose.yml", &generate_docker_compose(spec));
+    // Dockerfile
+    self.write_file("backend/Dockerfile", &DOCKERFILE_TEMPLATE);
+    // .env.example
+    self.write_file(".env.example", &generate_env_example(spec));
+    // .gitignore
+    self.write_file(".gitignore", &GITIGNORE_TEMPLATE);
+    Ok(())
+}
+\end{lstlisting}
+
+These are still ``templates'' but trivial ones (10-30 lines each)
+that never break because they have no entity-specific content.
+
+\subsection{LLM File Generation}
+
+\begin{lstlisting}[language=C]
+fn generate_file(&mut self, file_spec: &FileSpec) -> Result<GeneratedFile> {
+    let prompt = self.build_prompt(file_spec);
+
+    for attempt in 1..=3 {
+        let response = self.oracle.call(&prompt, 4096)?;
+        let code = strip_markdown_fences(&response);
+
+        // Write to disk
+        let path = self.output_dir.join(&file_spec.path);
+        std::fs::create_dir_all(path.parent().unwrap())?;
+        std::fs::write(&path, &code)?;
+
+        // Compile check (for Rust files)
+        if file_spec.path.ends_with(".rs") {
+            match self.cargo_check() {
+                Ok(()) => {
+                    return Ok(GeneratedFile {
+                        path: file_spec.path.clone(),
+                        content: code,
+                        generation_method: "llm".into(),
+                        attempts: attempt,
+                        tokens_used: estimate_tokens(&prompt, &response),
+                    });
+                }
+                Err(compile_error) => {
+                    if attempt < 3 {
+                        // Feed error back to LLM
+                        let fix_prompt = format!(
+                            "{}\n\n\
+                             ## COMPILATION ERROR\n\
+                             The code above produced this error:\n```\n{}\n```\n\n\
+                             Fix the error. Return the COMPLETE corrected file.\n\
+                             Do not change function signatures or types from the context above.\n\
+                             Do not add new dependencies.",
+                            prompt, compile_error
+                        );
+                        // Retry with error context
+                        let retry = self.oracle.call(&fix_prompt, 4096)?;
+                        let fixed = strip_markdown_fences(&retry);
+                        std::fs::write(&path, &fixed)?;
+                        // Will be checked on next loop iteration
+                    }
+                }
+            }
+        } else {
+            // Non-Rust files: accept without compile check
+            return Ok(GeneratedFile { ... });
+        }
+    }
+
+    // All 3 attempts failed: return last attempt anyway (best effort)
+    Err(anyhow!("Failed to generate {} after 3 attempts", file_spec.path))
+}
+\end{lstlisting}
+
+\subsection{cargo check Integration}
+
+\begin{lstlisting}[language=C]
+/// Run cargo check on the generated backend.
+/// Returns Ok(()) if it compiles, Err(error_message) if not.
+fn cargo_check(&self) -> Result<(), String> {
+    let output = std::process::Command::new("cargo")
+        .arg("check")
+        .arg("--message-format=short")
+        .current_dir(self.output_dir.join("backend"))
+        .output()
+        .map_err(|e| format!("Failed to run cargo: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Extract just the error lines, not warnings
+        let errors: String = stderr.lines()
+            .filter(|l| l.contains("error[E") || l.contains("error:"))
+            .take(10)  // max 10 error lines to keep prompt short
+            .collect::<Vec<_>>()
+            .join("\n");
+        Err(errors)
+    }
+}
+\end{lstlisting}
+
+% ============================================================
+\section{Prompt Construction}
+
+This is the critical part. The prompt must give the LLM everything
+it needs to produce correct, compilable code on the first attempt.
+
+\subsection{Prompt Structure}
+
+Every prompt follows this structure:
+
+\begin{lstlisting}[title=Universal Prompt Template]
+You are generating one file for a {app_name} application in Rust.
+
+## APPLICATION CONTEXT
+{app_description}
+
+## ALREADY GENERATED FILES — USE THESE EXACT TYPES
+{type_context}
+
+## NORM REQUIREMENTS FOR THIS FILE
+{norm_artifacts_for_this_file}
+
+## FILE TO GENERATE
+Path: {file_path}
+Purpose: {file_purpose}
+
+## RULES
+- Use ONLY types shown in "ALREADY GENERATED FILES"
+- Use `tracing::{info, warn, error}`, never `log::{}`
+- Use `sqlx::query_as::<_, Type>()` (runtime), never `sqlx::query_as!()`
+- All errors via AppError variants shown above
+- All async functions return Result<T, AppError>
+- No unwrap() — use ? operator
+- Do not add use statements for external crates not in Cargo.toml
+- Return the COMPLETE file content. No markdown fences.
+  No explanation. Just Rust code.
+
+## DOMAIN-SPECIFIC REQUIREMENTS
+{business_rules_for_this_entity}
+
+Generate the complete file now.
+\end{lstlisting}
+
+\subsection{Type Context: Growing with Each File}
+
+\begin{lstlisting}[language=C]
+impl TypeContext {
+    /// After a file is generated and compiled, add its types to the context.
+    pub fn add_file(&mut self, path: &str, content: &str) {
+        // Extract public structs, enums, functions from content
+        // Add them to the context so the NEXT file can reference them
+        if path.contains("errors") {
+            self.error_types = extract_public_items(content);
+        } else if path.contains("pagination") {
+            self.pagination_types = extract_public_items(content);
+        } else if path.contains("auth") {
+            self.auth_types = extract_public_items(content);
+        } else if path.contains("models/") {
+            let entity = entity_from_path(path);
+            self.models.insert(entity, extract_public_items(content));
+        } else if path.contains("database/") && path.contains("queries") {
+            let entity = entity_from_path(path);
+            self.queries.insert(entity, extract_fn_signatures(content));
+        } else if path.contains("services/") {
+            let entity = entity_from_path(path);
+            self.services.insert(entity, extract_fn_signatures(content));
+        }
+    }
+
+    /// Build the type context string for a prompt.
+    /// Includes ALL types generated so far.
+    pub fn to_prompt_string(&self) -> String {
+        let mut s = String::new();
+        if !self.error_types.is_empty() {
+            s.push_str("### Error Types (from src/errors.rs)\n```rust\n");
+            s.push_str(&self.error_types);
+            s.push_str("\n```\n\n");
+        }
+        if !self.pagination_types.is_empty() {
+            s.push_str("### Pagination (from src/pagination.rs)\n```rust\n");
+            s.push_str(&self.pagination_types);
+            s.push_str("\n```\n\n");
+        }
+        // ... auth, models, queries, services
+        for (entity, types) in &self.models {
+            s.push_str(&format!("### Model: {} (from src/models/{}.rs)\n```rust\n",
+                entity, entity));
+            s.push_str(types);
+            s.push_str("\n```\n\n");
+        }
+        for (entity, sigs) in &self.queries {
+            s.push_str(&format!("### Queries: {} (from src/database/{}_queries.rs)\n```rust\n",
+                entity, entity));
+            s.push_str(&sigs.join("\n"));
+            s.push_str("\n```\n\n");
+        }
+        for (entity, sigs) in &self.services {
+            s.push_str(&format!("### Services: {} (from src/services/{}.rs)\n```rust\n",
+                entity, entity));
+            s.push_str(&sigs.join("\n"));
+            s.push_str("\n```\n\n");
+        }
+        s
+    }
+}
+\end{lstlisting}
+
+\subsection{Norm Artifacts in Prompt}
+
+The norm tells the LLM what the file must contain:
+
+\begin{lstlisting}[language=C]
+fn norm_context_for_file(&self, file_spec: &FileSpec) -> String {
+    match file_spec.file_type {
+        FileType::Model => format!(
+            "This file must define:\n\
+             - pub struct {} with these fields: {}\n\
+             - pub struct Create{} (no id, no timestamps)\n\
+             - pub struct Update{} (all fields Option<T>)\n\
+             - impl {} {{ pub fn validate(&self) -> Result<(), Vec<String>> }}\n\
+             - All structs derive: Debug, Clone, Serialize, Deserialize, sqlx::FromRow\n",
+            entity.name, fields_description, entity.name, entity.name, entity.name
+        ),
+        FileType::Queries => format!(
+            "This file must define these async functions:\n\
+             - pub async fn list(pool, params, filters...) -> Result<PaginatedResponse<{}>>\n\
+             - pub async fn get_by_id(pool, id) -> Result<{}>\n\
+             - pub async fn insert(pool, payload) -> Result<{}>\n\
+             - pub async fn update(pool, id, payload) -> Result<{}>\n\
+             - pub async fn delete(pool, id) -> Result<bool>\n\
+             {}\n\
+             Use sqlx::query_as::<_, {}>() (runtime queries, not macros).\n\
+             Use .bind() for parameters.\n",
+            entity.name, entity.name, entity.name, entity.name,
+            extra_queries_description, entity.name
+        ),
+        FileType::Service => format!(
+            "This file must implement these business operations:\n\
+             {}\n\
+             Each function:\n\
+             - Takes &PgPool, relevant params, &AuthUser\n\
+             - Calls require_role() first\n\
+             - Validates input\n\
+             - Calls the appropriate query function\n\
+             - Handles errors with AppError\n\
+             - Logs with tracing::info!/warn!\n",
+            business_rules_description
+        ),
+        // ... similar for API, Frontend, Tests
+    }
+}
+\end{lstlisting}
+
+% ============================================================
+\section{Docker End-to-End}
+
+The generated \texttt{docker-compose.yml} must actually start:
+
+\begin{lstlisting}[title=Generated docker-compose.yml]
+version: '3.8'
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-warehouse}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backend/database/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    ports:
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db/${DB_NAME:-warehouse}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      RUST_LOG: info
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+\end{lstlisting}
+
+\subsection{Generated Dockerfile}
+
+\begin{lstlisting}[title=Generated backend/Dockerfile]
+FROM rust:1.77-slim AS builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=builder /app/target/release/{app_name} /usr/local/bin/server
+EXPOSE 8080
+CMD ["server"]
+\end{lstlisting}
+
+\subsection{SQL Migrations}
+
+The LLM generates \texttt{database/migrations/001\_initial.sql}
+with ALL tables, foreign keys, indices, and a seed admin user:
+
+\begin{lstlisting}[language=SQL,title=End of 001_initial.sql]
+-- Seed admin user (password: admin123, bcrypt hashed)
+INSERT INTO users (email, password_hash, name, role, is_active, created_at, updated_at)
+VALUES (
+  'admin@example.com',
+  '$2b$12$LJ3m4ys3Lz0Y8r5u.NXOxeVqH7VJvNRiKm4H1RU5q4v5iqN5rVEa',
+  'Admin',
+  'admin',
+  true,
+  NOW(),
+  NOW()
+) ON CONFLICT (email) DO NOTHING;
+\end{lstlisting}
+
+\subsection{Frontend CORS}
+
+The backend must include CORS configuration that allows the
+frontend (port 3000) to call the API (port 8080):
+
+\begin{lstlisting}[language=C,title=In main.rs]
+let cors = actix_cors::Cors::default()
+    .allow_any_origin()
+    .allow_any_method()
+    .allow_any_header()
+    .max_age(3600);
+\end{lstlisting}
+
+\subsection{End-to-End Verification}
+
+\begin{lstlisting}[language=bash,title=The Test That Must Pass]
+# Generate
+isls forge-v2 --requirements examples/warehouse.toml \
+    --api-key $OPENAI_API_KEY \
+    --output ./output/warehouse
+
+# Start
+cd output/warehouse
+docker-compose up -d
+
+# Wait for startup
+sleep 10
+
+# Register a user
+curl -s -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@test.com","password":"test123","name":"Test User"}' \
+  | jq .
+
+# Login
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"admin123"}' \
+  | jq -r '.token')
+
+# Create product
+curl -s -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"sku":"WH-001","name":"Widget","category":"Parts",
+       "unit_price_cents":1500,"quantity_on_hand":100,
+       "reorder_level":10,"reorder_quantity":50,
+       "warehouse_id":1}' \
+  | jq .
+
+# List products
+curl -s http://localhost:8080/api/products \
+  -H "Authorization: Bearer $TOKEN" | jq .
+
+# Health check
+curl -s http://localhost:8080/api/health | jq .
+
+# Open browser
+echo "Frontend: http://localhost:3000"
+echo "API: http://localhost:8080/api/products"
+
+# Cleanup
+docker-compose down -v
+\end{lstlisting}
+
+% ============================================================
+\section{Mock Mode}
+
+With \texttt{--mock-oracle}, the system cannot call an LLM. In this
+mode, use minimal hardcoded code for each file type:
+
+\begin{itemize}
+\item errors.rs: hardcoded AppError enum (always the same)
+\item pagination.rs: hardcoded (always the same)
+\item config.rs: hardcoded (always the same)
+\item auth.rs: hardcoded (standard JWT implementation)
+\item models: generate struct with all fields from norm (simple codegen,
+  no LLM needed --- just format field names and types into a struct)
+\item queries: generate from norm (format SQL strings with field names)
+\item services: generate thin CRUD wrappers (validate + query + return)
+\item api: generate thin handlers (extract params + call service + json)
+\item main.rs: wire all routes
+\item frontend: hardcoded SPA shell with API calls per entity
+\end{itemize}
+
+Mock mode produces thin but compilable code. LLM mode produces rich
+code with real business logic. Both compile. Both start. LLM mode
+is better.
+
+Note: the ``mock generation'' functions are NOT Tera templates.
+They are Rust functions that build code strings from norm artifacts:
+
+\begin{lstlisting}[language=C]
+fn mock_generate_model(entity: &EntityDef) -> String {
+    let mut code = String::new();
+    code.push_str("use serde::{Serialize, Deserialize};\n");
+    code.push_str("use sqlx::FromRow;\n\n");
+    // Main struct
+    code.push_str(&format!(
+        "#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]\n\
+         pub struct {} {{\n", entity.name));
+    for field in &entity.fields {
+        code.push_str(&format!("    pub {}: {},\n", field.name, field.rust_type));
+    }
+    code.push_str("}\n\n");
+    // CreatePayload (only UserInput fields)
+    code.push_str(&format!(
+        "#[derive(Debug, Clone, Serialize, Deserialize)]\n\
+         pub struct Create{} {{\n", entity.name));
+    for field in &entity.fields {
+        if matches!(field.source, FieldSource::UserInput) {
+            code.push_str(&format!("    pub {}: {},\n", field.name, field.rust_type));
+        }
+    }
+    code.push_str("}\n\n");
+    // UpdatePayload (all fields as Option)
+    // ... same pattern
+    code
+}
+\end{lstlisting}
+
+This is simple string formatting from norm data, not a template
+engine. It cannot break because it reads the actual field names
+and types from the norm.
+
+% ============================================================
+\section{Implementation Plan}
+
+\begin{enumerate}
+\item \textbf{Create isls-forge-llm module} in isls-renderloop (or new crate).
+  Contains: LlmForge, TypeContext (growing), FileSpec, generation\_order().
+  Static file generators (Cargo.toml, Docker, etc.).
+  Mock generators (model, queries, service, api from norm data).
+  Test: mock generates all files for warehouse, cargo check passes.
+
+\item \textbf{LLM file generation + compile loop.}
+  build\_prompt(), generate\_file(), cargo\_check(), retry with error.
+  Test: generate errors.rs with LLM, cargo check passes.
+
+\item \textbf{Growing type context.}
+  add\_file() extracts types from generated file.
+  Each subsequent prompt includes all previously generated types.
+  Test: after generating errors.rs + models/product.rs, the prompt
+  for product\_queries.rs includes both AppError and Product types.
+
+\item \textbf{Full warehouse generation with LLM.}
+  All layers generated in order. Each file compiles.
+  Test: cargo build on complete backend succeeds.
+
+\item \textbf{Docker end-to-end.}
+  docker-compose.yml, Dockerfile, migrations with seed user, CORS.
+  Test: docker-compose up, curl health check returns 200.
+
+\item \textbf{Frontend generation.}
+  Login page, entity pages, dashboard, API client.
+  Test: nginx serves frontend, login form visible.
+
+\item \textbf{End-to-end user flow.}
+  Register, login, create product, list products, adjust stock.
+  Test: the curl sequence from Section 4.5 succeeds.
+
+\item \textbf{CLI integration.}
+  \texttt{forge-v2 --api-key} uses LlmForge instead of templates.
+  \texttt{forge-v2 --mock-oracle} uses mock generators.
+  Test: both modes produce compilable output.
+\end{enumerate}
+
+% ============================================================
+\section{Success Criteria}
+
+\begin{enumerate}
+\item \texttt{cargo build --workspace} zero errors.
+\item All existing tests pass.
+\item \texttt{forge-v2 --mock-oracle --output ./out/wh} $\to$
+  backend compiles with 0 errors.
+\item \texttt{forge-v2 --api-key \$KEY --output ./out/wh} $\to$
+  backend compiles with 0 errors.
+\item \texttt{docker-compose up -d} in generated output starts
+  PostgreSQL + backend + frontend.
+\item \texttt{curl /api/health} returns 200.
+\item \texttt{curl /api/auth/login} with seed credentials returns JWT.
+\item \texttt{curl /api/products} with JWT returns JSON (empty list or seeded data).
+\item \texttt{curl -X POST /api/products} with JWT creates a product.
+\item Frontend is accessible at \texttt{http://localhost:3000}.
+\item LLM retries: if a file fails cargo check, the LLM gets the
+  error and fixes it (logged in trace).
+\item Generated code has NO Tera template artifacts (no \texttt{\{\{ \}\}},
+  no \texttt{\{\% \%\}}).
+\end{enumerate}
+
+% ============================================================
+\section{Constraints for Claude Code}
+
+\begin{enumerate}
+\item \textbf{Repository: graphity/isls.}
+\item \textbf{Existing functionality must not break.}
+  The old \texttt{forge-v2 --mock-oracle} path can use mock
+  generators (not templates). The old template path is kept
+  but no longer the default.
+\item \textbf{OpenAI API calls must have timeouts.}
+  30 second timeout per call. Use \texttt{reqwest::blocking}
+  with timeout configured.
+\item \textbf{cargo check runs in the generated backend directory.}
+  Use \texttt{std::process::Command}. Parse stderr for errors.
+\item \textbf{The growing type context is critical.}
+  Every prompt must include ALL types generated so far.
+  If the context gets too large ($>$ 10,000 tokens), summarize:
+  show only struct names + field names, not full impls.
+\item \textbf{Sequential generation.}
+  Layer 0 before Layer 1 before Layer 2 before ... Layer 9.
+  Within a layer: generate in entity dependency order.
+\item \textbf{3 retry maximum per file.}
+  If all 3 fail cargo check, log the error and continue to
+  the next file. Do not abort the entire generation.
+\item \textbf{Warehouse is the only target for v3.1.}
+  Do not attempt ecommerce or project tracker. Get ONE domain
+  perfect before generalizing.
+\item \textbf{The docker-compose test is the most important
+  deliverable.} If it starts and health check passes, the system
+  works.
+\item \textbf{No \texttt{unwrap()} in library code.}
+\item \textbf{Every public item documented.}
+\item \textbf{MIT License. Copyright (c) 2026 Sebastian Klemm.}
+\end{enumerate}
+
+\vfill
+\noindent\rule{\textwidth}{0.4pt}
+\begin{center}
+\small
+ISLS v3.1 --- Template-Free Generation --- Sebastian Klemm --- March 2026\\
+Norms define WHAT. LLM generates HOW. Compiler verifies.\\
+One domain. Warehouse. End-to-end. In the browser.\\
+\url{https://github.com/LashSesh/graphity}
+\end{center}
+
+\end{document}
