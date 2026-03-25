@@ -1,0 +1,1250 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs,tabularx,longtable}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\geometry{margin=2.3cm,top=2.8cm,bottom=2.8cm}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  citecolor=blue!60!black,
+  urlcolor=blue!60!black,
+  pdftitle={ISLS v2.1 --- Multi-Pass Rendering},
+  pdfauthor={Sebastian Klemm},
+}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{gray!8},
+  keywordstyle=\color{blue!70!black}\bfseries,
+  stringstyle=\color{red!60!black},
+  commentstyle=\color{green!50!black}\itshape,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=6pt,
+  tabsize=4,
+  showstringspaces=false,
+}
+
+\titleformat{\section}{\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small ISLS v2.1 --- Multi-Pass Rendering}
+\fancyhead[R]{\small Klemm, 2026}
+\fancyfoot[C]{\thepage}
+
+\begin{document}
+
+\begin{titlepage}
+\begin{center}
+\vspace*{1.5cm}
+{\Huge\bfseries ISLS v2.1}\\[0.4cm]
+{\LARGE\bfseries Multi-Pass Rendering}\\[0.3cm]
+{\LARGE\bfseries with Universal Crystals}\\[0.3cm]
+{\LARGE\bfseries and LLM-Driven Domain Intelligence}\\[1.2cm]
+{\Large Specification v1.0}\\[1.5cm]
+{\large Sebastian Klemm}\\[0.3cm]
+{\small March 2026}\\[2cm]
+
+\begin{tabular}{ll}
+\textbf{Repository:} & \texttt{graphity/isls} \\
+\textbf{Builds on:} & ISLS v2.0 (Hypercube Decomposer) \\
+\textbf{New crate:} & \texttt{isls-renderloop} \\
+\textbf{Modified:} & \texttt{isls-decomposer}, \texttt{isls-blueprint},
+  \texttt{isls-orchestrator}, \texttt{isls-cli} \\
+\textbf{Requires:} & OpenAI API key (for LLM passes) \\
+\end{tabular}
+
+\vfill
+{\small
+v2.0 generates in one pass: templates produce structure, done.\\
+v2.1 renders in multiple passes: structure, then logic, then edge cases,\\
+then polish --- each pass deeper, each pass cheaper, converging.\\[0.3cm]
+The crystal system is restructured: domain-specific patterns are\\
+replaced by \textbf{universal architectural patterns} that apply to\\
+ANY application. The system does not memorize warehouses.\\
+It learns what software \emph{is}.\\[0.3cm]
+The LLM is not a fallback. It is the creative engine that translates\\
+human domains into architectural structure.
+}
+\end{center}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Why v2.0 Is Not Enough}
+
+v2.0 produces 60 files and 5,120 LOC in 0.8 seconds with zero Oracle
+calls. Impressive. But the generated code is template code. Every
+function body follows the same pattern. Every service does the same
+thing: validate, query, return. The business logic is structurally
+correct but semantically empty.
+
+And worse: the blueprint system learns \textbf{domain-specific}
+patterns. After generating 5 warehouse systems, it is excellent at
+warehouses and useless at everything else. The crystals are
+``Warehouse Product with 17 fields'' and ``Warehouse Order
+fulfillment.'' A music streaming service cannot use these. The system
+has memorized, not learned.
+
+v2.1 fixes both problems:
+
+\begin{enumerate}
+\item \textbf{Multi-pass rendering}: Structure first (offline),
+  then domain logic (LLM), then edge cases (LLM), then polish
+  (LLM). Each pass deeper. Each pass cheaper. Converging.
+\item \textbf{Universal crystals}: The system does not memorize
+  ``warehouse product.'' It learns ``entity with inventory tracking
+  needs: quantity field, reorder threshold, stock movement logging.''
+  This applies to warehouse products, pharmacy inventory, library
+  books, and spare parts. One crystal, infinite domains.
+\end{enumerate}
+
+% ============================================================
+\section{Universal Crystal Architecture}
+
+\subsection{Crystal Levels}
+
+Every crystal has a level indicating its abstraction:
+
+\begin{lstlisting}[language=C]
+/// The abstraction level of a crystal.
+/// Higher levels are more universal, more reusable, more valuable.
+pub enum CrystalLevel {
+    /// Level 0: Universal architectural patterns.
+    /// Apply to ANY software, ANY domain.
+    /// Examples: BelongsTo, HasMany, CRUD, Pagination, Auth,
+    ///           StateMachine, EventEmitter, Pipeline.
+    /// These NEVER become stale.
+    Universal,
+
+    /// Level 1: Architectural pattern families.
+    /// Apply to classes of applications.
+    /// Examples: "REST API with auth", "Event-driven pipeline",
+    ///           "CRUD with soft delete", "Multi-tenant SaaS".
+    Architectural,
+
+    /// Level 2: Structural patterns.
+    /// Apply across many domains but are more specific.
+    /// Examples: "Entity with inventory tracking",
+    ///           "Entity with state machine and transitions",
+    ///           "Service with external API integration".
+    Structural,
+
+    /// Level 3: Domain-specific patterns.
+    /// Apply only within one domain.
+    /// Examples: "Warehouse stock adjustment",
+    ///           "E-commerce checkout flow".
+    /// These are LEAST valuable for reuse and should be
+    /// the LAST to be consulted.
+    DomainSpecific,
+}
+\end{lstlisting}
+
+\subsection{Crystal Structure (Revised)}
+
+\begin{lstlisting}[language=C]
+pub struct Crystal {
+    pub id: String,                 // SHA-256
+    pub level: CrystalLevel,
+    pub pattern_name: String,       // "belongs_to", "state_machine", etc.
+    pub description: String,
+    pub confidence: f64,
+
+    /// What this crystal knows about structure
+    pub structure: StructuralKnowledge,
+
+    /// What this crystal knows about implementation
+    pub implementation: ImplementationKnowledge,
+
+    /// Usage statistics
+    pub stats: CrystalStats,
+
+    /// Evidence chain
+    pub evidence: Vec<String>,
+}
+
+/// Structural knowledge: WHAT should be built.
+/// This is the template-level information.
+pub struct StructuralKnowledge {
+    /// What types/fields/signatures are needed
+    pub components: Vec<ComponentSpec>,
+    /// How components relate to each other
+    pub relationships: Vec<RelSpec>,
+    /// Constraints that must be satisfied
+    pub constraints: Vec<String>,
+}
+
+pub struct ComponentSpec {
+    pub kind: String,       // "struct", "function", "endpoint", "migration"
+    pub name_pattern: String,  // "{entity}_service", "list_{entities}"
+    pub parameters: Vec<ParamSpec>,
+    pub returns: Option<String>,
+    pub description: String,
+}
+
+/// Implementation knowledge: HOW it should be built.
+/// This is what the LLM teaches us after generation.
+pub struct ImplementationKnowledge {
+    /// Common patterns in the function body
+    pub body_patterns: Vec<String>,
+    /// Common error cases to handle
+    pub error_cases: Vec<String>,
+    /// Common edge cases discovered
+    pub edge_cases: Vec<String>,
+    /// Performance considerations
+    pub perf_notes: Vec<String>,
+    /// Security considerations
+    pub security_notes: Vec<String>,
+    /// Test scenarios that should exist
+    pub test_scenarios: Vec<String>,
+}
+
+pub struct CrystalStats {
+    pub times_used: u64,
+    pub times_succeeded: u64,
+    pub domains_used_in: Vec<String>,  // ["warehouse", "ecommerce", "hospital"]
+    pub last_used: String,
+    pub avg_tokens_saved: f64,  // estimated tokens NOT spent because of this crystal
+}
+\end{lstlisting}
+
+\subsection{Built-in Universal Crystals (Level 0)}
+
+The system ships with these pre-defined crystals. They are never
+deleted and cannot fall below confidence 0.9.
+
+\begin{center}
+\small
+\begin{tabular}{lp{8cm}}
+\toprule
+\textbf{Crystal} & \textbf{What It Encodes} \\
+\midrule
+\texttt{belongs\_to} & Entity A references Entity B via foreign key. Needs: FK field,
+  FK index, ON DELETE policy, join query, nested serialization option. \\
+\texttt{has\_many} & Entity A owns many Entity B. Needs: reverse FK in B,
+  list-children query, cascade delete option, count method. \\
+\texttt{crud\_entity} & Entity with Create/Read/Update/Delete. Needs: model struct,
+  CreatePayload, UpdatePayload, validation, 5 query functions, 5 API endpoints. \\
+\texttt{state\_machine} & Entity with discrete states and valid transitions. Needs:
+  state enum, transition validation function, status history logging. \\
+\texttt{pagination} & List endpoint with page/per\_page/sort/search. Needs:
+  PaginationParams, PaginatedResponse, LIMIT/OFFSET query, count query. \\
+\texttt{jwt\_auth} & JWT authentication flow. Needs: Claims struct, create/verify
+  functions, AuthUser extractor, role hierarchy, login/register endpoints. \\
+\texttt{error\_handling} & Typed error system. Needs: AppError enum, Display,
+  ResponseError, From<sqlx::Error>, proper HTTP status codes. \\
+\texttt{soft\_delete} & Entity is never physically deleted, only marked inactive.
+  Needs: is\_active/deleted\_at field, filtered queries, restore function. \\
+\texttt{audit\_trail} & Track who changed what when. Needs: audit table, trigger
+  or service-level logging, query audit history. \\
+\texttt{event\_emitter} & Action produces domain events. Needs: Event enum,
+  EventBus, subscriber registration, async dispatch. \\
+\texttt{pipeline} & Data flows through stages: input $\to$ validate $\to$ transform
+  $\to$ persist $\to$ respond. Needs: stage functions, error at each stage. \\
+\texttt{config\_from\_env} & Configuration loaded from environment variables with
+  defaults. Needs: Config struct, env parsing, validation. \\
+\texttt{health\_check} & System health endpoint. Needs: /health route, DB ping,
+  uptime, version. \\
+\texttt{rate\_limiting} & API rate limiting per user/IP. Needs: middleware,
+  sliding window counter, 429 response. \\
+\texttt{background\_job} & Async task processed outside request cycle. Needs:
+  job queue, worker loop, retry logic, failure handling. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+These 15 crystals cover the structural skeleton of virtually any
+web application. They are the ``laws of physics'' of the ISLS
+universe. Domain-specific behavior lives in the LLM passes, not
+in these crystals.
+
+\subsection{Crystal Matching (Revised)}
+
+\begin{lstlisting}[language=C]
+impl BlueprintRegistry {
+    /// Find matching crystals for a dimension.
+    /// Search order: Universal -> Architectural -> Structural -> Domain.
+    /// Returns ALL matches above threshold, sorted by level (most universal first).
+    pub fn find_matches(
+        &self,
+        dimension: &Dimension,
+        min_confidence: f64,
+    ) -> Vec<&Crystal> {
+        let mut matches = Vec::new();
+
+        // Level 0: Universal — always check
+        for c in self.by_level(CrystalLevel::Universal) {
+            if c.matches_dimension(dimension) && c.confidence >= min_confidence {
+                matches.push(c);
+            }
+        }
+
+        // Level 1: Architectural
+        for c in self.by_level(CrystalLevel::Architectural) {
+            if c.matches_dimension(dimension) && c.confidence >= min_confidence {
+                matches.push(c);
+            }
+        }
+
+        // Level 2: Structural (only if no Universal/Architectural match)
+        if matches.is_empty() {
+            for c in self.by_level(CrystalLevel::Structural) {
+                if c.matches_dimension(dimension) && c.confidence >= min_confidence {
+                    matches.push(c);
+                }
+            }
+        }
+
+        // Level 3: Domain-specific (only as last resort)
+        // These are least likely to generalize
+        if matches.is_empty() {
+            for c in self.by_level(CrystalLevel::DomainSpecific) {
+                if c.matches_dimension(dimension) && c.confidence >= min_confidence {
+                    matches.push(c);
+                }
+            }
+        }
+
+        matches
+    }
+}
+\end{lstlisting}
+
+\subsection{How Crystals Gain Implementation Knowledge}
+
+When the LLM generates code in a render pass, and that code survives
+verification, the system extracts implementation knowledge and adds
+it to the matching crystal:
+
+\begin{lstlisting}[language=C]
+/// After a successful LLM pass, learn from what the LLM produced.
+fn learn_from_llm_output(
+    crystal: &mut Crystal,
+    generated_code: &str,
+    pass_depth: u32,
+) {
+    match pass_depth {
+        1 => {
+            // Logic pass: learn body patterns
+            let patterns = extract_code_patterns(generated_code);
+            for p in patterns {
+                if !crystal.implementation.body_patterns.contains(&p) {
+                    crystal.implementation.body_patterns.push(p);
+                }
+            }
+        }
+        2 => {
+            // Edge case pass: learn error cases
+            let errors = extract_error_handling(generated_code);
+            for e in errors {
+                if !crystal.implementation.error_cases.contains(&e) {
+                    crystal.implementation.error_cases.push(e);
+                }
+            }
+            let edges = extract_edge_cases(generated_code);
+            for e in edges {
+                if !crystal.implementation.edge_cases.contains(&e) {
+                    crystal.implementation.edge_cases.push(e);
+                }
+            }
+        }
+        3 => {
+            // Polish pass: learn test scenarios, security notes
+            let tests = extract_test_patterns(generated_code);
+            for t in tests {
+                if !crystal.implementation.test_scenarios.contains(&t) {
+                    crystal.implementation.test_scenarios.push(t);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+\end{lstlisting}
+
+Over time, the universal crystals accumulate implementation knowledge
+from every domain they participate in. The \texttt{state\_machine}
+crystal learns error cases from warehouse orders, medical patient
+workflows, and project task boards. Each domain teaches it something
+new. The crystal becomes wiser without becoming domain-specific.
+
+% ============================================================
+\section{Multi-Pass Render Loop}
+
+\subsection{Pass Definitions}
+
+\begin{lstlisting}[language=C]
+pub struct RenderPass {
+    /// Pass depth: 0=structure, 1=logic, 2=edge cases, ...
+    pub depth: u32,
+    /// What this pass does
+    pub pass_type: PassType,
+    /// Which files/functions this pass operates on
+    pub scope: PassScope,
+    /// Maximum tokens budget for this pass
+    pub token_budget: u64,
+    /// Stop when change rate drops below this threshold
+    pub convergence_threshold: f64,
+}
+
+pub enum PassType {
+    /// Pass 0: Structure generation from templates + universal crystals.
+    /// Offline. Zero tokens. Produces: files, structs, function signatures,
+    /// SQL schema, API routes, frontend pages.
+    Structure,
+
+    /// Pass 1: Domain logic injection.
+    /// LLM fills function bodies with actual business logic.
+    /// Guided by: crystal's StructuralKnowledge + TOML descriptions.
+    DomainLogic,
+
+    /// Pass 2: Edge case hardening.
+    /// LLM reviews generated code and adds error handling,
+    /// boundary checks, race condition guards.
+    /// Guided by: crystal's ImplementationKnowledge.error_cases.
+    EdgeCases,
+
+    /// Pass 3: Integration pass.
+    /// LLM checks cross-module consistency: do API responses
+    /// match frontend expectations? Do queries match models?
+    Integration,
+
+    /// Pass 4: Test generation.
+    /// LLM writes tests based on crystal's test_scenarios
+    /// plus domain-specific behavior from earlier passes.
+    TestGeneration,
+
+    /// Pass 5: Polish.
+    /// LLM improves: error messages, logging, documentation,
+    /// code comments, naming conventions.
+    Polish,
+}
+
+pub enum PassScope {
+    /// All generated files
+    All,
+    /// Only files in a specific layer
+    Layer(String),  // "services", "api", "frontend"
+    /// Only specific files
+    Files(Vec<String>),
+    /// Only functions matching a pattern
+    Functions(String),  // "adjust_stock", "*_service"
+}
+\end{lstlisting}
+
+\subsection{The Render Loop}
+
+\begin{lstlisting}[language=C]
+/// The multi-pass render loop.
+/// Takes v2.0 decomposer output (structure) and renders it
+/// through multiple LLM passes until convergence.
+pub struct RenderLoop {
+    /// Available LLM oracle
+    oracle: Box<dyn Oracle>,
+    /// Crystal registry
+    crystals: BlueprintRegistry,
+    /// Barbara reader for verification
+    reader: Reader,
+    /// Barbara topology analyzer
+    topo: CodeTopoAnalyzer,
+    /// Render pass configuration
+    passes: Vec<RenderPass>,
+    /// Statistics
+    stats: RenderStats,
+}
+
+pub struct RenderStats {
+    pub passes_executed: u32,
+    pub total_tokens_used: u64,
+    pub tokens_per_pass: Vec<u64>,
+    pub files_modified_per_pass: Vec<usize>,
+    pub convergence_per_pass: Vec<f64>,
+    pub crystals_updated: usize,
+}
+
+impl RenderLoop {
+    /// Default pass sequence for a full-stack application.
+    pub fn default_passes() -> Vec<RenderPass> {
+        vec![
+            RenderPass {
+                depth: 0,
+                pass_type: PassType::Structure,
+                scope: PassScope::All,
+                token_budget: 0,  // offline
+                convergence_threshold: 0.0,
+            },
+            RenderPass {
+                depth: 1,
+                pass_type: PassType::DomainLogic,
+                scope: PassScope::Layer("services".into()),
+                token_budget: 50_000,
+                convergence_threshold: 0.05,
+            },
+            RenderPass {
+                depth: 2,
+                pass_type: PassType::EdgeCases,
+                scope: PassScope::Layer("services".into()),
+                token_budget: 20_000,
+                convergence_threshold: 0.03,
+            },
+            RenderPass {
+                depth: 3,
+                pass_type: PassType::Integration,
+                scope: PassScope::All,
+                token_budget: 15_000,
+                convergence_threshold: 0.02,
+            },
+            RenderPass {
+                depth: 4,
+                pass_type: PassType::TestGeneration,
+                scope: PassScope::Layer("tests".into()),
+                token_budget: 20_000,
+                convergence_threshold: 0.05,
+            },
+            RenderPass {
+                depth: 5,
+                pass_type: PassType::Polish,
+                scope: PassScope::All,
+                token_budget: 10_000,
+                convergence_threshold: 0.01,
+            },
+        ]
+    }
+
+    /// Execute the full render loop.
+    pub fn render(
+        &mut self,
+        mut artifacts: Vec<Artifact>,  // from v2.0 decomposer (Pass 0)
+        app_spec: &AppSpec,
+    ) -> Result<Vec<Artifact>> {
+        self.stats.passes_executed = 1;  // Pass 0 already done
+
+        for pass in &self.passes[1..] {  // skip Pass 0 (structure)
+            let before = snapshot_artifacts(&artifacts);
+            let tokens_before = self.stats.total_tokens_used;
+
+            // Execute pass
+            artifacts = self.execute_pass(pass, artifacts, app_spec)?;
+
+            // Measure convergence
+            let change_rate = measure_change_rate(&before, &artifacts);
+            let tokens_used = self.stats.total_tokens_used - tokens_before;
+
+            self.stats.passes_executed += 1;
+            self.stats.tokens_per_pass.push(tokens_used);
+            self.stats.convergence_per_pass.push(change_rate);
+            self.stats.files_modified_per_pass.push(
+                count_modified(&before, &artifacts)
+            );
+
+            // Check convergence
+            if change_rate < pass.convergence_threshold {
+                // This pass converged. Move to next.
+                continue;
+            }
+
+            // Check token budget
+            if tokens_used > pass.token_budget {
+                // Budget exhausted for this pass. Move to next.
+                continue;
+            }
+        }
+
+        // After all passes: crystallize what we learned
+        self.crystallize_learnings(&artifacts);
+
+        Ok(artifacts)
+    }
+}
+\end{lstlisting}
+
+\subsection{Pass 0: Structure (Offline)}
+
+This is exactly what v2.0 does today. The Hypercube Decomposer runs,
+templates produce code. Zero tokens. The output is:
+
+\begin{itemize}
+\item All files created with correct names, paths, module structure
+\item All structs with all fields (from domain knowledge)
+\item All function signatures (correct parameters, return types)
+\item SQL migrations with complete schema
+\item API routes with correct HTTP methods and paths
+\item Frontend pages with layout structure
+\item Config, Dockerfile, docker-compose, README
+\end{itemize}
+
+What is \emph{missing} after Pass 0:
+\begin{itemize}
+\item Function bodies are template boilerplate (CRUD only)
+\item Business rules are comments, not code
+\item Error handling is minimal
+\item No edge case handling
+\item Tests are structural stubs
+\item Frontend has no actual interaction logic
+\end{itemize}
+
+\subsection{Pass 1: Domain Logic (LLM)}
+
+For each service function that has business rule comments or
+template boilerplate bodies, construct a prompt:
+
+\begin{lstlisting}[language=C]
+fn build_domain_logic_prompt(
+    function: &FunctionArtifact,
+    crystal: &Crystal,
+    app_spec: &AppSpec,
+) -> String {
+    format!(
+        "You are filling in the business logic for a Rust function.\n\
+         \n\
+         ## Function Signature (DO NOT CHANGE)\n\
+         ```rust\n{}\n```\n\
+         \n\
+         ## Available Types\n\
+         ```rust\n{}\n```\n\
+         \n\
+         ## Available Database Queries\n\
+         {}\n\
+         \n\
+         ## Business Rule to Implement\n\
+         {}\n\
+         \n\
+         ## Known Patterns from Similar Functions\n\
+         {}\n\
+         \n\
+         ## Known Error Cases to Handle\n\
+         {}\n\
+         \n\
+         Return ONLY the function body (the code between {{ and }}).\n\
+         Use the exact types and queries listed above.\n\
+         Handle all error cases with AppError variants.\n\
+         Do not add new dependencies or imports.",
+        function.signature,
+        function.available_types,
+        function.available_queries,
+        function.business_rule_description,
+        crystal.implementation.body_patterns.join("\n"),
+        crystal.implementation.error_cases.join("\n"),
+    )
+}
+\end{lstlisting}
+
+The prompt gives the LLM:
+\begin{enumerate}
+\item The exact function signature (constraint: do not change)
+\item The types it can use (from Pass 0 models)
+\item The queries it can call (from Pass 0 database layer)
+\item The business rule description (from TOML, natural language)
+\item Known patterns from the crystal (accumulated from past runs)
+\item Known error cases (accumulated from past runs)
+\end{enumerate}
+
+The LLM operates within a tight box. It fills one function at a time.
+It cannot hallucinate types or queries that don't exist because the
+prompt lists exactly what is available.
+
+After the LLM returns a function body, it is:
+\begin{enumerate}
+\item Inserted into the source file (replacing the template body)
+\item Checked by isls-reader (Barbara): does it parse?
+\item Checked structurally: does it use only declared types/queries?
+\item If check fails: retry with error context (up to 3 times)
+\item If check passes: move to next function
+\end{enumerate}
+
+\subsection{Pass 2: Edge Cases (LLM)}
+
+Takes the code from Pass 1 and asks the LLM to harden it:
+
+\begin{lstlisting}[language=C]
+fn build_edge_case_prompt(
+    function: &FunctionArtifact,
+    crystal: &Crystal,
+) -> String {
+    format!(
+        "Review this Rust function and add edge case handling.\n\
+         \n\
+         ## Current Implementation\n\
+         ```rust\n{}\n```\n\
+         \n\
+         ## Known Edge Cases for This Pattern\n\
+         {}\n\
+         \n\
+         Consider:\n\
+         - What if the input is empty, zero, negative, or very large?\n\
+         - What if a referenced entity does not exist?\n\
+         - What if a concurrent modification occurs?\n\
+         - What if the database connection drops mid-operation?\n\
+         - What if the user does not have permission?\n\
+         \n\
+         Return the COMPLETE function with edge cases added.\n\
+         Do not remove existing logic. Only add checks.",
+        function.current_body,
+        crystal.implementation.edge_cases.join("\n"),
+    )
+}
+\end{lstlisting}
+
+\subsection{Pass 3: Integration (LLM)}
+
+Reviews cross-module consistency:
+
+\begin{lstlisting}[language=C]
+fn build_integration_prompt(
+    api_file: &str,
+    service_file: &str,
+    frontend_api_client: &str,
+) -> String {
+    format!(
+        "Check these three files for consistency.\n\
+         \n\
+         ## API Endpoints (Rust)\n\
+         ```rust\n{}\n```\n\
+         \n\
+         ## Service Functions (Rust)\n\
+         ```rust\n{}\n```\n\
+         \n\
+         ## Frontend API Client (JavaScript)\n\
+         ```javascript\n{}\n```\n\
+         \n\
+         List any mismatches:\n\
+         - API route that calls a non-existent service function\n\
+         - Frontend URL that doesn't match an API route\n\
+         - Request body shape that doesn't match the endpoint's expected payload\n\
+         - Response shape that doesn't match what the frontend expects\n\
+         \n\
+         For each mismatch, provide the fix (which file, which line, what to change).\n\
+         Return JSON: [{{\"file\": ..., \"line\": ..., \"fix\": ...}}, ...]",
+        api_file, service_file, frontend_api_client,
+    )
+}
+\end{lstlisting}
+
+\subsection{Pass 4: Test Generation (LLM)}
+
+For each service function, generate meaningful tests:
+
+\begin{lstlisting}[language=C]
+fn build_test_prompt(
+    function: &FunctionArtifact,
+    crystal: &Crystal,
+) -> String {
+    format!(
+        "Write Rust integration tests for this function.\n\
+         \n\
+         ## Function\n\
+         ```rust\n{}\n```\n\
+         \n\
+         ## Test Scenarios to Cover\n\
+         {}\n\
+         \n\
+         ## Additional Scenarios\n\
+         - Happy path: normal input, expected output\n\
+         - Validation: invalid input, expect error\n\
+         - Not found: reference nonexistent entity\n\
+         - Authorization: insufficient role, expect 403\n\
+         - Idempotency: same operation twice, expected behavior\n\
+         \n\
+         Use #[tokio::test] and sqlx::PgPool.\n\
+         Each test is self-contained: create test data, execute, assert, cleanup.",
+        function.current_body,
+        crystal.implementation.test_scenarios.join("\n"),
+    )
+}
+\end{lstlisting}
+
+\subsection{Pass 5: Polish (LLM)}
+
+Final pass: improve error messages, add logging, improve docs.
+Smallest scope, lowest token budget, tightest convergence threshold.
+This pass often converges immediately because Passes 1--4 already
+produced clean code.
+
+\subsection{Convergence Measurement}
+
+\begin{lstlisting}[language=C]
+/// Measure how much changed between before and after a pass.
+/// Returns a value in [0.0, 1.0] where 0.0 = no change.
+fn measure_change_rate(
+    before: &[Artifact],
+    after: &[Artifact],
+) -> f64 {
+    let mut total_lines = 0usize;
+    let mut changed_lines = 0usize;
+
+    for (b, a) in before.iter().zip(after.iter()) {
+        if let (Artifact::SourceFile { content: bc, .. },
+                Artifact::SourceFile { content: ac, .. }) = (b, a)
+        {
+            let b_lines: Vec<_> = bc.lines().collect();
+            let a_lines: Vec<_> = ac.lines().collect();
+            total_lines += a_lines.len().max(b_lines.len());
+            // Simple line-by-line diff
+            for i in 0..a_lines.len().max(b_lines.len()) {
+                let bl = b_lines.get(i).unwrap_or(&"");
+                let al = a_lines.get(i).unwrap_or(&"");
+                if bl != al { changed_lines += 1; }
+            }
+        }
+    }
+
+    if total_lines == 0 { 0.0 } else { changed_lines as f64 / total_lines as f64 }
+}
+\end{lstlisting}
+
+% ============================================================
+\section{Oracle Integration}
+
+\subsection{Oracle Trait}
+
+\begin{lstlisting}[language=C]
+/// The Oracle trait. Abstracts over LLM providers.
+pub trait Oracle: Send + Sync {
+    /// Send a prompt, get a response.
+    fn call(&self, prompt: &str, max_tokens: u32) -> Result<String>;
+
+    /// Send a prompt, get structured JSON response.
+    fn call_json(&self, prompt: &str, max_tokens: u32) -> Result<serde_json::Value>;
+
+    /// Name of the model
+    fn model_name(&self) -> &str;
+
+    /// Estimated cost per 1K tokens (input + output)
+    fn cost_per_1k_tokens(&self) -> f64;
+}
+\end{lstlisting}
+
+\subsection{OpenAI Implementation}
+
+\begin{lstlisting}[language=C]
+pub struct OpenAiOracle {
+    api_key: String,
+    model: String,      // "gpt-4o-mini" (default), "gpt-4o", etc.
+    base_url: String,   // "https://api.openai.com/v1"
+    client: reqwest::blocking::Client,
+}
+
+impl OpenAiOracle {
+    pub fn new(api_key: String) -> Self {
+        Self {
+            api_key,
+            model: "gpt-4o-mini".into(),
+            base_url: "https://api.openai.com/v1".into(),
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.into();
+        self
+    }
+}
+
+impl Oracle for OpenAiOracle {
+    fn call(&self, prompt: &str, max_tokens: u32) -> Result<String> {
+        let body = json!({
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": "You are a precise code generator. Return only the requested code, no markdown fences, no explanation."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": max_tokens,
+            "temperature": 0.2,  // low temperature for code
+        });
+
+        let resp = self.client
+            .post(format!("{}/chat/completions", self.base_url))
+            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()?;
+
+        let json: serde_json::Value = resp.json()?;
+        let content = json["choices"][0]["message"]["content"]
+            .as_str()
+            .ok_or_else(|| anyhow!("No content in response"))?;
+
+        Ok(content.to_string())
+    }
+
+    fn call_json(&self, prompt: &str, max_tokens: u32) -> Result<serde_json::Value> {
+        let text = self.call(prompt, max_tokens)?;
+        // Strip markdown fences if present
+        let clean = text.trim()
+            .trim_start_matches("```json")
+            .trim_start_matches("```")
+            .trim_end_matches("```")
+            .trim();
+        Ok(serde_json::from_str(clean)?)
+    }
+
+    fn model_name(&self) -> &str { &self.model }
+    fn cost_per_1k_tokens(&self) -> f64 { 0.15 }  // gpt-4o-mini approximate
+}
+\end{lstlisting}
+
+\subsection{Mock Oracle (for testing without API key)}
+
+\begin{lstlisting}[language=C]
+pub struct MockOracle;
+
+impl Oracle for MockOracle {
+    fn call(&self, prompt: &str, _max_tokens: u32) -> Result<String> {
+        // Return the existing function body unchanged
+        // (effectively a no-op for the render pass)
+        if prompt.contains("Return ONLY the function body") {
+            Ok("// TODO: implement business logic".into())
+        } else if prompt.contains("List any mismatches") {
+            Ok("[]".into())
+        } else {
+            Ok("// mock oracle: no-op".into())
+        }
+    }
+
+    fn call_json(&self, _prompt: &str, _max_tokens: u32) -> Result<serde_json::Value> {
+        Ok(json!([]))
+    }
+
+    fn model_name(&self) -> &str { "mock" }
+    fn cost_per_1k_tokens(&self) -> f64 { 0.0 }
+}
+\end{lstlisting}
+
+% ============================================================
+\section{CLI Integration}
+
+\begin{lstlisting}[language=bash,title=CLI Commands]
+# v2.0 decomposition only (no LLM, same as before)
+isls forge-v2 --requirements examples/warehouse.toml \
+              --output ./output/warehouse \
+              --mock-oracle --trace
+
+# v2.1 full render (with LLM passes)
+isls forge-v2 --requirements examples/warehouse.toml \
+              --output ./output/warehouse \
+              --api-key $OPENAI_API_KEY \
+              --model gpt-4o-mini \
+              --passes 5 \
+              --token-budget 100000 \
+              --trace
+
+# v2.1 with specific pass control
+isls forge-v2 --requirements examples/warehouse.toml \
+              --output ./output/warehouse \
+              --api-key $OPENAI_API_KEY \
+              --passes 3 \
+              --skip-pass polish \
+              --trace
+
+# v2.1 render additional passes on existing output
+isls render --output ./output/warehouse \
+            --api-key $OPENAI_API_KEY \
+            --passes 2 \
+            --scope services \
+            --trace
+
+# Crystal management
+isls crystals list
+isls crystals stats
+isls crystals show belongs_to
+isls crystals export --output crystals.json
+isls crystals import --file crystals.json
+\end{lstlisting}
+
+\subsection{Environment Variable Support}
+
+\begin{lstlisting}[language=bash]
+# API key can be set via environment
+export OPENAI_API_KEY=sk-...
+isls forge-v2 --requirements examples/warehouse.toml --output ./out
+
+# Or via .env file in the working directory
+echo "OPENAI_API_KEY=sk-..." > .env
+isls forge-v2 --requirements examples/warehouse.toml --output ./out
+\end{lstlisting}
+
+% ============================================================
+\section{Expected Output with LLM Passes}
+
+\begin{lstlisting}[title=forge-v2 with --passes 5 --trace]
+=== ISLS v2.1 Multi-Pass Rendering ===
+
+Pass 0: Structure (offline)
+  Files: 60, LOC: 5,120
+  Tokens: 0
+  Time: 0.8s
+
+Pass 1: Domain Logic (gpt-4o-mini)
+  Scope: 12 service functions
+  Functions enriched: 12/12
+  Tokens: 18,420
+  Retries: 2 (parse errors, auto-fixed)
+  LOC delta: +1,840
+  Time: 34s
+
+Pass 2: Edge Cases (gpt-4o-mini)
+  Scope: 12 service functions
+  Functions hardened: 9/12 (3 already sufficient)
+  Tokens: 8,230
+  LOC delta: +620
+  Time: 18s
+
+Pass 3: Integration (gpt-4o-mini)
+  Scope: API + Services + Frontend
+  Mismatches found: 3
+  Fixes applied: 3/3
+  Tokens: 4,100
+  LOC delta: +45
+  Time: 8s
+
+Pass 4: Tests (gpt-4o-mini)
+  Scope: test files
+  Test functions generated: 24
+  Tokens: 12,650
+  LOC delta: +890
+  Time: 22s
+
+Pass 5: Polish (gpt-4o-mini)
+  Scope: all
+  Improvements: 18 (error messages, logging, comments)
+  Tokens: 3,800
+  Convergence: 0.008 (< 0.01 threshold -- converged)
+  LOC delta: +210
+  Time: 7s
+
+=== Summary ===
+  Total files: 63
+  Total LOC: 8,725
+  Total tokens: 47,200
+  Estimated cost: $0.007 (gpt-4o-mini)
+  Total time: 89s
+  Crystals updated: 8
+
+=== Crystal Learning ===
+  state_machine: +3 error cases, +2 test scenarios (from order service)
+  belongs_to: +1 edge case (cascade delete with active references)
+  crud_entity: +2 body patterns (optimistic locking, soft delete check)
+\end{lstlisting}
+
+\subsection{Second Run: Different Domain (E-Commerce)}
+
+\begin{lstlisting}[title=ecommerce.toml -- completely different domain]
+=== ISLS v2.1 Multi-Pass Rendering ===
+
+Pass 0: Structure (offline)
+  Domain detected: ecommerce (keywords: shop, cart, checkout)
+  Universal crystals applied: 12/15
+  Files: 72, LOC: 6,100
+  Tokens: 0
+
+Pass 1: Domain Logic (gpt-4o-mini)
+  Functions enriched: 16/16
+  Tokens: 22,100
+  NOTE: state_machine crystal provided 3 error cases from
+        warehouse run -- applied to order status transitions
+  NOTE: belongs_to crystal provided cascade edge case --
+        applied to cart item deletion
+
+Pass 2: Edge Cases
+  Tokens: 5,400 (DOWN from 8,230 -- crystals already had 4 edge cases)
+
+[...]
+
+=== Summary ===
+  Total tokens: 41,800 (DOWN from 47,200 on first-ever run)
+  Crystal reuse: 12 universal crystals applied
+  Cross-domain learning: 7 implementation patterns transferred
+\end{lstlisting}
+
+The key metric: \textbf{the second run of a completely different
+domain already benefits from universal crystal knowledge gained in
+the first run.} Not because the domains are similar. Because the
+architectural patterns are universal.
+
+% ============================================================
+\section{Implementation Plan}
+
+\subsection{New Crate: isls-renderloop}
+
+\begin{lstlisting}[language=bash]
+[dependencies]
+isls-types = { path = "../isls-types" }
+isls-decomposer = { path = "../isls-decomposer" }
+isls-blueprint = { path = "../isls-blueprint" }
+isls-orchestrator = { path = "../isls-orchestrator" }
+isls-reader = { path = "../isls-reader" }
+isls-code-topo = { path = "../isls-code-topo" }
+isls-evidence = { path = "../isls-evidence" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+sha2 = "0.10"
+anyhow = "1"
+tracing = "0.1"
+dotenv = "0.15"
+\end{lstlisting}
+
+Contains: RenderLoop, RenderPass, PassType, Oracle trait,
+OpenAiOracle, MockOracle, convergence measurement, prompt
+builders for each pass type.
+
+\subsection{Modified: isls-blueprint}
+
+Restructure Crystal type to include CrystalLevel and
+ImplementationKnowledge. Add 15 built-in universal crystals.
+Change matching logic to search by level (universal first).
+
+\subsection{Modified: isls-decomposer}
+
+After decomposition, hand artifacts to RenderLoop instead of
+returning directly. The decomposer becomes Pass 0.
+
+\subsection{Modified: isls-cli}
+
+Add: \texttt{--api-key}, \texttt{--model}, \texttt{--passes},
+\texttt{--token-budget}, \texttt{--skip-pass}, \texttt{--scope}.
+Add: \texttt{isls render} subcommand for re-rendering existing output.
+Add: \texttt{isls crystals} subcommand group.
+
+\subsection{Execution Order}
+
+\begin{enumerate}
+\item Restructure \texttt{isls-blueprint}: CrystalLevel,
+  ImplementationKnowledge, 15 universal crystals, level-based
+  matching. Test in isolation.
+
+\item Create \texttt{isls-renderloop}: Oracle trait, OpenAiOracle,
+  MockOracle. Test: mock oracle call returns string.
+
+\item Implement Pass 1 (DomainLogic): prompt builder, function
+  body insertion, Barbara parse-check. Test: mock oracle enriches
+  one function, file still parses.
+
+\item Implement Pass 2 (EdgeCases): prompt builder, edge case
+  insertion. Test: mock adds edge case comment to function.
+
+\item Implement Pass 3 (Integration): cross-module check.
+  Test: detect deliberate mismatch in test fixture.
+
+\item Implement Pass 4 (TestGeneration): test prompt builder.
+  Test: mock generates test function skeleton.
+
+\item Implement convergence measurement. Test: identical
+  before/after = 0.0 change rate.
+
+\item Wire RenderLoop into isls-decomposer pipeline.
+  \texttt{forge-v2 --mock-oracle} still works (Pass 0 only).
+  \texttt{forge-v2 --api-key X} runs all passes.
+
+\item Implement crystal learning: after Pass 1--4, extract
+  implementation knowledge, update crystals. Test: crystal
+  gains body\_patterns after mock run.
+
+\item CLI: all new flags and subcommands.
+
+\item End-to-end test with mock oracle: full render loop,
+  all passes execute, convergence reached, crystals updated.
+
+\item (Optional) End-to-end test with real API key if available.
+\end{enumerate}
+
+% ============================================================
+\section{Success Criteria}
+
+\begin{enumerate}
+\item \texttt{cargo build --workspace} --- zero errors.
+\item All existing tests pass (v2.0 unchanged).
+\item \texttt{forge-v2 --mock-oracle} still works (Pass 0 only).
+\item \texttt{forge-v2 --mock-oracle --passes 5} runs all 6 passes
+  with mock oracle, produces output, reports convergence.
+\item With real API key: \texttt{forge-v2 --api-key \$KEY --passes 5}
+  enriches service functions with actual business logic.
+\item Crystal registry contains 15 built-in universal crystals.
+\item Crystal matching searches universal $\to$ architectural $\to$
+  structural $\to$ domain (in that order).
+\item After a render run, crystals have updated ImplementationKnowledge
+  (body\_patterns, error\_cases, edge\_cases).
+\item Convergence measurement works: Pass 5 shows lower change rate
+  than Pass 1.
+\item Token usage is tracked per pass and reported in trace output.
+\item Second run with different domain TOML benefits from universal
+  crystal knowledge (reported in trace).
+\end{enumerate}
+
+% ============================================================
+\section{Implementation Constraints for Claude Code}
+
+\begin{enumerate}
+\item \textbf{Repository: graphity/isls.} Add isls-renderloop
+  to workspace members.
+
+\item \textbf{v2.0 must not break.} \texttt{forge-v2 --mock-oracle}
+  without \texttt{--passes} or \texttt{--api-key} must produce
+  exactly the same output as before.
+
+\item \textbf{reqwest blocking.} Use \texttt{reqwest::blocking}
+  for Oracle HTTP calls. No async runtime needed --- the render
+  loop is sequential (one prompt at a time).
+
+\item \textbf{API key from environment or CLI.} Support both
+  \texttt{--api-key} flag and \texttt{OPENAI\_API\_KEY} env var.
+  Use \texttt{dotenv} crate to load \texttt{.env} file.
+
+\item \textbf{Token counting.} Estimate tokens as
+  \texttt{text.len() / 4} (rough approximation). Do not add
+  a tokenizer dependency.
+
+\item \textbf{Prompt construction is critical.} The prompts in
+  this spec are the exact templates. Do not simplify them. The
+  quality of LLM output depends entirely on prompt quality.
+
+\item \textbf{All 15 universal crystals must be defined with
+  complete StructuralKnowledge.} The ImplementationKnowledge
+  starts empty --- it is filled by the render loop.
+
+\item \textbf{Read the existing isls-blueprint code} before
+  restructuring. Preserve backward compatibility.
+
+\item \textbf{Sequential implementation.} Blueprint restructure
+  $\to$ renderloop crate $\to$ passes $\to$ convergence $\to$
+  CLI $\to$ end-to-end.
+
+\item \textbf{The mock-oracle end-to-end test is the most
+  important deliverable.} All 6 passes run, convergence is
+  reported, crystals are updated. If time runs out, skip
+  the real-API test but keep mock working.
+
+\item \textbf{No \texttt{unwrap()} in library code.}
+\item \textbf{Every public item documented.}
+\item \textbf{MIT License. Copyright (c) 2026 Sebastian Klemm.}
+\end{enumerate}
+
+\vfill
+\noindent\rule{\textwidth}{0.4pt}
+\begin{center}
+\small
+ISLS v2.1 --- Multi-Pass Rendering --- Sebastian Klemm --- March 2026\\
+Structure offline. Logic by LLM. Edge cases by LLM. Converge. Learn.\\
+Universal crystals learn from every domain. Every run makes the next better.\\
+Not for one domain. For all of them.\\
+\url{https://github.com/LashSesh/graphity}
+\end{center}
+
+\end{document}
