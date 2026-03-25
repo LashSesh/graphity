@@ -31,6 +31,7 @@ use thiserror::Error;
 use isls_blueprint::BlueprintRegistry;
 use isls_planner::{AppSpec, Architecture};
 use isls_learner::PatternLibrary;
+use isls_norms::{ActivatedNorm, ComposedPlan, NormRegistry};
 
 pub use stages::{Stage, StageResult};
 
@@ -113,6 +114,10 @@ pub struct GenContext {
     pub oracle_calls: usize,
     pub blueprint_hits: usize,
     pub evidence: evidence::EvidenceChain,
+    /// Norms activated for this run (populated by Stage 0).
+    pub norm_matches: Vec<ActivatedNorm>,
+    /// Composed plan from norm matching (populated by Stage 0).
+    pub composed_plan: Option<ComposedPlan>,
 }
 
 impl GenContext {
@@ -125,6 +130,8 @@ impl GenContext {
             oracle_calls: 0,
             blueprint_hits: 0,
             evidence: evidence::EvidenceChain::new(),
+            norm_matches: Vec::new(),
+            composed_plan: None,
         }
     }
 }
@@ -136,6 +143,8 @@ pub struct Orchestrator {
     pub config: OrchestratorConfig,
     blueprints: BlueprintRegistry,
     learner: PatternLibrary,
+    /// Norm registry for pattern matching and self-discovery (v3.0).
+    pub norm_registry: NormRegistry,
 }
 
 impl Orchestrator {
@@ -146,7 +155,12 @@ impl Orchestrator {
             .and_then(|p| BlueprintRegistry::load(p).ok())
             .unwrap_or_else(BlueprintRegistry::with_builtins);
 
-        Self { config, blueprints, learner: PatternLibrary::new() }
+        Self {
+            config,
+            blueprints,
+            learner: PatternLibrary::new(),
+            norm_registry: NormRegistry::default(),
+        }
     }
 
     /// Run the full 11-stage pipeline from an `AppSpec` to a generated system.
@@ -157,6 +171,24 @@ impl Orchestrator {
         std::fs::create_dir_all(output_dir)?;
 
         let mut ctx = GenContext::new(spec, output_dir.to_path_buf());
+
+        // Norm matching (v3.0): run before Stage 0 so norms are available to all stages.
+        // Backward compatible: norms augment the run; the existing pipeline is unchanged.
+        let description = ctx.spec.description.clone();
+        let activated = self.norm_registry.match_description(&description);
+        if !activated.is_empty() {
+            tracing::info!(
+                norms = activated.len(),
+                top = activated.first().map(|a| a.norm.name.as_str()).unwrap_or(""),
+                "norm matching complete"
+            );
+            let params = std::collections::HashMap::new();
+            if let Ok(plan) = isls_norms::compose_norms(&activated, &params) {
+                ctx.composed_plan = Some(plan);
+            }
+            ctx.norm_matches = activated;
+        }
+
         let mut stage_results = Vec::new();
 
         let all_stages = [

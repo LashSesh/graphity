@@ -19,3 +19,5 @@ isls-reader = { path = "../isls-reader" }
 isls-code-topo = { path = "../isls-code-topo" }
 isls-learner = { path = "../isls-learner" }
 isls-hypercube = { path = "../isls-hypercube" }
+isls-norms     = { path = "../isls-norms" }
+tracing.workspace = true
