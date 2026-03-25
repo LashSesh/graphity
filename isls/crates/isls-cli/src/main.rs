@@ -94,6 +94,8 @@ enum Command {
     BabylonCheck { ir: Option<String> },
     // Full-Stack Autonomy pipeline
     ForgeFullStack { app: Option<String>, constraints: String, output: String, mock_oracle: bool, verify_compilation: bool },
+    // V2 Hypercube Decomposer pipeline
+    ForgeV2 { requirements: String, output: String, mock_oracle: bool, trace: bool, verify_compilation: bool },
     Validate { formal: bool, retro: bool },
     Report { json: bool, html: bool, full_html: bool },
     Status,
@@ -435,6 +437,20 @@ fn parse_args(args: &[String]) -> Command {
             let mock_oracle = args.contains(&"--mock-oracle".to_string());
             let verify_compilation = args.contains(&"--verify".to_string());
             Command::ForgeFullStack { app, constraints, output, mock_oracle, verify_compilation }
+        }
+        "forge-v2" => {
+            let requirements = args.iter().position(|a| a == "--requirements")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "examples/warehouse.toml".to_string());
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "./output-v2".to_string());
+            let mock_oracle = args.contains(&"--mock-oracle".to_string());
+            let trace = args.contains(&"--trace".to_string());
+            let verify_compilation = args.contains(&"--verify".to_string());
+            Command::ForgeV2 { requirements, output, mock_oracle, trace, verify_compilation }
         }
         "validate" => {
             let formal = args.contains(&"--formal".to_string());
@@ -1982,6 +1998,97 @@ fn cmd_forge_fullstack(
         Err(e) => {
             eprintln!();
             eprintln!("[ERROR] Pipeline failed: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+// ─── V2 Hypercube Decomposer: forge-v2 ───────────────────────────────────────
+
+fn cmd_forge_v2(
+    requirements_path: &str,
+    output: &str,
+    _mock_oracle: bool,
+    trace: bool,
+    _verify_compilation: bool,
+) {
+    use isls_decomposer::{forge_v2, DecomposerConfig};
+    use std::path::Path;
+
+    println!("╔══════════════════════════════════════════════════════╗");
+    println!("║       ISLS v2 Hypercube Decomposer Pipeline          ║");
+    println!("╚══════════════════════════════════════════════════════╝");
+    println!();
+
+    let req_path = Path::new(requirements_path);
+    if !req_path.exists() {
+        eprintln!("[ERROR] Requirements file not found: {}", requirements_path);
+        std::process::exit(1);
+    }
+
+    let output_dir = Path::new(output);
+
+    let config = DecomposerConfig {
+        trace,
+        mock_oracle: true,
+        blueprint_path: Some(output_dir.join("evidence/blueprint_registry.json")),
+    };
+
+    match forge_v2(req_path, output_dir, &config) {
+        Ok(result) => {
+            // Print domain detection
+            println!("[Domain] Detected: {}", result.domain_name);
+            println!();
+
+            // Print HyperCube stats
+            println!("[HyperCube]");
+            println!("  Dimensions:    {}", result.total_dims);
+            println!("  Free (DOF):    {}", result.initial_dof);
+            println!("  Couplings:     {}", result.total_couplings);
+            println!();
+
+            // Print trace if requested
+            if trace && !result.trace.is_empty() {
+                println!("[Decomposition Trace]");
+                for entry in &result.trace {
+                    let indent = "  ".repeat(entry.depth as usize + 1);
+                    println!(
+                        "{}[depth={}] {} ({}, {} dims) {}",
+                        indent,
+                        entry.depth,
+                        entry.action,
+                        entry.method,
+                        entry.dim_count,
+                        if entry.details.is_empty() { String::new() } else { format!("— {}", entry.details) }
+                    );
+                }
+                println!();
+            }
+
+            // Print final results
+            println!("╔══════════════════════════════════════════════════════╗");
+            println!("║              V2 GENERATION COMPLETE                  ║");
+            println!("╚══════════════════════════════════════════════════════╝");
+            println!();
+            println!("  App:              {}", result.app_name);
+            println!("  Files generated:  {}", result.total_files);
+            println!("  Total LOC:        {}", result.total_loc);
+            println!("  Blueprint hits:   {}", result.blueprint_hits);
+            println!("  Template hits:    {}", result.template_hits);
+            println!("  Domain:           {}", result.domain_name);
+            println!("  Total time:       {:.2}s", result.time_secs);
+            println!();
+            println!("  Output:           {}", output);
+            println!("  Backend:          {}/backend/", output);
+            println!("  Frontend:         {}/frontend/", output);
+            println!();
+            println!("Next steps:");
+            println!("  cd {}/backend && cargo build", output);
+            println!("  cd {} && docker-compose up -d", output);
+        }
+        Err(e) => {
+            eprintln!();
+            eprintln!("[ERROR] V2 pipeline failed: {}", e);
             std::process::exit(1);
         }
     }
@@ -4509,6 +4616,9 @@ fn main() {
         Command::BabylonCheck { ir } => cmd_babylon_check(ir.as_deref()),
         Command::ForgeFullStack { app, constraints, output, mock_oracle, verify_compilation } => {
             cmd_forge_fullstack(app.as_deref(), &constraints, &output, mock_oracle, verify_compilation);
+        }
+        Command::ForgeV2 { requirements, output, mock_oracle, trace, verify_compilation } => {
+            cmd_forge_v2(&requirements, &output, mock_oracle, trace, verify_compilation);
         }
         Command::Validate { formal, retro } => cmd_validate(formal, retro),
         Command::Report { json, html, full_html } => {

@@ -1,21 +1,18 @@
 [package]
-name = "isls-orchestrator"
+name = "isls-decomposer"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
-description = "11-stage full-stack generation pipeline orchestrator for ISLS"
+description = "Recursive hypercube decomposition engine for ISLS v2"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 sha2.workspace = true
-chrono.workspace = true
 tera.workspace = true
-isls-blueprint = { path = "../isls-blueprint" }
-isls-planner = { path = "../isls-planner" }
-isls-reader = { path = "../isls-reader" }
-isls-code-topo = { path = "../isls-code-topo" }
-isls-learner = { path = "../isls-learner" }
 isls-hypercube = { path = "../isls-hypercube" }
+isls-blueprint = { path = "../isls-blueprint" }
+isls-code-topo = { path = "../isls-code-topo" }
+isls-orchestrator = { path = "../isls-orchestrator" }
