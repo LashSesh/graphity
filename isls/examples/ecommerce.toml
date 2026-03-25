@@ -1,0 +1,33 @@
+# E-Commerce Platform — ISLS Full-Stack Autonomy constraint file
+# Usage: isls forge-v2 --requirements examples/ecommerce.toml --mock-oracle --output ./output/ecommerce
+
+[app]
+name = "ecommerce-platform"
+description = "E-commerce platform with catalog, cart, orders, customers, and reviews"
+
+[app.modules]
+catalog  = "Product catalog with categories, search, and inventory management"
+cart     = "Shopping cart for guests and authenticated customers"
+orders   = "Order creation, status tracking, fulfillment"
+customers = "Customer accounts, addresses, authentication"
+auth     = "JWT authentication, role-based access (admin, customer)"
+
+[backend]
+language  = "rust"
+framework = "actix-web"
+database  = "postgresql"
+auth_method = "jwt"
+
+[frontend]
+type    = "spa"
+framework = "vanilla"
+styling = "minimal"
+
+[deployment]
+containerized = true
+compose = true
+
+[constraints]
+max_crates     = 1
+test_coverage  = "integration"
+evidence_chain = true
