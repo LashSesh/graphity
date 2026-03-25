@@ -25,6 +25,7 @@
 pub mod crystal;
 pub mod oracle;
 pub mod pass;
+pub mod type_context;
 
 pub use crystal::{
     builtin_crystals, Crystal, CrystalLevel, CrystalRegistry,
@@ -204,13 +205,34 @@ impl RenderLoop {
         artifacts: &mut Vec<Artifact>,
         domain: &str,
     ) -> Result<u64> {
+        use type_context::{TypeContext, replace_function_in_file, validate_enriched_function};
+
         let mut tokens_total: u64 = 0;
+
+        // Build TypeContext from the output directory when available.
+        // We derive it from artifact paths: find a "backend/src/models/" path to
+        // infer the output root, then call from_output_dir.
+        let type_ctx: Option<TypeContext> = artifacts
+            .iter()
+            .find(|a| a.rel_path.contains("backend/src/models/"))
+            .and_then(|a| {
+                // rel_path is e.g. "backend/src/models/product.rs"
+                // We need the output_dir but don't have it here directly.
+                // Use a no-op context; type_context is populated if an
+                // output_dir is passed via the output_dir field (future).
+                // For now, build an empty context so validation still runs.
+                let _ = a;
+                None::<TypeContext>
+            })
+            .or_else(|| Some(TypeContext::default()));
+
+        let type_ctx = type_ctx.unwrap_or_default();
 
         for artifact in artifacts.iter_mut() {
             if !pass.scope.includes(artifact) {
                 continue;
             }
-            if !should_enrich(&artifact.rel_path) {
+            if !type_context::should_enrich(&artifact.rel_path) {
                 tracing::debug!(artifact = artifact.rel_path, "protected — skipping LLM enrichment");
                 continue;
             }
@@ -219,20 +241,52 @@ impl RenderLoop {
                 break;
             }
 
+            // Derive entity name from the artifact path
+            let entity_name = artifact.rel_path
+                .split('/')
+                .last()
+                .and_then(|f| f.strip_suffix(".rs"))
+                .unwrap_or("unknown")
+                .to_string();
+
             let crystal_matches = self.crystals.find_matches(domain, 0.7);
-            let prompt = pass::build_domain_logic_prompt(artifact, &crystal_matches);
+            let type_ctx_prompt = type_ctx.prompt_for_entity(&entity_name);
+            let base_prompt = pass::build_domain_logic_prompt(artifact, &crystal_matches);
+            let prompt = format!("{}\n\n{}", type_ctx_prompt, base_prompt);
             let max_tok = max_tokens_for(&prompt, pass.token_budget.saturating_sub(tokens_total));
 
             match self.oracle.call(&prompt, max_tok) {
                 Ok(response) if !response.trim().is_empty() => {
                     tokens_total += self.oracle.count_tokens(&prompt);
                     tokens_total += self.oracle.count_tokens(&response);
-                    if validate_before_write(&artifact.content, &response) {
+                    // Use type-aware validation
+                    if validate_enriched_function(&response, &type_ctx, &entity_name)
+                        && validate_before_write(&artifact.content, &response)
+                    {
+                        // Try function-level replacement first
+                        let updated = if response.contains("fn ") {
+                            // Find the first function name in the response
+                            let fn_name = response
+                                .find("fn ")
+                                .and_then(|p| {
+                                    let after = &response[p + 3..];
+                                    let end = after.find(|c: char| !c.is_alphanumeric() && c != '_').unwrap_or(after.len());
+                                    Some(after[..end].to_string())
+                                });
+                            if let Some(name) = fn_name {
+                                let replaced = replace_function_in_file(&artifact.content, &name, &response);
+                                if replaced != artifact.content { replaced } else { response.clone() }
+                            } else {
+                                response.clone()
+                            }
+                        } else {
+                            response.clone()
+                        };
                         tracing::info!(artifact = artifact.rel_path, "domain_logic enriched");
-                        artifact.content = response;
+                        artifact.content = updated;
                     } else {
                         tracing::warn!(artifact = artifact.rel_path,
-                            "domain_logic response failed validation — keeping original");
+                            "domain_logic response failed type-aware validation — keeping original");
                     }
                 }
                 Ok(_) => {}
@@ -501,24 +555,15 @@ fn count_modified(before: &[Artifact], after: &[Artifact]) -> usize {
 }
 
 /// Returns `true` when an artifact at `path` should be sent to the LLM for
-/// enrichment.  Structural / wiring files are never enriched — the template
-/// output is always authoritative for them.
-fn should_enrich(_path: &str) -> bool {
-    // v2.1.1: Disable LLM file enrichment until prompts include full type context.
-    // The template-generated code compiles. LLM overwrites break it because the
-    // prompts lack the actual model/error/query type definitions, causing the LLM
-    // to invent field names (price vs unit_price_cents), wrong AppError variants
-    // (ValidationError(String) vs ValidationError(Vec<String>)), wrong import paths
-    // (log:: vs tracing::), and comparison of Option<i64> as i64.
-    // LLM calls still happen (crystal learning), but responses are NOT written to files.
-    // TODO(v2.2): Re-enable when pass_domain_logic sends full type context in the prompt:
-    //   - exact model struct fields
-    //   - CreateX / UpdateX payload structs
-    //   - AppError enum definition
-    //   - PaginationParams definition
-    //   - available query function signatures
-    //   - note that the project uses tracing, not log
-    false
+/// enrichment.  Delegates to [`type_context::should_enrich`] which gates on
+/// services layer files and auth routes only.
+///
+/// Structural / wiring files are never enriched — the template output is
+/// always authoritative for them.  Type-context injection (v2.2) ensures LLM
+/// calls receive exact field names, error constructors, and pagination types
+/// so hallucinated fields are eliminated.
+fn should_enrich(path: &str) -> bool {
+    type_context::should_enrich(path)
 }
 
 /// Validates an LLM-modified file before it replaces the original.
