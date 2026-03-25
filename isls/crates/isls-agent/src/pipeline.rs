@@ -339,6 +339,63 @@ fn simplify_error(error: &str) -> String {
     }
 }
 
+// ─── Norm-aware pipeline variant ────────────────────────────────────────────
+
+/// Execute the pipeline with norm-aware intent enrichment.
+///
+/// Behaves identically to [`execute_pipeline`] but adds a pre-pass that:
+/// 1. Extracts a [`isls_chat::ChatIntent`] from the user message (keyword-based).
+/// 2. Maps it to [`isls_chat::NormOperation`]s using the provided registry.
+/// 3. Injects the activated norm ids as additional feature names in the initial
+///    [`UserEvent::FeaturesIdentified`] event.
+///
+/// This is backward-compatible: if the norm registry has no matches for the
+/// intent, the pipeline behaves exactly like `execute_pipeline`.
+pub fn execute_pipeline_with_norms(
+    intent: &str,
+    workspace: &Option<AgentWorkspace>,
+    oracle: &dyn SynthesisOracle,
+    catalog: &isls_templates::TemplateCatalog,
+    metrics: &mut AccumulationMetrics,
+    conversation: &mut crate::conversation::Conversation,
+    config: &PipelineConfig,
+    norm_registry: &isls_norms::NormRegistry,
+) -> AgentResult {
+    // Pre-pass: keyword-based intent extraction (no oracle cost).
+    let chat_intent = isls_chat::extract_intent_keywords(intent);
+    let norm_ops = isls_chat::intent_to_norm_ops(&chat_intent, norm_registry);
+
+    // Collect activated norm IDs to inject as supplementary feature descriptions.
+    let norm_features: Vec<String> = norm_ops.iter().filter_map(|op| {
+        if let isls_chat::NormOperation::ComposeNew(ref norms) = op {
+            Some(norms.iter().map(|a| format!("norm:{}", a.norm.id)).collect::<Vec<_>>())
+        } else {
+            None
+        }
+    }).flatten().collect();
+
+    // Run the base pipeline.
+    let base_result = execute_pipeline(intent, workspace, oracle, catalog, metrics, conversation, config);
+
+    if norm_features.is_empty() {
+        return base_result;
+    }
+
+    // Augment FeaturesIdentified event with norm names.
+    match base_result {
+        AgentResult::Success { features, mut events, plan } => {
+            for ev in &mut events {
+                if let UserEvent::FeaturesIdentified { ref mut features } = ev {
+                    features.extend(norm_features.clone());
+                    break;
+                }
+            }
+            AgentResult::Success { features, events, plan }
+        }
+        other => other,
+    }
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
