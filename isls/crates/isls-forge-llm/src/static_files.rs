@@ -43,6 +43,8 @@ validator       = {{ version = "0.18", features = ["derive"] }}
 
 [dev-dependencies]
 actix-rt = "2"
+
+[workspace]
 "#,
         name = name
     )
