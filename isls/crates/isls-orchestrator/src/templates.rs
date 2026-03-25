@@ -859,7 +859,7 @@ pub struct Create{{ entity_name }} {
 {% endfor %}}
 
 /// Payload for updating an existing {{ entity_name }}.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct Update{{ entity_name }} {
 {% for field in update_fields %}    pub {{ field.name }}: Option<{{ field.base_type }}>,
 {% endfor %}}
@@ -1368,7 +1368,7 @@ pub async fn list(
     params: web::Query<PaginationParams>,
     user: AuthUser,
 ) -> Result<HttpResponse, AppError> {
-    let result = svc::list(&pool, &params{% for filter in filters %}, None{% endfor %}, &user).await?;
+    let result = svc::list(&pool, &params, &user{% for filter in filters %}, None{% endfor %}).await?;
     Ok(HttpResponse::Ok().json(result))
 }
 

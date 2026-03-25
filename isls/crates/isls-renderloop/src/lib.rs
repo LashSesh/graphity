@@ -210,6 +210,10 @@ impl RenderLoop {
             if !pass.scope.includes(artifact) {
                 continue;
             }
+            if !should_enrich(&artifact.rel_path) {
+                tracing::debug!(artifact = artifact.rel_path, "protected — skipping LLM enrichment");
+                continue;
+            }
             if tokens_total >= pass.token_budget {
                 tracing::debug!(pass = "domain_logic", "token budget exhausted");
                 break;
@@ -223,7 +227,13 @@ impl RenderLoop {
                 Ok(response) if !response.trim().is_empty() => {
                     tokens_total += self.oracle.count_tokens(&prompt);
                     tokens_total += self.oracle.count_tokens(&response);
-                    artifact.content = response;
+                    if validate_before_write(&artifact.content, &response) {
+                        tracing::info!(artifact = artifact.rel_path, "domain_logic enriched");
+                        artifact.content = response;
+                    } else {
+                        tracing::warn!(artifact = artifact.rel_path,
+                            "domain_logic response failed validation — keeping original");
+                    }
                 }
                 Ok(_) => {}
                 Err(e) => {
@@ -248,6 +258,10 @@ impl RenderLoop {
             if !pass.scope.includes(artifact) {
                 continue;
             }
+            if !should_enrich(&artifact.rel_path) {
+                tracing::debug!(artifact = artifact.rel_path, "protected — skipping LLM enrichment");
+                continue;
+            }
             if tokens_total >= pass.token_budget {
                 tracing::debug!(pass = "edge_cases", "token budget exhausted");
                 break;
@@ -260,7 +274,13 @@ impl RenderLoop {
                 Ok(response) if !response.trim().is_empty() => {
                     tokens_total += self.oracle.count_tokens(&prompt);
                     tokens_total += self.oracle.count_tokens(&response);
-                    artifact.content = response;
+                    if validate_before_write(&artifact.content, &response) {
+                        tracing::info!(artifact = artifact.rel_path, "edge_cases enriched");
+                        artifact.content = response;
+                    } else {
+                        tracing::warn!(artifact = artifact.rel_path,
+                            "edge_cases response failed validation — keeping original");
+                    }
                 }
                 Ok(_) => {}
                 Err(e) => {
@@ -358,7 +378,13 @@ impl RenderLoop {
                 Ok(response) if !response.trim().is_empty() => {
                     tokens_total += self.oracle.count_tokens(&prompt);
                     tokens_total += self.oracle.count_tokens(&response);
-                    artifacts[idx].content = response;
+                    if validate_before_write(&artifacts[idx].content, &response) {
+                        tracing::info!(artifact = artifacts[idx].rel_path, "test_generation enriched");
+                        artifacts[idx].content = response;
+                    } else {
+                        tracing::warn!(artifact = artifacts[idx].rel_path,
+                            "test_generation response failed validation — keeping original");
+                    }
                 }
                 Ok(_) => {}
                 Err(e) => {
@@ -383,6 +409,10 @@ impl RenderLoop {
             if !pass.scope.includes(artifact) {
                 continue;
             }
+            if !should_enrich(&artifact.rel_path) {
+                tracing::debug!(artifact = artifact.rel_path, "protected — skipping LLM enrichment");
+                continue;
+            }
             if tokens_total >= pass.token_budget {
                 tracing::debug!(pass = "polish", "token budget exhausted");
                 break;
@@ -395,7 +425,13 @@ impl RenderLoop {
                 Ok(response) if !response.trim().is_empty() => {
                     tokens_total += self.oracle.count_tokens(&prompt);
                     tokens_total += self.oracle.count_tokens(&response);
-                    artifact.content = response;
+                    if validate_before_write(&artifact.content, &response) {
+                        tracing::info!(artifact = artifact.rel_path, "polish enriched");
+                        artifact.content = response;
+                    } else {
+                        tracing::warn!(artifact = artifact.rel_path,
+                            "polish response failed validation — keeping original");
+                    }
                 }
                 Ok(_) => {}
                 Err(e) => {
@@ -462,6 +498,58 @@ fn count_modified(before: &[Artifact], after: &[Artifact]) -> usize {
     before.iter().zip(after.iter())
         .filter(|(b, a)| b.content != a.content)
         .count()
+}
+
+/// Returns `true` when an artifact at `path` should be sent to the LLM for
+/// enrichment.  Structural / wiring files are never enriched — the template
+/// output is always authoritative for them.
+fn should_enrich(path: &str) -> bool {
+    // ── Structural files: never touch ──────────────────────────────────────
+    if path.ends_with("Cargo.toml")    { return false; }
+    if path.ends_with("main.rs")       { return false; }
+    if path.ends_with("errors.rs")     { return false; }
+    if path.ends_with("pagination.rs") { return false; }
+    if path.ends_with("config.rs")     { return false; }
+    if path.ends_with("mod.rs")        { return false; }
+    if path.ends_with("pool.rs")       { return false; }
+    if path.contains("models/")        { return false; }
+    // auth.rs is structural; auth_routes.rs contains enrichable logic
+    if path.ends_with("auth.rs")       { return false; }
+
+    // ── Enrich-eligible paths ───────────────────────────────────────────────
+    if path.contains("services/")      { return true; }
+    if path.contains("auth_routes")    { return true; }
+    if path.contains("tests/")         { return true; }
+
+    false
+}
+
+/// Validates an LLM-modified file before it replaces the original.
+///
+/// Returns `true` only if all sanity checks pass.  If any check fails the
+/// caller should keep the original template content.
+fn validate_before_write(original: &str, modified: &str) -> bool {
+    // 1. Response must not be empty
+    if modified.trim().is_empty() {
+        return false;
+    }
+    // 2. Must not still contain markdown fences
+    if modified.contains("```") || modified.contains("~~~") {
+        return false;
+    }
+    // 3. Curly braces must be balanced
+    let open  = modified.matches('{').count();
+    let close = modified.matches('}').count();
+    if open != close {
+        return false;
+    }
+    // 4. Must not lose more than 30 % of the original line count
+    let orig_lines = original.lines().count();
+    let mod_lines  = modified.lines().count();
+    if orig_lines > 10 && mod_lines < orig_lines * 7 / 10 {
+        return false;
+    }
+    true
 }
 
 /// Derive an appropriate `max_tokens` parameter for an oracle call, staying
