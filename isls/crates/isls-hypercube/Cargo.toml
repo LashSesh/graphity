@@ -1,0 +1,15 @@
+[package]
+name = "isls-hypercube"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Hypercube requirement-space representation with spectral decomposition for ISLS v2"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+nalgebra.workspace = true
+thiserror.workspace = true
+sha2.workspace = true

@@ -21,6 +21,7 @@
 pub mod stages;
 pub mod templates;
 pub mod evidence;
+pub mod v2_emission;
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;

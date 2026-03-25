@@ -1032,10 +1032,12 @@ dependencies = [
  "isls-blueprint",
  "isls-capsule",
  "isls-compose",
+ "isls-decomposer",
  "isls-engine",
  "isls-forge",
  "isls-gateway",
  "isls-harness",
+ "isls-hypercube",
  "isls-manifest",
  "isls-multilang",
  "isls-navigator",
@@ -1093,6 +1095,21 @@ dependencies = [
  "isls-persist",
  "isls-types",
  "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "isls-decomposer"
+version = "1.0.0"
+dependencies = [
+ "isls-blueprint",
+ "isls-code-topo",
+ "isls-hypercube",
+ "isls-orchestrator",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tera",
  "thiserror",
 ]
 
@@ -1234,6 +1251,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "isls-hypercube"
+version = "1.0.0"
+dependencies = [
+ "nalgebra",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "isls-integrator"
 version = "1.0.0"
 dependencies = [
@@ -1352,6 +1381,7 @@ dependencies = [
  "chrono",
  "isls-blueprint",
  "isls-code-topo",
+ "isls-hypercube",
  "isls-learner",
  "isls-planner",
  "isls-reader",

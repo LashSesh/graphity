@@ -37,6 +37,8 @@ isls-agent = { path = "../isls-agent" }
 isls-orchestrator = { path = "../isls-orchestrator" }
 isls-planner = { path = "../isls-planner" }
 isls-blueprint = { path = "../isls-blueprint" }
+isls-hypercube = { path = "../isls-hypercube" }
+isls-decomposer = { path = "../isls-decomposer" }
 
 serde = { workspace = true }
 tokio = { workspace = true }
