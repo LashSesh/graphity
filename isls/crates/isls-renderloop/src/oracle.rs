@@ -18,6 +18,22 @@ pub fn estimate_tokens(text: &str) -> u64 {
     (text.len() as u64).saturating_add(3) / 4
 }
 
+/// Strip markdown code fences from an LLM response.
+///
+/// Handles fenced blocks introduced by ` ```rust `, ` ```toml `, ` ```json `,
+/// ` ```javascript `, ` ```sql `, ` ```html `, ` ```css `, or plain ` ``` `.
+/// If the response is not wrapped in fences it is returned unchanged.
+fn strip_markdown_fences(response: &str) -> String {
+    let trimmed = response.trim();
+    if trimmed.starts_with("```") {
+        let lines: Vec<&str> = trimmed.lines().collect();
+        if lines.len() >= 2 && lines.last().map_or(false, |l| l.trim() == "```") {
+            return lines[1..lines.len() - 1].join("\n");
+        }
+    }
+    response.to_string()
+}
+
 // ─── Oracle trait ─────────────────────────────────────────────────────────────
 
 /// Abstraction over an LLM backend used during multi-pass rendering.
@@ -155,7 +171,7 @@ impl OpenAiOracle {
             ))?
             .to_string();
 
-        Ok(content)
+        Ok(strip_markdown_fences(&content))
     }
 
     const SYSTEM_PROMPT: &'static str =
@@ -173,8 +189,9 @@ impl Oracle for OpenAiOracle {
     }
 
     fn call_json(&self, prompt: &str, max_tokens: u32) -> Result<serde_json::Value> {
+        // chat_completions already strips fences; strip again defensively and trim
         let text = self.chat_completions(Self::SYSTEM_PROMPT_JSON, prompt, max_tokens)?;
-        serde_json::from_str(&text)
+        serde_json::from_str(text.trim())
             .map_err(|e| RenderloopError::OracleCall(
                 format!("failed to parse oracle JSON response: {e}: {text}")
             ))
@@ -187,5 +204,62 @@ impl Oracle for OpenAiOracle {
     fn cost_per_1k_tokens(&self) -> f64 {
         // gpt-4o-mini pricing as of early 2026 (approximate)
         0.15
+    }
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::strip_markdown_fences;
+
+    #[test]
+    fn strips_rust_fence() {
+        let input = "```rust\nfn main() {}\n```";
+        assert_eq!(strip_markdown_fences(input), "fn main() {}");
+    }
+
+    #[test]
+    fn strips_plain_fence() {
+        let input = "```\nsome content\n```";
+        assert_eq!(strip_markdown_fences(input), "some content");
+    }
+
+    #[test]
+    fn strips_toml_fence() {
+        let input = "```toml\n[package]\nname = \"x\"\n```";
+        assert_eq!(strip_markdown_fences(input), "[package]\nname = \"x\"");
+    }
+
+    #[test]
+    fn strips_json_fence() {
+        let input = "```json\n{\"k\":1}\n```";
+        assert_eq!(strip_markdown_fences(input), "{\"k\":1}");
+    }
+
+    #[test]
+    fn no_fence_unchanged() {
+        let input = "fn foo() -> u32 { 42 }";
+        assert_eq!(strip_markdown_fences(input), input);
+    }
+
+    #[test]
+    fn leading_trailing_whitespace_ignored() {
+        let input = "\n  ```rust\nlet x = 1;\n```  \n";
+        assert_eq!(strip_markdown_fences(input), "let x = 1;");
+    }
+
+    #[test]
+    fn multiline_body_preserved() {
+        let input = "```rust\nuse std::env;\n\nfn main() {\n    println!(\"hi\");\n}\n```";
+        let expected = "use std::env;\n\nfn main() {\n    println!(\"hi\");\n}";
+        assert_eq!(strip_markdown_fences(input), expected);
+    }
+
+    #[test]
+    fn unclosed_fence_unchanged() {
+        // No closing ``` — must not strip anything
+        let input = "```rust\nfn main() {}";
+        assert_eq!(strip_markdown_fences(input), input);
     }
 }
