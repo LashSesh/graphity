@@ -16,3 +16,4 @@ isls-hypercube = { path = "../isls-hypercube" }
 isls-blueprint = { path = "../isls-blueprint" }
 isls-code-topo = { path = "../isls-code-topo" }
 isls-orchestrator = { path = "../isls-orchestrator" }
+isls-renderloop = { path = "../isls-renderloop" }

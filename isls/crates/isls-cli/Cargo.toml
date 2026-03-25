@@ -39,8 +39,10 @@ isls-planner = { path = "../isls-planner" }
 isls-blueprint = { path = "../isls-blueprint" }
 isls-hypercube = { path = "../isls-hypercube" }
 isls-decomposer = { path = "../isls-decomposer" }
+isls-renderloop = { path = "../isls-renderloop" }
 
 serde = { workspace = true }
+dotenv = "0.15"
 tokio = { workspace = true }
 serde_json = { workspace = true }
 chrono = { workspace = true }
