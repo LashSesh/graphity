@@ -391,6 +391,9 @@ fn dispatch_mock(spec: &FileSpec, app_spec: &AppSpec) -> String {
         if path.contains("models/") {
             return mock::mock_generate_model(entity);
         }
+        if path.contains("_queries.rs") && entity.name == "User" {
+            return mock::mock_generate_user_queries();
+        }
         if path.contains("_queries.rs") {
             return mock::mock_generate_queries(entity);
         }

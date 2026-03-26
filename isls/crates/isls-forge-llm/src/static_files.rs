@@ -40,6 +40,7 @@ tracing-subscriber = {{ version = "0.3", features = ["env-filter"] }}
 dotenvy         = "0.15"
 thiserror       = "1"
 validator       = {{ version = "0.18", features = ["derive"] }}
+futures         = "0.3"
 
 [dev-dependencies]
 actix-rt = "2"
