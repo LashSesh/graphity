@@ -478,6 +478,10 @@ pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
 
     sql.push_str("-- ISLS v3.1 mock generated\n\n");
 
+    // Generate a bcrypt hash for "admin123" at code-generation time
+    let admin_hash = bcrypt::hash("admin123", 12)
+        .unwrap_or_else(|_| "$2b$12$placeholder".to_string());
+
     // users table always first
     sql.push_str(
         r#"CREATE TABLE IF NOT EXISTS users (
@@ -489,13 +493,15 @@ pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
--- Seed admin user (password: admin123)
-INSERT INTO users (email, password_hash, role)
-VALUES ('admin@example.com', '$2b$12$LJ3m4ys3Lz0Y8r5u.NXOxeVqH7VJvNRiKm4H1RU5q4v5iqN5rVEa', 'admin')
-ON CONFLICT (email) DO NOTHING;
-
 "#,
     );
+    sql.push_str(&format!(
+        "-- Seed admin user (password: admin123)\n\
+         INSERT INTO users (email, password_hash, role, is_active)\n\
+         VALUES ('admin@example.com', '{}', 'admin', true)\n\
+         ON CONFLICT (email) DO NOTHING;\n\n",
+        admin_hash
+    ));
 
     // Sort entities by FK dependency: entities without FK references first,
     // then entities that reference only already-created tables.
