@@ -153,7 +153,7 @@ impl LlmForge {
             "docker-compose.yml",
             &static_files::generate_docker_compose(spec),
         )?;
-        self.write_file("backend/Dockerfile", static_files::DOCKERFILE_TEMPLATE)?;
+        self.write_file("backend/Dockerfile", &static_files::generate_dockerfile(spec))?;
         self.write_file(".env.example", &static_files::generate_env_example(spec))?;
         self.write_file(".gitignore", static_files::GITIGNORE_TEMPLATE)?;
         self.write_file("frontend/nginx.conf", static_files::NGINX_CONF)?;

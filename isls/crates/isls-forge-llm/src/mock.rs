@@ -35,6 +35,21 @@ fn as_option(rust_type: &str) -> String {
     }
 }
 
+/// Map a field's Rust type to the correct sqlx-compatible type.
+/// TIMESTAMPTZ fields must use `chrono::DateTime<chrono::Utc>` instead of `String`
+/// because sqlx deserializes PostgreSQL TIMESTAMPTZ to chrono types.
+fn sqlx_rust_type(f: &isls_hypercube::domain::FieldDef) -> String {
+    if f.sql_type.contains("TIMESTAMPTZ") {
+        if f.nullable {
+            "Option<chrono::DateTime<chrono::Utc>>".to_string()
+        } else {
+            "chrono::DateTime<chrono::Utc>".to_string()
+        }
+    } else {
+        f.rust_type.clone()
+    }
+}
+
 // ─── Foundation ───────────────────────────────────────────────────────────────
 
 /// Generate `backend/src/errors.rs` — compilable AppError enum.
@@ -278,28 +293,28 @@ pub fn mock_generate_model(entity: &EntityDef) -> String {
     code.push_str("use serde::{Deserialize, Serialize};\n");
     code.push_str("use sqlx::FromRow;\n\n");
 
-    // Main struct
+    // Main struct — use sqlx_rust_type for correct TIMESTAMPTZ mapping
     code.push_str(&format!(
         "#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]\npub struct {} {{\n",
         n
     ));
     for f in &entity.fields {
-        code.push_str(&format!("    pub {}: {},\n", f.name, f.rust_type));
+        code.push_str(&format!("    pub {}: {},\n", f.name, sqlx_rust_type(f)));
     }
     code.push_str("}\n\n");
 
-    // Create payload
+    // Create payload — user-input fields only, using sqlx-compatible types
     let ufields = user_fields(entity);
     code.push_str(&format!(
         "#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct Create{}Payload {{\n",
         n
     ));
     for f in &ufields {
-        code.push_str(&format!("    pub {}: {},\n", f.name, f.rust_type));
+        code.push_str(&format!("    pub {}: {},\n", f.name, sqlx_rust_type(f)));
     }
     code.push_str("}\n\n");
 
-    // Update payload
+    // Update payload — all user-input fields as Option, using sqlx-compatible types
     code.push_str(&format!(
         "#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct Update{}Payload {{\n",
         n
@@ -308,7 +323,7 @@ pub fn mock_generate_model(entity: &EntityDef) -> String {
         code.push_str(&format!(
             "    pub {}: {},\n",
             f.name,
-            as_option(&f.rust_type)
+            as_option(&sqlx_rust_type(f))
         ));
     }
     code.push_str("}\n\n");
@@ -455,6 +470,9 @@ pub async fn delete_user(pool: &PgPool, id: i64) -> Result<(), AppError> {
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 /// Generate the initial SQL migration for all entities.
+///
+/// Tables are emitted in foreign-key dependency order so that referenced
+/// tables are created before the tables that reference them.
 pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
     let mut sql = String::new();
 
@@ -473,37 +491,96 @@ pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
 
 -- Seed admin user (password: admin123)
 INSERT INTO users (email, password_hash, role)
-VALUES ('admin@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiHK6L1GWWO', 'admin')
+VALUES ('admin@example.com', '$2b$12$LJ3m4ys3Lz0Y8r5u.NXOxeVqH7VJvNRiKm4H1RU5q4v5iqN5rVEa', 'admin')
 ON CONFLICT (email) DO NOTHING;
 
 "#,
     );
 
-    for entity in entities.iter().filter(|e| e.name != "User") {
+    // Sort entities by FK dependency: entities without FK references first,
+    // then entities that reference only already-created tables.
+    let non_user: Vec<&EntityDef> = entities.iter().filter(|e| e.name != "User").collect();
+    let ordered = topological_sort_entities(&non_user);
+
+    for entity in &ordered {
         sql.push_str(&format!(
             "CREATE TABLE IF NOT EXISTS {}s (\n",
             entity.snake_name
         ));
-        for f in &entity.fields {
-            let notnull = if f.nullable { "" } else { " NOT NULL" };
-            let default = f
-                .default_value
-                .as_deref()
-                .map(|d| format!(" DEFAULT {}", d))
-                .unwrap_or_default();
+        let field_count = entity.fields.len();
+        for (i, f) in entity.fields.iter().enumerate() {
+            let sql_type = &f.sql_type;
+            // Avoid duplicate NOT NULL — only append if not already in sql_type
+            let notnull = if f.nullable || sql_type.contains("NOT NULL") {
+                ""
+            } else {
+                " NOT NULL"
+            };
+            // Avoid duplicate DEFAULT — only append if not already in sql_type
+            let default = if sql_type.contains("DEFAULT") {
+                String::new()
+            } else {
+                f.default_value
+                    .as_deref()
+                    .map(|d| format!(" DEFAULT {}", d))
+                    .unwrap_or_default()
+            };
+            let comma = if i < field_count - 1 { "," } else { "" };
             sql.push_str(&format!(
-                "    {} {}{}{},\n",
-                f.name, f.sql_type, notnull, default
+                "    {} {}{}{}{}\n",
+                f.name, sql_type, notnull, default, comma
             ));
-        }
-        // Remove trailing comma from last field
-        if let Some(pos) = sql.rfind(",\n") {
-            sql.replace_range(pos..pos + 2, "\n");
         }
         sql.push_str(");\n\n");
     }
 
     sql
+}
+
+/// Simple topological sort for entity FK dependencies.
+/// Entities that reference other entities (via REFERENCES in sql_type) come after them.
+fn topological_sort_entities<'a>(entities: &[&'a EntityDef]) -> Vec<&'a EntityDef> {
+    let names: std::collections::HashSet<String> = entities.iter()
+        .map(|e| format!("{}s", e.snake_name))
+        .collect();
+
+    let mut result: Vec<&EntityDef> = Vec::new();
+    let mut placed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    placed.insert("users".to_string()); // users already created
+
+    let mut remaining: Vec<&EntityDef> = entities.to_vec();
+    let max_iter = remaining.len() + 1;
+    for _ in 0..max_iter {
+        if remaining.is_empty() {
+            break;
+        }
+        let mut next_remaining = Vec::new();
+        for entity in &remaining {
+            let deps: Vec<String> = entity.fields.iter()
+                .filter_map(|f| {
+                    // Extract referenced table from "REFERENCES tablename(col)"
+                    if let Some(pos) = f.sql_type.find("REFERENCES ") {
+                        let rest = &f.sql_type[pos + 11..];
+                        let table = rest.split('(').next().unwrap_or("").trim();
+                        if names.contains(table) || table == "users" {
+                            return Some(table.to_string());
+                        }
+                    }
+                    None
+                })
+                .collect();
+            if deps.iter().all(|d| placed.contains(d)) {
+                result.push(entity);
+                placed.insert(format!("{}s", entity.snake_name));
+            } else {
+                next_remaining.push(*entity);
+            }
+        }
+        remaining = next_remaining;
+    }
+    // Add any remaining (circular deps) at the end
+    result.extend(remaining);
+    result
 }
 
 /// Generate a `{entity}_queries.rs` file using runtime sqlx queries.
@@ -772,13 +849,16 @@ pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
 /// Generate `backend/src/database/pool.rs`.
 pub fn mock_generate_pool() -> String {
     r#"// ISLS v3.1 mock generated
+use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 use crate::AppError;
 
 pub async fn create_pool() -> Result<PgPool, AppError> {
     let url = std::env::var("DATABASE_URL")
         .map_err(|_| AppError::InternalError("DATABASE_URL not set".into()))?;
-    PgPool::connect(&url)
+    PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&url)
         .await
         .map_err(|e| AppError::InternalError(format!("database connection failed: {}", e)))
 }
@@ -825,11 +905,19 @@ async fn main() -> std::io::Result<()> {{
         .await
         .expect("failed to connect to database");
 
+    // Run migrations (idempotent — uses IF NOT EXISTS)
+    let migration_sql = include_str!("../migrations/001_initial.sql");
+    sqlx::raw_sql(migration_sql)
+        .execute(&pool)
+        .await
+        .expect("failed to run database migrations");
+    tracing::info!("database migrations applied");
+
     tracing::info!("starting {app} on port {{}}", port);
 
     HttpServer::new(move || {{
         let cors = Cors::default()
-            .allowed_origin("http://localhost:3000")
+            .allow_any_origin()
             .allow_any_method()
             .allow_any_header()
             .max_age(3600);
@@ -936,8 +1024,13 @@ pub async fn me(user: AuthUser) -> Result<impl Responder, AppError> {
     })))
 }
 
-pub async fn health() -> impl Responder {
-    HttpResponse::Ok().json(serde_json::json!({"status": "ok"}))
+pub async fn health(pool: web::Data<PgPool>) -> impl Responder {
+    let db_ok = sqlx::query("SELECT 1").execute(pool.get_ref()).await.is_ok();
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": if db_ok { "ok" } else { "degraded" },
+        "database": if db_ok { "connected" } else { "disconnected" },
+        "version": "1.0.0"
+    }))
 }
 
 pub fn auth_routes(cfg: &mut web::ServiceConfig) {
@@ -955,9 +1048,19 @@ pub fn auth_routes(cfg: &mut web::ServiceConfig) {
 
 // ─── Frontend ─────────────────────────────────────────────────────────────────
 
-/// Generate `frontend/index.html`.
+/// Generate `frontend/index.html` — working SPA with login, product list, and create form.
 pub fn mock_generate_frontend_index(spec: &AppSpec) -> String {
     let app = &spec.app_name;
+    // Build nav links for all non-User entities
+    let nav_links: Vec<String> = spec.entities.iter()
+        .filter(|e| e.name != "User")
+        .map(|e| format!(
+            "      <button onclick=\"loadPage('{}')\">{}</button>",
+            e.snake_name, e.name
+        ))
+        .collect();
+    let nav_html = nav_links.join("\n");
+
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -969,14 +1072,17 @@ pub fn mock_generate_frontend_index(spec: &AppSpec) -> String {
 </head>
 <body>
   <nav id="nav" style="display:none">
+    <strong>{app}</strong>
+{nav_html}
+    <span style="flex:1"></span>
     <span id="nav-user"></span>
     <button onclick="logout()">Logout</button>
   </nav>
 
   <div id="login-form">
     <h2>Login to {app}</h2>
-    <input type="email" id="email" placeholder="Email">
-    <input type="password" id="pwd" placeholder="Password">
+    <input type="email" id="email" placeholder="Email" value="admin@example.com">
+    <input type="password" id="pwd" placeholder="Password" value="admin123">
     <button onclick="doLogin()">Login</button>
     <p id="login-error" style="color:red"></p>
   </div>
@@ -987,8 +1093,7 @@ pub fn mock_generate_frontend_index(spec: &AppSpec) -> String {
 
   <script src="src/api/client.js"></script>
   <script>
-    const token = localStorage.getItem('token');
-    if (token) showApp();
+    if (localStorage.getItem('token')) showApp();
 
     async function doLogin() {{
       const email = document.getElementById('email').value;
@@ -1002,22 +1107,87 @@ pub fn mock_generate_frontend_index(spec: &AppSpec) -> String {
       }}
     }}
 
-    function showApp() {{
+    async function showApp() {{
       document.getElementById('login-form').style.display = 'none';
       document.getElementById('nav').style.display = 'flex';
       document.getElementById('app-content').style.display = 'block';
-      document.getElementById('content').textContent = 'Application loaded.';
+      try {{
+        const me = await apiFetch('GET', '/api/auth/me');
+        document.getElementById('nav-user').textContent = me.email + ' (' + me.role + ')';
+      }} catch (_) {{}}
+      loadPage('product');
     }}
 
     function logout() {{
       localStorage.removeItem('token');
       location.reload();
     }}
+
+    async function loadPage(entity) {{
+      const content = document.getElementById('content');
+      content.innerHTML = '<p>Loading ' + entity + 's...</p>';
+      try {{
+        const data = await apiFetch('GET', '/api/' + entity + 's');
+        const items = data.items || [];
+        let html = '<h2>' + entity.charAt(0).toUpperCase() + entity.slice(1) + 's</h2>';
+        html += '<button onclick="showCreateForm(\'' + entity + '\')">+ Create</button>';
+        html += '<div id="create-form" style="display:none;margin:1rem 0;padding:1rem;background:#f9f9f9;border-radius:8px"></div>';
+        if (items.length === 0) {{
+          html += '<p>No items yet.</p>';
+        }} else {{
+          const cols = Object.keys(items[0]);
+          html += '<table><thead><tr>' + cols.map(c => '<th>' + c + '</th>').join('') + '</tr></thead><tbody>';
+          items.forEach(item => {{
+            html += '<tr>' + cols.map(c => '<td>' + (item[c] !== null && item[c] !== undefined ? item[c] : '') + '</td>').join('') + '</tr>';
+          }});
+          html += '</tbody></table>';
+        }}
+        html += '<p style="color:#888;font-size:12px">Total: ' + (data.total || items.length) + '</p>';
+        content.innerHTML = html;
+      }} catch (e) {{
+        content.innerHTML = '<p style="color:red">Error: ' + e.message + '</p>';
+      }}
+    }}
+
+    function showCreateForm(entity) {{
+      const form = document.getElementById('create-form');
+      if (form.style.display !== 'none') {{ form.style.display = 'none'; return; }}
+      let fields = '';
+      if (entity === 'product') {{
+        fields = '<input id="cf-sku" placeholder="SKU" style="margin:4px"><input id="cf-name" placeholder="Name" style="margin:4px"><input id="cf-price" placeholder="Price (cents)" type="number" style="margin:4px"><input id="cf-qty" placeholder="Quantity" type="number" style="margin:4px"><input id="cf-reorder" placeholder="Reorder level" type="number" value="10" style="margin:4px"><input id="cf-reorderqty" placeholder="Reorder qty" type="number" value="50" style="margin:4px">';
+        fields += '<br><button onclick="createProduct()">Create Product</button>';
+      }} else {{
+        fields = '<p>Use the API to create ' + entity + 's.</p>';
+      }}
+      form.innerHTML = fields;
+      form.style.display = 'block';
+    }}
+
+    async function createProduct() {{
+      try {{
+        const payload = {{
+          sku: document.getElementById('cf-sku').value,
+          name: document.getElementById('cf-name').value,
+          unit_price_cents: parseInt(document.getElementById('cf-price').value) || 0,
+          cost_price_cents: 0,
+          quantity_on_hand: parseInt(document.getElementById('cf-qty').value) || 0,
+          reorder_level: parseInt(document.getElementById('cf-reorder').value) || 10,
+          reorder_quantity: parseInt(document.getElementById('cf-reorderqty').value) || 50,
+          is_active: true,
+          warehouse_id: 1
+        }};
+        await apiFetch('POST', '/api/products', payload);
+        loadPage('product');
+      }} catch (e) {{
+        alert('Error: ' + e.message);
+      }}
+    }}
   </script>
 </body>
 </html>
 "#,
-        app = app
+        app = app,
+        nav_html = nav_html
     )
 }
 
