@@ -69,6 +69,16 @@ Purpose: {purpose}
 - For `FromRequest` implementations, use `std::future::Ready` and `std::future::ready`
   Do NOT import `Ready`/`ready` from the `futures` crate.
 - Do not import any new external crates not in Cargo.toml
+- In mod.rs files, ALL submodule declarations MUST use `pub mod`, NEVER `mod`.
+  Example: `pub mod user;` NOT `mod user;`. Private modules cause compile errors
+  when sibling modules try to access types.
+- NEVER use .into() inside a format!() macro argument. It causes a compile error.
+  WRONG: format!("Entity {{id}} not found".into())
+  RIGHT: format!("Entity {{}} not found", id)
+  If you need String conversion, call .into() BEFORE the format!() call.
+- Each entity API file MUST export a route-registration function named `{{snake_name}}_routes`:
+  `pub fn product_routes(cfg: &mut web::ServiceConfig)` — NOT `configure_product_routes`.
+  The auth module exports `pub fn auth_routes(cfg: &mut web::ServiceConfig)`.
 - Return the COMPLETE file, no markdown fences, no triple backticks
 - No explanation — just the complete source code
 
@@ -228,6 +238,17 @@ For the AuthUser FromRequest implementation:
         .into();
     }
 
+    if path.ends_with("config.rs") {
+        return r#"NORM: Application configuration
+- pub struct AppConfig { pub database_url: String, pub jwt_secret: String, pub port: u16 }
+- pub fn load_config() -> Result<AppConfig, AppError>
+- Read from env vars: DATABASE_URL, JWT_SECRET, PORT (default 8080)
+- Use dotenvy::dotenv().ok() before reading env
+- Import AppError as: use crate::errors::AppError;
+"#
+        .into();
+    }
+
     if path.ends_with("pool.rs") {
         return r#"NORM: Database pool setup
 - pub async fn create_pool() -> Result<sqlx::PgPool, AppError>
@@ -262,6 +283,84 @@ For the AuthUser FromRequest implementation:
         }
     }
 
+    if path.ends_with("models/mod.rs") {
+        let entity_mods: Vec<String> = plan
+            .spec
+            .entities
+            .iter()
+            .map(|e| format!("pub mod {};", e.snake_name))
+            .collect();
+        let re_exports: Vec<String> = plan
+            .spec
+            .entities
+            .iter()
+            .map(|e| format!("pub use {}::*;", e.snake_name))
+            .collect();
+        return format!(
+            "NORM: Models module declarations\n\
+             Declare ALL model submodules with pub mod (NOT mod):\n{}\n\n\
+             Re-export all types:\n{}\n",
+            entity_mods.join("\n"),
+            re_exports.join("\n")
+        );
+    }
+
+    if path.ends_with("database/mod.rs") {
+        let mut mods = vec!["pub mod pool;".to_string()];
+        for e in &plan.spec.entities {
+            mods.push(format!("pub mod {}_queries;", e.snake_name));
+        }
+        return format!(
+            "NORM: Database module declarations\n\
+             Declare ALL submodules with pub mod (NOT mod):\n{}\n\n\
+             Re-export: pub use pool::create_pool;\n",
+            mods.join("\n")
+        );
+    }
+
+    if path.ends_with("services/mod.rs") {
+        let mods: Vec<String> = plan
+            .spec
+            .entities
+            .iter()
+            .map(|e| format!("pub mod {};", e.snake_name))
+            .collect();
+        return format!(
+            "NORM: Services module declarations\n\
+             Declare ALL submodules with pub mod (NOT mod):\n{}\n",
+            mods.join("\n")
+        );
+    }
+
+    if path.ends_with("api/mod.rs") {
+        let entity_mods: Vec<String> = plan
+            .spec
+            .entities
+            .iter()
+            .filter(|e| e.name != "User")
+            .map(|e| format!("pub mod {};", e.snake_name))
+            .collect();
+        let route_registrations: Vec<String> = plan
+            .spec
+            .entities
+            .iter()
+            .filter(|e| e.name != "User")
+            .map(|e| format!("    {}::{}_routes(cfg);", e.snake_name, e.snake_name))
+            .collect();
+        return format!(
+            "NORM: API module declarations and route configuration\n\
+             Declare ALL submodules with pub mod (NOT mod):\n\
+             pub mod auth_routes;\n{}\n\n\
+             pub fn configure_routes(cfg: &mut web::ServiceConfig) {{\n\
+                 auth_routes::auth_routes(cfg);\n{}\n}}\n\n\
+             IMPORTANT: Each entity module exposes a function named {{snake_name}}_routes(cfg).\n\
+             The auth module exposes auth_routes(cfg).\n\
+             Call them as: module_name::function_name(cfg)\n",
+            entity_mods.join("\n"),
+            route_registrations.join("\n")
+        );
+    }
+
     if path.ends_with("auth_routes.rs") {
         return r#"NORM: Auth routes
 Endpoints:
@@ -276,6 +375,9 @@ IMPORTANT: The User entity has these exact fields from the TypeContext above.
 Use ONLY the field names shown in the User struct. Do not assume 'name',
 'last_login_at', or any other field unless it appears in the User struct.
 Use sqlx::query_as::<_, User>("SQL") — NEVER sqlx::query_as!() macro.
+
+pub fn auth_routes(cfg: &mut web::ServiceConfig) — register all auth routes.
+This function is called from api/mod.rs as: auth_routes::auth_routes(cfg);
 "#
         .into();
     }
@@ -523,6 +625,16 @@ fn format_main_norm(spec: &AppSpec) -> String {
 
     format!(
         r#"NORM: Application entry point
+- main.rs MUST begin with these module declarations (all 8 required):
+  mod api;
+  mod auth;
+  mod config;
+  mod database;
+  mod errors;
+  mod models;
+  mod pagination;
+  mod services;
+  Missing any of these will cause compile errors for the entire project.
 - Call dotenvy::dotenv().ok() to load .env file
 - Init tracing_subscriber with EnvFilter from RUST_LOG env var
 - Create PgPool via database::pool::create_pool().await
