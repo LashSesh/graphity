@@ -8,11 +8,13 @@
 //! generated in previous files (the growing `TypeContext`), eliminating
 //! hallucinated field names.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
 use isls_renderloop::{estimate_tokens, Oracle};
 use isls_renderloop::type_context::TypeContext;
+use regex::Regex;
 use thiserror::Error;
 
 use crate::{
@@ -112,6 +114,11 @@ impl LlmForge {
 
             let generated = if self.mock_mode {
                 self.generate_mock(&spec)?
+            } else if is_structural_file(&spec.path) {
+                // Structural files (mod.rs, main.rs) are deterministic —
+                // generate statically even in LLM mode to eliminate an
+                // entire class of module-visibility and naming errors.
+                self.generate_static_structural(&spec)?
             } else {
                 self.generate_llm(&spec)?
             };
@@ -218,6 +225,22 @@ impl LlmForge {
         })
     }
 
+    // ── Static structural generation ──────────────────────────────────────────
+
+    /// Generate a structural file (mod.rs, main.rs) statically — no LLM call.
+    fn generate_static_structural(&mut self, spec: &FileSpec) -> Result<GeneratedFile> {
+        let content = generate_structural(spec, &self.plan.spec);
+        self.write_file(&spec.path, &content)?;
+        tracing::info!(path = %spec.path, "generated structural file statically");
+        Ok(GeneratedFile {
+            path: spec.path.clone(),
+            content,
+            generation_method: "static".into(),
+            attempts: 1,
+            tokens_used: 0,
+        })
+    }
+
     // ── cargo check ───────────────────────────────────────────────────────────
 
     /// Run `cargo check` in the generated backend directory.
@@ -266,6 +289,12 @@ impl LlmForge {
     /// Run cargo check on the complete project.  On failure, identify files
     /// with errors, regenerate them with the error context, and retry.
     /// Up to 3 rounds.
+    ///
+    /// The fix prompt includes:
+    /// - The actual file content read from disk
+    /// - Per-file compiler errors (not the entire cargo output)
+    /// - The real module map extracted from generated mod.rs files
+    /// - The full type context
     fn final_check_and_fix(&mut self, file_specs: &[FileSpec]) -> Result<()> {
         for round in 1u32..=3 {
             self.stats.compile_checks += 1;
@@ -287,34 +316,67 @@ impl LlmForge {
                         );
                         return Ok(());
                     }
-                    // Parse error file paths and regenerate those files
-                    let error_files = parse_error_files(&errors);
-                    if error_files.is_empty() {
+
+                    // Parse errors grouped by file
+                    let errors_by_file = parse_errors_by_file(&errors);
+                    if errors_by_file.is_empty() {
                         tracing::error!(
                             "could not identify error files from cargo output"
                         );
                         return Ok(());
                     }
+
+                    // Read the actual module map from disk
+                    let module_map = self.read_module_map();
+                    let type_ctx_str = self.type_context.to_prompt_string_full();
+
                     tracing::info!(
                         round,
-                        files = error_files.len(),
+                        files = errors_by_file.len(),
                         "regenerating files with compile errors"
                     );
-                    for error_path in &error_files {
-                        // Find the matching FileSpec (path in error is relative
-                        // to backend/, e.g. "src/database/pool.rs")
+
+                    for (error_path, file_errors) in &errors_by_file {
+                        // Skip structural files — they are deterministic
                         let full_error_path = format!("backend/{}", error_path);
+                        if is_structural_file(&full_error_path) {
+                            tracing::debug!(
+                                path = %full_error_path,
+                                "skipping structural file in fix loop"
+                            );
+                            continue;
+                        }
+
                         if let Some(spec) =
                             file_specs.iter().find(|s| s.path == full_error_path)
                         {
                             self.stats.retries += 1;
-                            let base_prompt = prompt::build_prompt(
-                                spec,
-                                &self.type_context,
-                                &self.plan,
-                            );
+
+                            // Read current file content from disk
+                            let disk_path =
+                                self.output_dir.join(&spec.path);
+                            let current_content =
+                                std::fs::read_to_string(&disk_path)
+                                    .unwrap_or_default();
+
+                            // Format per-file errors
+                            let errors_text: String = file_errors
+                                .iter()
+                                .map(|e| {
+                                    format!("Line {}: {}", e.line, e.message)
+                                })
+                                .collect::<Vec<_>>()
+                                .join("\n");
+
                             let fix_prompt =
-                                prompt::build_fix_prompt(&base_prompt, &errors);
+                                prompt::build_context_fix_prompt(
+                                    error_path,
+                                    &current_content,
+                                    &errors_text,
+                                    &module_map,
+                                    &type_ctx_str,
+                                );
+
                             match self.oracle.call(&fix_prompt, 4096) {
                                 Ok(response) => {
                                     let code = response.trim().to_string();
@@ -329,7 +391,8 @@ impl LlmForge {
                                         tracing::info!(
                                             path = %spec.path,
                                             round,
-                                            "regenerated file"
+                                            errors = file_errors.len(),
+                                            "regenerated file with context fix"
                                         );
                                     }
                                 }
@@ -347,6 +410,53 @@ impl LlmForge {
             }
         }
         Ok(())
+    }
+
+    /// Read the actual module map from generated files on disk.
+    ///
+    /// After all files are generated, the mod.rs and main.rs files exist on
+    /// disk with the real module declarations. This reads them to build a
+    /// ground-truth module map for the fix prompt.
+    fn read_module_map(&self) -> String {
+        let backend_src = self.output_dir.join("backend/src");
+        let mut map = String::new();
+
+        // Read main.rs for top-level mod declarations
+        if let Ok(main_rs) = std::fs::read_to_string(backend_src.join("main.rs")) {
+            map.push_str("## main.rs declares:\n");
+            for line in main_rs.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("mod ") || trimmed.starts_with("pub mod ") {
+                    map.push_str(&format!("  {}\n", trimmed));
+                }
+            }
+        }
+
+        // Read each mod.rs for submodule declarations
+        for dir in &["models", "database", "api", "services"] {
+            let mod_rs = backend_src.join(format!("{}/mod.rs", dir));
+            if let Ok(content) = std::fs::read_to_string(&mod_rs) {
+                map.push_str(&format!("\n## {}/mod.rs declares:\n", dir));
+                for line in content.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.contains("mod ") || trimmed.contains("pub use") {
+                        map.push_str(&format!("  {}\n", trimmed));
+                    }
+                }
+            }
+        }
+
+        map.push_str("\n## IMPORT RULES:\n");
+        map.push_str("  - AppError is in crate::errors::AppError\n");
+        map.push_str("  - AuthUser is in crate::auth::AuthUser\n");
+        map.push_str("  - PaginationParams is in crate::pagination::PaginationParams\n");
+        map.push_str("  - PaginatedResponse is in crate::pagination::PaginatedResponse\n");
+        map.push_str("  - AppConfig is in crate::config::AppConfig\n");
+        map.push_str("  - For models: use crate::models::{entity}::{Type}\n");
+        map.push_str("  - For queries: use crate::database::{entity}_queries\n");
+        map.push_str("  - For services: use crate::services::{entity}\n");
+
+        map
     }
 
     fn stats_note(&self, msg: &str) {
@@ -514,22 +624,138 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     "// ISLS v3.1 mock generated\n".into()
 }
 
-// ─── Error file parser ───────────────────────────────────────────────────────
+/// Generate a static `main.rs` from the entity list (deterministic, no LLM needed).
+fn generate_main_rs(spec: &AppSpec) -> String {
+    let mut s = String::new();
+    s.push_str("mod api;\nmod auth;\nmod config;\nmod database;\n");
+    s.push_str("mod errors;\nmod models;\nmod pagination;\nmod services;\n\n");
+    s.push_str("use actix_web::{web, App, HttpServer};\n");
+    s.push_str("use actix_cors::Cors;\n");
+    s.push_str("use tracing_subscriber::EnvFilter;\n\n");
+    s.push_str("#[actix_web::main]\n");
+    s.push_str("async fn main() -> std::io::Result<()> {\n");
+    s.push_str("    dotenvy::dotenv().ok();\n\n");
+    s.push_str("    tracing_subscriber::fmt()\n");
+    s.push_str("        .with_env_filter(EnvFilter::from_default_env())\n");
+    s.push_str("        .init();\n\n");
+    s.push_str("    let pool = database::pool::create_pool()\n");
+    s.push_str("        .await\n");
+    s.push_str("        .expect(\"failed to connect to database\");\n\n");
+    s.push_str("    // Run migrations (idempotent — uses IF NOT EXISTS)\n");
+    s.push_str("    let migration_sql = include_str!(\"../migrations/001_initial.sql\");\n");
+    s.push_str("    sqlx::raw_sql(migration_sql)\n");
+    s.push_str("        .execute(&pool)\n");
+    s.push_str("        .await\n");
+    s.push_str("        .expect(\"failed to run database migrations\");\n");
+    s.push_str("    tracing::info!(\"database migrations applied\");\n\n");
+    s.push_str(&format!(
+        "    let port = std::env::var(\"PORT\").unwrap_or_else(|_| \"8080\".into());\n"
+    ));
+    s.push_str(&format!(
+        "    tracing::info!(\"starting {} on port {{}}\", port);\n\n",
+        spec.app_name
+    ));
+    s.push_str("    HttpServer::new(move || {\n");
+    s.push_str("        App::new()\n");
+    s.push_str("            .wrap(Cors::permissive())\n");
+    s.push_str("            .wrap(actix_web::middleware::Logger::default())\n");
+    s.push_str("            .app_data(web::Data::new(pool.clone()))\n");
+    s.push_str("            .configure(api::configure_routes)\n");
+    s.push_str("    })\n");
+    s.push_str("    .bind(format!(\"0.0.0.0:{}\", port))?\n");
+    s.push_str("    .run()\n");
+    s.push_str("    .await\n");
+    s.push_str("}\n");
+    s
+}
 
-/// Parse cargo check error output to identify source files with errors.
+/// Check if a file spec is a structural file that should be generated statically.
+fn is_structural_file(path: &str) -> bool {
+    path.ends_with("mod.rs") || path.ends_with("main.rs")
+}
+
+/// Generate a structural file statically (mod.rs or main.rs).
+fn generate_structural(spec: &FileSpec, app_spec: &AppSpec) -> String {
+    let path = spec.path.as_str();
+    if path.ends_with("main.rs") {
+        return generate_main_rs(app_spec);
+    }
+    if path.ends_with("mod.rs") {
+        return generate_mod_rs(path, app_spec);
+    }
+    unreachable!("is_structural_file should guard this")
+}
+
+// ─── Error parsing ───────────────────────────────────────────────────────────
+
+/// A single compiler error with file location and message.
+#[derive(Clone, Debug)]
+struct CompilerError {
+    line: usize,
+    message: String,
+}
+
+/// Parse cargo check error output into structured errors grouped by file.
 ///
-/// Looks for patterns like `src/database/pool.rs:5:1: error[E0432]` in
-/// `--message-format=short` output.
-fn parse_error_files(errors: &str) -> Vec<String> {
-    let mut files = std::collections::HashSet::new();
+/// Handles both `--message-format=short` output and standard cargo error format.
+/// Returns a map from relative file path (e.g. `"src/database/pool.rs"`) to
+/// the list of errors in that file.
+fn parse_errors_by_file(errors: &str) -> HashMap<String, Vec<CompilerError>> {
+    let mut map: HashMap<String, Vec<CompilerError>> = HashMap::new();
+
+    // Pattern for --message-format=short: "src/path.rs:line:col: error[E0432]: message"
+    let re_short =
+        Regex::new(r"^(src/[^\s:]+\.rs):(\d+):\d+:\s*error(?:\[E\d+\])?:\s*(.+)")
+            .expect("regex compiles");
+
+    // Pattern for standard cargo output: " --> src/path.rs:line:col"
+    let re_location =
+        Regex::new(r"-->\s+(src/[^\s:]+\.rs):(\d+):\d+")
+            .expect("regex compiles");
+
+    // Pattern for error message lines: "error[E0432]: unresolved import..."
+    let re_error =
+        Regex::new(r"^error(?:\[E\d+\])?:\s*(.+)")
+            .expect("regex compiles");
+
+    // First pass: short format
     for line in errors.lines() {
-        // cargo --message-format=short outputs: "path:line:col: error..."
-        if let Some(colon_pos) = line.find(':') {
-            let path = &line[..colon_pos];
-            if path.ends_with(".rs") && !path.contains(' ') {
-                files.insert(path.to_string());
+        if let Some(caps) = re_short.captures(line) {
+            let file = caps[1].to_string();
+            let line_num: usize = caps[2].parse().unwrap_or(0);
+            let message = caps[3].to_string();
+            map.entry(file).or_default().push(CompilerError {
+                line: line_num,
+                message,
+            });
+        }
+    }
+
+    // Second pass: standard format (error line followed by --> location)
+    let mut current_error: Option<String> = None;
+    for line in errors.lines() {
+        if let Some(caps) = re_error.captures(line) {
+            current_error = Some(caps[1].to_string());
+        }
+        if let Some(caps) = re_location.captures(line) {
+            if let Some(ref err_msg) = current_error {
+                let file = caps[1].to_string();
+                let line_num: usize = caps[2].parse().unwrap_or(0);
+                // Avoid duplicates from the short-format pass
+                let already = map.get(&file).map_or(false, |errs| {
+                    errs.iter().any(|e| e.line == line_num && e.message == *err_msg)
+                });
+                if !already {
+                    map.entry(file).or_default().push(CompilerError {
+                        line: line_num,
+                        message: err_msg.clone(),
+                    });
+                }
+                current_error = None;
             }
         }
     }
-    files.into_iter().collect()
+
+    map
 }
+

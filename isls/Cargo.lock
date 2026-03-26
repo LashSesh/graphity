@@ -1235,6 +1235,7 @@ dependencies = [
  "isls-hypercube",
  "isls-norms",
  "isls-renderloop",
+ "regex",
  "serde",
  "serde_json",
  "thiserror",
