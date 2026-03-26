@@ -122,6 +122,57 @@ Fix ALL errors listed above. Return the COMPLETE corrected file.
     )
 }
 
+/// Build a context-rich fix prompt for the compile-fix loop.
+///
+/// Unlike [`build_fix_prompt`], this includes the actual file content read
+/// from disk, per-file compiler errors, and the real module map extracted
+/// from the generated mod.rs files.  This gives the LLM maximum context
+/// to fix the errors without guessing.
+pub fn build_context_fix_prompt(
+    file_path: &str,
+    current_content: &str,
+    errors_text: &str,
+    module_map: &str,
+    type_context_str: &str,
+) -> String {
+    format!(
+        r#"You are fixing a Rust source file that has compiler errors.
+
+## FILE: {file_path}
+
+## CURRENT CONTENT:
+```rust
+{current_content}
+```
+
+## COMPILER ERRORS FOR THIS FILE:
+{errors_text}
+
+## MODULE MAP (how this project's modules are structured):
+{module_map}
+
+## AVAILABLE TYPES:
+{type_context_str}
+
+## RULES (CRITICAL):
+- Fix ALL compiler errors in this file
+- Keep the business logic intact — only fix imports, types, visibility, syntax
+- Use EXACTLY the import paths shown in the MODULE MAP
+- Use `tracing::info!`, NOT `log::info!`
+- Use `sqlx::query_as::<_, Type>("SQL").bind(x)` — NEVER `sqlx::query_as!()`
+- Do NOT use `sqlx::migrate!()` macro
+- For `FromRequest`: use `std::future::Ready` and `std::future::ready`
+- NEVER use `.into()` inside `format!()` macro arguments
+- Output ONLY the complete fixed Rust file — no explanations, no markdown fences
+"#,
+        file_path = file_path,
+        current_content = current_content,
+        errors_text = errors_text,
+        module_map = module_map,
+        type_context_str = type_context_str,
+    )
+}
+
 // ─── Module map ──────────────────────────────────────────────────────────────
 
 /// Build a module-structure map showing exact Rust import paths.
