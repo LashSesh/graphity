@@ -151,8 +151,9 @@ pub fn generation_order(plan: &ForgePlan) -> Vec<FileSpec> {
         layer: 4,
         entity: None,
         purpose: "Create a PgPool from DATABASE_URL env var using sqlx. \
-                  Expose async fn create_pool() -> Result<PgPool, AppError>. \
-                  Run migrations from the migrations/ directory on startup."
+                  Expose pub async fn create_pool() -> Result<PgPool, AppError>. \
+                  Run migrations at runtime via include_str!(\"../migrations/001_initial.sql\") \
+                  and sqlx::raw_sql(). Do NOT use sqlx::migrate!() macro."
             .into(),
         is_rust: true,
         method: llm.clone(),
@@ -170,7 +171,8 @@ pub fn generation_order(plan: &ForgePlan) -> Vec<FileSpec> {
                  create_{snake}(pool, payload) → Result<{name}>, \
                  update_{snake}(pool, id, payload) → Result<{name}>, \
                  delete_{snake}(pool, id) → Result<()>. \
-                 Use sqlx::query_as! or sqlx::query_as with exact field names from the model.",
+                 Use sqlx::query_as::<_, Type>(sql).bind(x) with exact field names from the model. \
+                 NEVER use sqlx::query_as!() compile-time macro.",
                 entity.name,
                 snake = entity.snake_name,
                 name = entity.name

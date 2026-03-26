@@ -194,7 +194,7 @@ pub const NGINX_CONF: &str = r#"server {
     }
 
     location /api/ {
-        proxy_pass http://backend:8080;
+        proxy_pass http://backend:8080/api/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }

@@ -51,10 +51,20 @@ Purpose: {purpose}
 
 ## Rules (CRITICAL — violations cause compile failures)
 - Use ONLY types shown in the type context above (no invented field names)
-- Use `tracing::info!`, `tracing::warn!`, `tracing::error!` — NEVER `log::`
-- Use `sqlx::query_as!` or `sqlx::query_as` (NOT `sqlx::query!` for structs)
+- Use `tracing::info!`, `tracing::warn!`, `tracing::error!` — NEVER `log::info!`, `log::warn!`, `log::error!`
+  The project uses tracing-subscriber, NOT env_logger.
+- CRITICAL: Use `sqlx::query_as::<_, Type>("SQL").bind(x).fetch_one(pool).await` for typed queries
+  NEVER use `sqlx::query_as!()`, `sqlx::query!()`, or `sqlx::query_scalar!()`
+  These are compile-time macros that require DATABASE_URL at build time and WILL fail.
+  For untyped queries use `sqlx::query("SQL").bind(x).execute(pool).await`
+- Do NOT use `sqlx::migrate!()` macro — migrations are loaded at runtime via `include_str!`
 - All errors via `AppError` (exact variants listed in type context)
 - Never use `unwrap()` — use `?` or `.map_err(...)`
+- When updating nullable fields (Option<T>):
+  `if let Some(v) = payload.field {{ current.field = Some(v); }}`
+  Do NOT write `current.field = v` — wrap in `Some()`.
+- For `FromRequest` implementations, use `std::future::Ready` and `std::future::ready`
+  Do NOT import `Ready`/`ready` from the `futures` crate.
 - Do not import any new external crates not in Cargo.toml
 - Return the COMPLETE file, no markdown fences, no triple backticks
 - No explanation — just the complete source code
@@ -140,15 +150,25 @@ Required:
 - fn decode_jwt(token: &str, secret: &str) -> Result<Claims, AppError>
 - fn require_role(user: &AuthUser, min_role: &str) -> Result<(), AppError>
   (roles: "admin" > "operator" > "viewer")
+
+For the AuthUser FromRequest implementation:
+- Use std::future::Ready and std::future::ready (from std::future)
+- Do NOT import Ready/ready from the futures crate
+- Extract Bearer token from the Authorization header
+- Decode JWT using decode_jwt with JWT_SECRET read from std::env::var("JWT_SECRET")
 "#
         .into();
     }
 
     if path.ends_with("pool.rs") {
         return r#"NORM: Database pool setup
-- async fn create_pool() -> Result<sqlx::PgPool, AppError>
+- pub async fn create_pool() -> Result<sqlx::PgPool, AppError>
 - Read DATABASE_URL from environment
 - Set max_connections(10)
+- Run migrations at runtime AFTER creating the pool:
+  let migration_sql = include_str!("../migrations/001_initial.sql");
+  sqlx::raw_sql(migration_sql).execute(&pool).await.expect("migrations failed");
+  Do NOT use sqlx::migrate!() macro — it requires DATABASE_URL at build time.
 "#
         .into();
     }
@@ -181,9 +201,14 @@ Endpoints:
 - POST /api/auth/register — body: {email, password, role?} → 201 {user}
 - POST /api/auth/login    — body: {email, password} → 200 {token: String}
 - GET  /api/auth/me       — Bearer auth → 200 {user}
-- GET  /api/health        — no auth → 200 {"status": "ok"}
+- GET  /api/health        — no auth → 200 {"status": "ok", "database": "connected"}
 Hash passwords with bcrypt::hash(password, 12). Verify with bcrypt::verify.
 Return AppError::Unauthorized on bad credentials.
+
+IMPORTANT: The User entity has these exact fields from the TypeContext above.
+Use ONLY the field names shown in the User struct. Do not assume 'name',
+'last_login_at', or any other field unless it appears in the User struct.
+Use sqlx::query_as::<_, User>("SQL") — NEVER sqlx::query_as!() macro.
 "#
         .into();
     }
@@ -314,9 +339,13 @@ Required async functions (all take &PgPool, return Result<_, AppError>):
 - pub async fn update_{sn}(pool: &PgPool, id: i64, payload: Update{n}Payload) -> Result<{n}, AppError>
 - pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError>
 
-Use sqlx::query_as with exact field names from the {n} struct above.
+Use sqlx::query_as::<_, {n}>("SQL").bind(x) — NEVER use sqlx::query_as!() macro.
+Use exact field names from the {n} struct above in SELECT columns.
 On "no rows" from SELECT, return AppError::NotFound("{n} {{id}} not found".into()).
-For list: SELECT COUNT(*) first, then SELECT with LIMIT/OFFSET from PaginationParams.
+For list: SELECT COUNT(*) first (via sqlx::query_scalar), then SELECT with LIMIT/OFFSET from PaginationParams.
+For count query: sqlx::query_scalar::<_, i64>("SELECT COUNT(*) ...") is NOT allowed.
+Instead use: sqlx::query("SELECT COUNT(*)...").fetch_one(pool) and extract the count manually,
+or use sqlx::query_as::<_, (i64,)>("SELECT COUNT(*)...").fetch_one(pool).await?.0
 "#,
         n = n,
         sn = sn
@@ -376,13 +405,18 @@ Map AppError to proper HTTP response via ResponseError.
 }
 
 fn format_migration_norm(plan: &ForgePlan) -> String {
+    // Generate a verified bcrypt hash at code-generation time
+    let admin_hash = bcrypt::hash("admin123", 12).expect("bcrypt hash failed");
+
     let mut lines = vec![
         "NORM: Database schema migration (all entities)".to_string(),
-        "CREATE TABLE IF NOT EXISTS statements in dependency order.".to_string(),
+        "CREATE TABLE IF NOT EXISTS statements in FK dependency order.".to_string(),
+        "Tables must be created in topological order: users first, then tables".to_string(),
+        "with no FK deps, then tables referencing already-created tables.".to_string(),
         "Include:".to_string(),
-        "- users table (id BIGSERIAL PRIMARY KEY, email VARCHAR UNIQUE, password_hash VARCHAR, role VARCHAR DEFAULT 'operator', is_active BOOLEAN DEFAULT TRUE, created_at TIMESTAMPTZ DEFAULT NOW())".to_string(),
-        "- Seed admin: INSERT INTO users (email, password_hash, role) VALUES ('admin@example.com', '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKyNiHK6L1GWWO', 'admin') ON CONFLICT DO NOTHING;".to_string(),
-        "(that hash is bcrypt of 'admin123')".to_string(),
+        "- users table (id BIGSERIAL PRIMARY KEY, email VARCHAR(255) NOT NULL UNIQUE, password_hash VARCHAR(255) NOT NULL, role VARCHAR(50) NOT NULL DEFAULT 'operator', is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())".to_string(),
+        format!("- Seed admin: INSERT INTO users (email, password_hash, role, is_active) VALUES ('admin@example.com', '{}', 'admin', true) ON CONFLICT (email) DO NOTHING;", admin_hash),
+        "(that hash is bcrypt of 'admin123' — use it exactly as shown)".to_string(),
     ];
 
     for entity in &plan.spec.entities {
@@ -422,16 +456,21 @@ fn format_main_norm(spec: &AppSpec) -> String {
 
     format!(
         r#"NORM: Application entry point
-- Load .env with dotenvy::dotenv().ok()
-- Init tracing_subscriber with RUST_LOG env filter
+- Call dotenvy::dotenv().ok() to load .env file
+- Init tracing_subscriber with EnvFilter from RUST_LOG env var
 - Create PgPool via database::pool::create_pool().await
+  (pool::create_pool already runs migrations internally — do NOT run them again in main)
 - Configure actix-web HttpServer:
-  - CORS: allow http://localhost:3000, allow all headers/methods
+  - CORS: use Cors::permissive() to allow ANY origin (frontend may be on different port)
+  - actix_web::middleware::Logger::default() for request logging
   - App::new()
-    .app_data(web::Data::new(pool))
+    .app_data(web::Data::new(pool.clone()))
     .configure(api::configure_routes)
   - Bind to 0.0.0.0:{{PORT}} (default 8080)
+- The api module has a function configure_routes(cfg: &mut web::ServiceConfig)
+  that registers all entity routes. Call it with .configure(api::configure_routes).
 - configure_routes registers: auth_routes, {}
+- Do NOT use sqlx::migrate!() anywhere — migrations are handled by pool::create_pool.
 "#,
         entity_mods.join(", ")
     )
