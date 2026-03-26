@@ -61,19 +61,19 @@ pub fn generate_docker_compose(spec: &AppSpec) -> String {
         r#"version: "3.9"
 
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: {name_snake}_db
-      POSTGRES_USER: {name_snake}_user
-      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: {name_snake}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U {name_snake}_user -d {name_snake}_db"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d {name_snake}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -85,12 +85,12 @@ services:
     ports:
       - "8080:8080"
     environment:
-      DATABASE_URL: postgres://{name_snake}_user:secret@postgres:5432/{name_snake}_db
+      DATABASE_URL: postgres://postgres:postgres@db:5432/{name_snake}
       JWT_SECRET: change-me-in-production-please
       PORT: "8080"
       RUST_LOG: info
     depends_on:
-      postgres:
+      db:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:8080/api/health || exit 1"]
@@ -122,7 +122,7 @@ pub fn generate_dockerfile(spec: &AppSpec) -> String {
     let name = &spec.app_name;
     format!(
         r#"# ── Build stage ──────────────────────────────────────────────────────────────
-FROM rust:1.78-slim AS builder
+FROM rust:1.85-slim AS builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
@@ -158,7 +158,7 @@ pub fn generate_env_example(spec: &AppSpec) -> String {
     let name_snake = spec.app_name_snake();
     format!(
         r#"# Copy this file to .env and fill in your values.
-DATABASE_URL=postgres://{name}_user:secret@localhost:5432/{name}_db
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/{name}
 JWT_SECRET=change-me-to-a-long-random-string
 PORT=8080
 RUST_LOG=info,{name}=debug
