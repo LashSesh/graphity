@@ -27,7 +27,7 @@ path = "src/main.rs"
 [dependencies]
 actix-web       = "4"
 actix-cors      = "0.7"
-sqlx            = {{ version = "0.7", features = ["runtime-tokio-rustls", "postgres", "macros", "chrono", "uuid"] }}
+sqlx            = {{ version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }}
 tokio           = {{ version = "1", features = ["full"] }}
 serde           = {{ version = "1", features = ["derive"] }}
 serde_json      = "1"
@@ -104,6 +104,7 @@ services:
       - "3000:80"
     volumes:
       - ./frontend:/usr/share/nginx/html:ro
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       - backend
 
@@ -116,15 +117,19 @@ volumes:
 
 // ─── Dockerfile ───────────────────────────────────────────────────────────────
 
-/// Multi-stage Dockerfile for the Rust backend.
-pub const DOCKERFILE_TEMPLATE: &str = r#"# ── Build stage ──────────────────────────────────────────────────────────────
+/// Generate a multi-stage Dockerfile for the Rust backend.
+pub fn generate_dockerfile(spec: &AppSpec) -> String {
+    let name = &spec.app_name;
+    format!(
+        r#"# ── Build stage ──────────────────────────────────────────────────────────────
 FROM rust:1.78-slim AS builder
 
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo 'fn main() {}' > src/main.rs && cargo build --release && rm src/main.rs
+COPY Cargo.toml ./
+COPY migrations ./migrations
+RUN mkdir src && echo 'fn main() {{}}' > src/main.rs && cargo build --release && rm src/main.rs
 
 COPY src ./src
 RUN touch src/main.rs && cargo build --release
@@ -135,13 +140,16 @@ FROM debian:bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y ca-certificates libssl3 curl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=builder /app/target/release/warehouse-app ./server
+COPY --from=builder /app/target/release/{name} ./server
 
 ENV PORT=8080
 EXPOSE 8080
 
 CMD ["./server"]
-"#;
+"#,
+        name = name
+    )
+}
 
 // ─── .env.example ─────────────────────────────────────────────────────────────
 
