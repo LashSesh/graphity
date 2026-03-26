@@ -20,6 +20,7 @@ pub fn build_prompt(file_spec: &FileSpec, type_ctx: &TypeContext, plan: &ForgePl
 
     let norm_context = norm_context_for_file(file_spec, plan);
     let entity_context = entity_specific_context(file_spec, plan);
+    let module_map = build_module_map(&plan.spec);
 
     let type_section = if type_ctx_str.trim().is_empty()
         || type_ctx_str.contains("=== TYPE CONTEXT")
@@ -41,6 +42,8 @@ Domain: {domain}
 
 ## ALREADY GENERATED FILES — USE THESE EXACT TYPES
 {type_section}
+
+{module_map}
 
 ## Norm Requirements for This File
 {norm_context}
@@ -76,6 +79,7 @@ Purpose: {purpose}
         description = spec.description,
         domain = spec.domain_name,
         type_section = type_section,
+        module_map = module_map,
         norm_context = norm_context,
         path = file_spec.path,
         purpose = file_spec.purpose,
@@ -106,6 +110,70 @@ Fix ALL errors listed above. Return the COMPLETE corrected file.
         original_prompt = original_prompt,
         compile_error = compile_error
     )
+}
+
+// ─── Module map ──────────────────────────────────────────────────────────────
+
+/// Build a module-structure map showing exact Rust import paths.
+///
+/// Injected into every prompt so the LLM never guesses import paths.
+fn build_module_map(spec: &AppSpec) -> String {
+    let mut m = String::new();
+    m.push_str("## MODULE STRUCTURE (use these EXACT import paths)\n\n");
+    m.push_str("src/main.rs declares these modules:\n");
+    m.push_str("  mod api;\n  mod auth;\n  mod config;\n  mod database;\n");
+    m.push_str("  mod errors;\n  mod models;\n  mod pagination;\n  mod services;\n\n");
+
+    m.push_str("### Correct import paths:\n");
+    m.push_str("  use crate::errors::AppError;\n");
+    m.push_str("  use crate::pagination::{PaginationParams, PaginatedResponse};\n");
+    m.push_str("  use crate::auth::{AuthUser, Claims, encode_jwt, decode_jwt};\n");
+    m.push_str("  use crate::config::AppConfig;\n");
+
+    // Models
+    for e in &spec.entities {
+        m.push_str(&format!(
+            "  use crate::models::{}::{{{}, Create{}Payload, Update{}Payload}};\n",
+            e.snake_name, e.name, e.name, e.name
+        ));
+    }
+
+    // Database queries
+    m.push('\n');
+    for e in &spec.entities {
+        m.push_str(&format!(
+            "  use crate::database::{}_queries;\n",
+            e.snake_name
+        ));
+    }
+
+    // Services
+    m.push('\n');
+    for e in &spec.entities {
+        m.push_str(&format!(
+            "  use crate::services::{} as {}_service;\n",
+            e.snake_name, e.snake_name
+        ));
+    }
+
+    m.push_str("\n### WRONG paths (these do NOT exist — will cause compile errors):\n");
+    m.push_str(
+        "  use crate::AppError;              // WRONG: must be crate::errors::AppError\n",
+    );
+    m.push_str(
+        "  use crate::User;                  // WRONG: must be crate::models::user::User\n",
+    );
+    m.push_str(
+        "  use crate::api::AppError;         // WRONG: AppError is in crate::errors\n",
+    );
+    m.push_str("  use crate::database::AppError;    // WRONG\n");
+    m.push_str("  use crate::models::AppError;      // WRONG\n");
+    m.push_str(
+        "  use crate::api::ResponseError;    // WRONG: use actix_web::ResponseError\n",
+    );
+    m.push_str("  use crate::domain::*;             // WRONG: no domain module exists\n");
+
+    m
 }
 
 // ─── Norm context ─────────────────────────────────────────────────────────────
@@ -163,12 +231,11 @@ For the AuthUser FromRequest implementation:
     if path.ends_with("pool.rs") {
         return r#"NORM: Database pool setup
 - pub async fn create_pool() -> Result<sqlx::PgPool, AppError>
-- Read DATABASE_URL from environment
-- Set max_connections(10)
-- Run migrations at runtime AFTER creating the pool:
-  let migration_sql = include_str!("../migrations/001_initial.sql");
-  sqlx::raw_sql(migration_sql).execute(&pool).await.expect("migrations failed");
-  Do NOT use sqlx::migrate!() macro — it requires DATABASE_URL at build time.
+- Read DATABASE_URL from environment via std::env::var
+- Set max_connections(5)
+- Do NOT load or run migrations here — main.rs handles migration loading
+- Do NOT use sqlx::migrate!() macro
+- Import AppError as: use crate::errors::AppError;
 "#
         .into();
     }
@@ -459,7 +526,11 @@ fn format_main_norm(spec: &AppSpec) -> String {
 - Call dotenvy::dotenv().ok() to load .env file
 - Init tracing_subscriber with EnvFilter from RUST_LOG env var
 - Create PgPool via database::pool::create_pool().await
-  (pool::create_pool already runs migrations internally — do NOT run them again in main)
+- Run migrations AFTER creating the pool:
+  let migration_sql = include_str!("../migrations/001_initial.sql");
+  sqlx::raw_sql(migration_sql).execute(&pool).await.expect("migrations failed");
+  (The path "../migrations/001_initial.sql" is correct — relative to src/main.rs)
+  Do NOT use sqlx::migrate!() macro — it requires DATABASE_URL at build time.
 - Configure actix-web HttpServer:
   - CORS: use Cors::permissive() to allow ANY origin (frontend may be on different port)
   - actix_web::middleware::Logger::default() for request logging
@@ -470,7 +541,7 @@ fn format_main_norm(spec: &AppSpec) -> String {
 - The api module has a function configure_routes(cfg: &mut web::ServiceConfig)
   that registers all entity routes. Call it with .configure(api::configure_routes).
 - configure_routes registers: auth_routes, {}
-- Do NOT use sqlx::migrate!() anywhere — migrations are handled by pool::create_pool.
+- Import: use errors::AppError; (in main.rs, not crate::errors since main IS the crate root)
 "#,
         entity_mods.join(", ")
     )

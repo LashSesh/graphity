@@ -8,7 +8,7 @@
 //! generated in previous files (the growing `TypeContext`), eliminating
 //! hallucinated field names.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Instant;
 
 use isls_renderloop::{estimate_tokens, Oracle};
@@ -126,8 +126,13 @@ impl LlmForge {
             self.generated_files.push(generated);
         }
 
-        // Mock mode: skip cargo check entirely — mock generators are deterministic
-        // and validated by unit tests. LLM mode checks each file individually.
+        // Final compile check (LLM mode only).
+        // Mock mode skips cargo check — mock generators are deterministic and
+        // validated by unit tests.  LLM mode runs a single cargo check after
+        // ALL files exist so the full module tree is available.
+        if !self.mock_mode {
+            self.final_check_and_fix(&file_specs)?;
+        }
 
         self.stats.total_time_secs = start.elapsed().as_secs_f64();
         tracing::info!(
@@ -164,91 +169,38 @@ impl LlmForge {
 
     // ── LLM generation ───────────────────────────────────────────────────────
 
-    /// Generate a file using the LLM oracle with up to 3 retry attempts.
+    /// Generate a file using the LLM oracle (no per-file cargo check).
+    ///
+    /// Compile checking happens after ALL files are generated via
+    /// [`final_check_and_fix`], because per-file checks fail on early files
+    /// that reference modules not yet generated (e.g. main.rs doesn't exist
+    /// until Layer 7).
     fn generate_llm(&mut self, spec: &FileSpec) -> Result<GeneratedFile> {
-        let base_prompt = prompt::build_prompt(spec, &self.type_context, &self.plan);
-        let mut current_prompt = base_prompt.clone();
+        let prompt_text = prompt::build_prompt(spec, &self.type_context, &self.plan);
 
-        for attempt in 1u32..=3 {
-            let response = self
-                .oracle
-                .call(&current_prompt, 4096)
-                .map_err(|e| ForgeLlmError::Oracle(e.to_string()))?;
+        let response = self
+            .oracle
+            .call(&prompt_text, 4096)
+            .map_err(|e| ForgeLlmError::Oracle(e.to_string()))?;
 
-            // Oracle already strips markdown fences
-            let code = response.trim().to_string();
-            if code.is_empty() {
-                tracing::warn!(path = %spec.path, attempt, "oracle returned empty response");
-                continue;
-            }
-
-            // Write to disk
-            self.write_file(&spec.path, &code)?;
-
-            // Compile check for Rust files
-            if spec.is_rust {
-                self.stats.compile_checks += 1;
-                match self.cargo_check() {
-                    Ok(()) => {
-                        tracing::info!(path = %spec.path, attempt, "compile check passed");
-                        let tokens = estimate_tokens(&current_prompt)
-                            + estimate_tokens(&code);
-                        return Ok(GeneratedFile {
-                            path: spec.path.clone(),
-                            content: code,
-                            generation_method: "llm".into(),
-                            attempts: attempt,
-                            tokens_used: tokens,
-                        });
-                    }
-                    Err(compile_error) => {
-                        self.stats.compile_failures += 1;
-                        tracing::warn!(
-                            path = %spec.path,
-                            attempt,
-                            error = %compile_error,
-                            "compile check failed"
-                        );
-                        if attempt < 3 {
-                            self.stats.retries += 1;
-                            current_prompt =
-                                prompt::build_fix_prompt(&base_prompt, &compile_error);
-                        } else {
-                            // All 3 attempts failed: keep last output (best effort)
-                            tracing::error!(
-                                path = %spec.path,
-                                "all 3 attempts failed — keeping last output"
-                            );
-                            let tokens = estimate_tokens(&current_prompt)
-                                + estimate_tokens(&code);
-                            return Ok(GeneratedFile {
-                                path: spec.path.clone(),
-                                content: code,
-                                generation_method: "llm".into(),
-                                attempts: attempt,
-                                tokens_used: tokens,
-                            });
-                        }
-                    }
-                }
-            } else {
-                // Non-Rust files: accept without compile check
-                let tokens = estimate_tokens(&current_prompt) + estimate_tokens(&code);
-                return Ok(GeneratedFile {
-                    path: spec.path.clone(),
-                    content: code,
-                    generation_method: "llm".into(),
-                    attempts: attempt,
-                    tokens_used: tokens,
-                });
-            }
+        let code = response.trim().to_string();
+        if code.is_empty() {
+            return Err(ForgeLlmError::Failed(format!(
+                "oracle returned empty response for {}",
+                spec.path
+            )));
         }
 
-        // Unreachable, but satisfy the compiler
-        Err(ForgeLlmError::Failed(format!(
-            "failed to generate {}",
-            spec.path
-        )))
+        self.write_file(&spec.path, &code)?;
+
+        let tokens = estimate_tokens(&prompt_text) + estimate_tokens(&code);
+        Ok(GeneratedFile {
+            path: spec.path.clone(),
+            content: code,
+            generation_method: "llm".into(),
+            attempts: 1,
+            tokens_used: tokens,
+        })
     }
 
     // ── Mock generation ───────────────────────────────────────────────────────
@@ -305,9 +257,96 @@ impl LlmForge {
     }
 
     /// Run a final `cargo check` on the complete generated backend.
+    #[allow(dead_code)]
     fn final_compile_check(&self) -> Result<()> {
         self.stats_note("running final compile check");
         self.cargo_check().map_err(ForgeLlmError::CompileCheck)
+    }
+
+    /// Run cargo check on the complete project.  On failure, identify files
+    /// with errors, regenerate them with the error context, and retry.
+    /// Up to 3 rounds.
+    fn final_check_and_fix(&mut self, file_specs: &[FileSpec]) -> Result<()> {
+        for round in 1u32..=3 {
+            self.stats.compile_checks += 1;
+            match self.cargo_check() {
+                Ok(()) => {
+                    tracing::info!(round, "final compile check passed");
+                    return Ok(());
+                }
+                Err(errors) => {
+                    self.stats.compile_failures += 1;
+                    tracing::warn!(
+                        round,
+                        error_lines = errors.lines().count(),
+                        "compile errors in final check"
+                    );
+                    if round == 3 {
+                        tracing::error!(
+                            "final compile check failed after 3 rounds — keeping output"
+                        );
+                        return Ok(());
+                    }
+                    // Parse error file paths and regenerate those files
+                    let error_files = parse_error_files(&errors);
+                    if error_files.is_empty() {
+                        tracing::error!(
+                            "could not identify error files from cargo output"
+                        );
+                        return Ok(());
+                    }
+                    tracing::info!(
+                        round,
+                        files = error_files.len(),
+                        "regenerating files with compile errors"
+                    );
+                    for error_path in &error_files {
+                        // Find the matching FileSpec (path in error is relative
+                        // to backend/, e.g. "src/database/pool.rs")
+                        let full_error_path = format!("backend/{}", error_path);
+                        if let Some(spec) =
+                            file_specs.iter().find(|s| s.path == full_error_path)
+                        {
+                            self.stats.retries += 1;
+                            let base_prompt = prompt::build_prompt(
+                                spec,
+                                &self.type_context,
+                                &self.plan,
+                            );
+                            let fix_prompt =
+                                prompt::build_fix_prompt(&base_prompt, &errors);
+                            match self.oracle.call(&fix_prompt, 4096) {
+                                Ok(response) => {
+                                    let code = response.trim().to_string();
+                                    if !code.is_empty() {
+                                        let _ =
+                                            self.write_file(&spec.path, &code);
+                                        if spec.is_rust {
+                                            self.type_context.add_file(
+                                                &spec.path, &code,
+                                            );
+                                        }
+                                        tracing::info!(
+                                            path = %spec.path,
+                                            round,
+                                            "regenerated file"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        path = %spec.path,
+                                        error = %e,
+                                        "failed to regenerate file"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn stats_note(&self, msg: &str) {
@@ -473,4 +512,24 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     }
 
     "// ISLS v3.1 mock generated\n".into()
+}
+
+// ─── Error file parser ───────────────────────────────────────────────────────
+
+/// Parse cargo check error output to identify source files with errors.
+///
+/// Looks for patterns like `src/database/pool.rs:5:1: error[E0432]` in
+/// `--message-format=short` output.
+fn parse_error_files(errors: &str) -> Vec<String> {
+    let mut files = std::collections::HashSet::new();
+    for line in errors.lines() {
+        // cargo --message-format=short outputs: "path:line:col: error..."
+        if let Some(colon_pos) = line.find(':') {
+            let path = &line[..colon_pos];
+            if path.ends_with(".rs") && !path.contains(' ') {
+                files.insert(path.to_string());
+            }
+        }
+    }
+    files.into_iter().collect()
 }

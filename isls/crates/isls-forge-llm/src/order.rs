@@ -152,8 +152,8 @@ pub fn generation_order(plan: &ForgePlan) -> Vec<FileSpec> {
         entity: None,
         purpose: "Create a PgPool from DATABASE_URL env var using sqlx. \
                   Expose pub async fn create_pool() -> Result<PgPool, AppError>. \
-                  Run migrations at runtime via include_str!(\"../migrations/001_initial.sql\") \
-                  and sqlx::raw_sql(). Do NOT use sqlx::migrate!() macro."
+                  Do NOT load migrations here — main.rs handles them. \
+                  Do NOT use sqlx::migrate!() macro."
             .into(),
         is_rust: true,
         method: llm.clone(),
