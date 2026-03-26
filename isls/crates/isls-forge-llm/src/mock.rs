@@ -373,6 +373,85 @@ impl User {
     .into()
 }
 
+/// Generate `backend/src/database/user_queries.rs` matching the hardcoded User model.
+pub fn mock_generate_user_queries() -> String {
+    r#"// ISLS v3.1 mock generated
+use sqlx::PgPool;
+use crate::{AppError, errors::*};
+use crate::models::user::{User, CreateUserPayload, UpdateUserPayload};
+use crate::pagination::{PaginationParams, PaginatedResponse};
+
+pub async fn get_user(pool: &PgPool, id: i64) -> Result<User, AppError> {
+    sqlx::query_as::<_, User>("SELECT id, email, password_hash, role, is_active, created_at FROM users WHERE id = $1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::NotFound(format!("User {} not found", id)))
+}
+
+pub async fn list_users(
+    pool: &PgPool,
+    params: &PaginationParams,
+) -> Result<PaginatedResponse<User>, AppError> {
+    let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users")
+        .fetch_one(pool)
+        .await?;
+    let total = row.0;
+
+    let items = sqlx::query_as::<_, User>("SELECT id, email, password_hash, role, is_active, created_at FROM users ORDER BY id DESC LIMIT $1 OFFSET $2")
+        .bind(params.limit())
+        .bind(params.offset())
+        .fetch_all(pool)
+        .await?;
+
+    Ok(PaginatedResponse::new(items, total, params))
+}
+
+pub async fn create_user(pool: &PgPool, payload: CreateUserPayload) -> Result<User, AppError> {
+    let hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST)
+        .map_err(|e| AppError::InternalError(e.to_string()))?;
+    sqlx::query_as::<_, User>("INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, password_hash, role, is_active, created_at")
+        .bind(&payload.email)
+        .bind(&hash)
+        .bind(payload.role.as_deref().unwrap_or("operator"))
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+}
+
+pub async fn update_user(
+    pool: &PgPool,
+    id: i64,
+    payload: UpdateUserPayload,
+) -> Result<User, AppError> {
+    let mut current = get_user(pool, id).await?;
+    if let Some(v) = payload.email { current.email = v; }
+    if let Some(v) = payload.role { current.role = v; }
+    if let Some(v) = payload.is_active { current.is_active = v; }
+    sqlx::query_as::<_, User>("UPDATE users SET (email, role, is_active) = ($2, $3, $4) WHERE id = $1 RETURNING id, email, password_hash, role, is_active, created_at")
+        .bind(id)
+        .bind(&current.email)
+        .bind(&current.role)
+        .bind(&current.is_active)
+        .fetch_one(pool)
+        .await
+        .map_err(AppError::from)
+}
+
+pub async fn delete_user(pool: &PgPool, id: i64) -> Result<(), AppError> {
+    let result = sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(id)
+        .execute(pool)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::NotFound(format!("User {} not found", id)));
+    }
+    Ok(())
+}
+"#
+    .into()
+}
+
 // ─── Database ─────────────────────────────────────────────────────────────────
 
 /// Generate the initial SQL migration for all entities.
@@ -427,127 +506,142 @@ ON CONFLICT (email) DO NOTHING;
     sql
 }
 
-/// Generate a `{entity}_queries.rs` file.
+/// Generate a `{entity}_queries.rs` file using runtime sqlx queries.
 pub fn mock_generate_queries(entity: &EntityDef) -> String {
     let n = &entity.name;
     let sn = &entity.snake_name;
 
-    // Build the column list (all fields)
+    // All columns for SELECT
     let cols: Vec<&str> = entity.fields.iter().map(|f| f.name.as_str()).collect();
     let col_list = cols.join(", ");
 
-    // User-input fields for INSERT
+    // User-input fields (not id/created_at/updated_at) for INSERT/UPDATE
     let ufields = user_fields(entity);
     let unames: Vec<&str> = ufields.iter().map(|f| f.name.as_str()).collect();
     let placeholders: Vec<String> = (1..=unames.len()).map(|i| format!("${}", i)).collect();
 
-    format!(
-        r#"// ISLS v3.1 mock generated
-use sqlx::PgPool;
-use crate::{{AppError, errors::*}};
-use crate::models::{sn}::{{{n}, Create{n}Payload, Update{n}Payload}};
-use crate::pagination::{{PaginationParams, PaginatedResponse}};
+    let mut code = String::new();
 
-pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
-    sqlx::query_as!(
-        {n},
-        "SELECT {col_list} FROM {sn}s WHERE id = $1",
-        id
-    )
-    .fetch_optional(pool)
-    .await?
-    .ok_or_else(|| AppError::NotFound(format!("{n} {{}} not found", id)))
-}}
+    // Header
+    code.push_str("// ISLS v3.1 mock generated\n");
+    code.push_str("use sqlx::PgPool;\n");
+    code.push_str(&format!("use crate::{{AppError, errors::*}};\n"));
+    code.push_str(&format!(
+        "use crate::models::{}::{{{}, Create{}Payload, Update{}Payload}};\n",
+        sn, n, n, n
+    ));
+    code.push_str("use crate::pagination::{PaginationParams, PaginatedResponse};\n\n");
 
-pub async fn list_{sn}s(
-    pool: &PgPool,
-    params: &PaginationParams,
-) -> Result<PaginatedResponse<{n}>, AppError> {{
-    let total: i64 = sqlx::query_scalar!("SELECT COUNT(*) FROM {sn}s")
-        .fetch_one(pool)
-        .await?
-        .unwrap_or(0);
+    // GET by id
+    code.push_str(&format!(
+        "pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{\n"
+    ));
+    code.push_str(&format!(
+        "    sqlx::query_as::<_, {n}>(\"SELECT {col_list} FROM {sn}s WHERE id = $1\")\n"
+    ));
+    code.push_str("        .bind(id)\n");
+    code.push_str("        .fetch_optional(pool)\n");
+    code.push_str("        .await?\n");
+    code.push_str(&format!(
+        "        .ok_or_else(|| AppError::NotFound(format!(\"{n} {{}} not found\", id)))\n"
+    ));
+    code.push_str("}\n\n");
 
-    let items = sqlx::query_as!(
-        {n},
-        "SELECT {col_list} FROM {sn}s ORDER BY id DESC LIMIT $1 OFFSET $2",
-        params.limit(),
-        params.offset()
-    )
-    .fetch_all(pool)
-    .await?;
+    // LIST with pagination
+    code.push_str(&format!(
+        "pub async fn list_{sn}s(\n    pool: &PgPool,\n    params: &PaginationParams,\n) -> Result<PaginatedResponse<{n}>, AppError> {{\n"
+    ));
+    code.push_str(&format!(
+        "    let row: (i64,) = sqlx::query_as(\"SELECT COUNT(*) FROM {sn}s\")\n"
+    ));
+    code.push_str("        .fetch_one(pool)\n");
+    code.push_str("        .await?;\n");
+    code.push_str("    let total = row.0;\n\n");
+    code.push_str(&format!(
+        "    let items = sqlx::query_as::<_, {n}>(\"SELECT {col_list} FROM {sn}s ORDER BY id DESC LIMIT $1 OFFSET $2\")\n"
+    ));
+    code.push_str("        .bind(params.limit())\n");
+    code.push_str("        .bind(params.offset())\n");
+    code.push_str("        .fetch_all(pool)\n");
+    code.push_str("        .await?;\n\n");
+    code.push_str("    Ok(PaginatedResponse::new(items, total, params))\n");
+    code.push_str("}\n\n");
 
-    Ok(PaginatedResponse::new(items, total, params))
-}}
-
-pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
-    sqlx::query_as!(
-        {n},
-        "INSERT INTO {sn}s ({uname_list}) VALUES ({ph_list}) RETURNING {col_list}",
-        {payload_fields}
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::from)
-}}
-
-pub async fn update_{sn}(
-    pool: &PgPool,
-    id: i64,
-    payload: Update{n}Payload,
-) -> Result<{n}, AppError> {{
-    // Fetch current, apply patches, update
-    let mut current = get_{sn}(pool, id).await?;
-    {update_fields}
-    sqlx::query_as!(
-        {n},
-        "UPDATE {sn}s SET ({set_cols}) = ({set_ph}) WHERE id = $1 RETURNING {col_list}",
-        id{current_vals}
-    )
-    .fetch_one(pool)
-    .await
-    .map_err(AppError::from)
-}}
-
-pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
-    let result = sqlx::query!("DELETE FROM {sn}s WHERE id = $1", id)
-        .execute(pool)
-        .await?;
-    if result.rows_affected() == 0 {{
-        return Err(AppError::NotFound(format!("{n} {{}} not found", id)));
-    }}
-    Ok(())
-}}
-"#,
-        n = n,
-        sn = sn,
-        col_list = col_list,
+    // CREATE
+    code.push_str(&format!(
+        "pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{\n"
+    ));
+    code.push_str(&format!(
+        "    sqlx::query_as::<_, {n}>(\"INSERT INTO {sn}s ({uname_list}) VALUES ({ph_list}) RETURNING {col_list}\")\n",
         uname_list = unames.join(", "),
         ph_list = placeholders.join(", "),
-        payload_fields = unames
-            .iter()
-            .map(|f| format!("payload.{}", f))
-            .collect::<Vec<_>>()
-            .join(",\n        "),
-        update_fields = ufields
-            .iter()
-            .map(|f| format!(
-                "    if let Some(v) = payload.{name} {{ current.{name} = v; }}",
+    ));
+    for f in &ufields {
+        code.push_str(&format!("        .bind(&payload.{})\n", f.name));
+    }
+    code.push_str("        .fetch_one(pool)\n");
+    code.push_str("        .await\n");
+    code.push_str("        .map_err(AppError::from)\n");
+    code.push_str("}\n\n");
+
+    // UPDATE — fetch current, apply patches, update
+    code.push_str(&format!(
+        "pub async fn update_{sn}(\n    pool: &PgPool,\n    id: i64,\n    payload: Update{n}Payload,\n) -> Result<{n}, AppError> {{\n"
+    ));
+    code.push_str(&format!(
+        "    let mut current = get_{sn}(pool, id).await?;\n"
+    ));
+    // Field-by-field merge with proper nullable handling
+    for f in &ufields {
+        if f.nullable {
+            // Struct field is Option<T>, payload field is Option<T>
+            code.push_str(&format!(
+                "    if let Some(v) = payload.{name} {{ current.{name} = Some(v); }}\n",
                 name = f.name
-            ))
-            .collect::<Vec<_>>()
-            .join("\n"),
-        set_cols = unames.join(", "),
-        set_ph = (2..=unames.len() + 1)
-            .map(|i| format!("${}", i))
-            .collect::<Vec<_>>()
-            .join(", "),
-        current_vals = ufields
-            .iter()
-            .map(|f| format!(", current.{}", f.name))
-            .collect::<Vec<_>>()
-            .join(""),
-    )
+            ));
+        } else {
+            // Struct field is T, payload field is Option<T>
+            code.push_str(&format!(
+                "    if let Some(v) = payload.{name} {{ current.{name} = v; }}\n",
+                name = f.name
+            ));
+        }
+    }
+    let set_cols = unames.join(", ");
+    let set_ph: Vec<String> = (2..=unames.len() + 1).map(|i| format!("${}", i)).collect();
+    code.push_str(&format!(
+        "    sqlx::query_as::<_, {n}>(\"UPDATE {sn}s SET ({set_cols}) = ({set_ph}) WHERE id = $1 RETURNING {col_list}\")\n",
+        set_cols = set_cols,
+        set_ph = set_ph.join(", "),
+    ));
+    code.push_str("        .bind(id)\n");
+    for f in &ufields {
+        code.push_str(&format!("        .bind(&current.{})\n", f.name));
+    }
+    code.push_str("        .fetch_one(pool)\n");
+    code.push_str("        .await\n");
+    code.push_str("        .map_err(AppError::from)\n");
+    code.push_str("}\n\n");
+
+    // DELETE
+    code.push_str(&format!(
+        "pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{\n"
+    ));
+    code.push_str(&format!(
+        "    let result = sqlx::query(\"DELETE FROM {sn}s WHERE id = $1\")\n"
+    ));
+    code.push_str("        .bind(id)\n");
+    code.push_str("        .execute(pool)\n");
+    code.push_str("        .await?;\n");
+    code.push_str("    if result.rows_affected() == 0 {\n");
+    code.push_str(&format!(
+        "        return Err(AppError::NotFound(format!(\"{n} {{}} not found\", id)));\n"
+    ));
+    code.push_str("    }\n");
+    code.push_str("    Ok(())\n");
+    code.push_str("}\n");
+
+    code
 }
 
 /// Generate a `services/{entity}.rs` file.
@@ -790,14 +884,13 @@ pub async fn register(
     let hash = hash(&payload.password, DEFAULT_COST)
         .map_err(|e| AppError::InternalError(e.to_string()))?;
 
-    let user = sqlx::query_as!(
-        User,
+    let user = sqlx::query_as::<_, User>(
         "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3)
          RETURNING id, email, password_hash, role, is_active, created_at",
-        payload.email,
-        hash,
-        payload.role.as_deref().unwrap_or("operator")
     )
+    .bind(&payload.email)
+    .bind(&hash)
+    .bind(payload.role.as_deref().unwrap_or("operator"))
     .fetch_one(pool.get_ref())
     .await
     .map_err(|e| match e {
@@ -815,11 +908,10 @@ pub async fn login(
     body: web::Json<LoginRequest>,
 ) -> Result<impl Responder, AppError> {
     let req = body.into_inner();
-    let user = sqlx::query_as!(
-        User,
+    let user = sqlx::query_as::<_, User>(
         "SELECT id, email, password_hash, role, is_active, created_at FROM users WHERE email = $1",
-        req.email
     )
+    .bind(&req.email)
     .fetch_optional(pool.get_ref())
     .await?
     .ok_or(AppError::Unauthorized)?;
