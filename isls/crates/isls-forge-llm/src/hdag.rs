@@ -217,13 +217,24 @@ impl CodegenHdag {
         let mut entity_query_indices: Vec<(String, usize)> = Vec::new();
         let all_entities: Vec<&EntityDef> = spec.entities.iter().collect();
         for entity in &all_entities {
+            let purpose = if entity.name == "User" {
+                format!(
+                    "CRUD query fns for {}: get_{s}, list_{s}s, create_{s}, update_{s}, delete_{s}, \
+                     AND ALSO get_user_by_email (needed by auth_routes). \
+                     Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
+                    entity.name, s = entity.snake_name
+                )
+            } else {
+                format!(
+                    "CRUD query fns for {}: get_{s}, list_{s}s, create_{s}, update_{s}, delete_{s}. \
+                     Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
+                    entity.name, s = entity.snake_name
+                )
+            };
             let idx = add_node(
                 &format!("backend/src/database/{}_queries.rs", entity.snake_name),
                 NodeType::Llm, 4, Some(entity.name.clone()), true,
-                &format!(
-                    "CRUD query fns for {}: get_{s}, list_{s}s, create_{s}, update_{s}, delete_{s}. Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
-                    entity.name, s = entity.snake_name
-                ),
+                &purpose,
             );
             // errors → queries
             edges.push(HdagEdge { from: errors_idx, to: idx, provides: provided::provides_apperror() });
