@@ -208,12 +208,13 @@ pub fn provides_query_fns(entity: &EntityDef) -> Vec<ProvidedSymbol> {
         ProvidedSymbol {
             import_path: format!("crate::database::{}_queries::create_{}", sn, sn),
             kind: SymbolKind::Function,
-            signature: format!("pub async fn create_{sn}(pool: &sqlx::PgPool, payload: &Create{pn}Payload) -> Result<{pn}, AppError>;"),
+            // Owned payload — no & prefix — callers move the payload in
+            signature: format!("pub async fn create_{sn}(pool: &sqlx::PgPool, payload: Create{pn}Payload) -> Result<{pn}, AppError>;"),
         },
         ProvidedSymbol {
             import_path: format!("crate::database::{}_queries::update_{}", sn, sn),
             kind: SymbolKind::Function,
-            signature: format!("pub async fn update_{sn}(pool: &sqlx::PgPool, id: i64, payload: &Update{pn}Payload) -> Result<{pn}, AppError>;"),
+            signature: format!("pub async fn update_{sn}(pool: &sqlx::PgPool, id: i64, payload: Update{pn}Payload) -> Result<{pn}, AppError>;"),
         },
         ProvidedSymbol {
             import_path: format!("crate::database::{}_queries::delete_{}", sn, sn),
@@ -234,7 +235,7 @@ pub fn provides_query_fns_user() -> Vec<ProvidedSymbol> {
         ProvidedSymbol {
             import_path: "crate::database::user_queries::create_user".into(),
             kind: SymbolKind::Function,
-            signature: "pub async fn create_user(pool: &sqlx::PgPool, payload: &CreateUserPayload) -> Result<User, AppError>;".into(),
+            signature: "pub async fn create_user(pool: &sqlx::PgPool, payload: CreateUserPayload) -> Result<User, AppError>;".into(),
         },
         ProvidedSymbol {
             import_path: "crate::database::user_queries::get_user".into(),
@@ -262,12 +263,13 @@ pub fn provides_service_fns(entity: &EntityDef) -> Vec<ProvidedSymbol> {
         ProvidedSymbol {
             import_path: format!("crate::services::{}::create_{}", sn, sn),
             kind: SymbolKind::Function,
-            signature: format!("pub async fn create_{sn}(pool: &sqlx::PgPool, payload: &Create{pn}Payload) -> Result<{pn}, AppError>;"),
+            // Owned payload — callers move payload in (e.g. payload.into_inner() from web::Json)
+            signature: format!("pub async fn create_{sn}(pool: &sqlx::PgPool, payload: Create{pn}Payload) -> Result<{pn}, AppError>;"),
         },
         ProvidedSymbol {
             import_path: format!("crate::services::{}::update_{}", sn, sn),
             kind: SymbolKind::Function,
-            signature: format!("pub async fn update_{sn}(pool: &sqlx::PgPool, id: i64, payload: &Update{pn}Payload) -> Result<{pn}, AppError>;"),
+            signature: format!("pub async fn update_{sn}(pool: &sqlx::PgPool, id: i64, payload: Update{pn}Payload) -> Result<{pn}, AppError>;"),
         },
         ProvidedSymbol {
             import_path: format!("crate::services::{}::delete_{}", sn, sn),

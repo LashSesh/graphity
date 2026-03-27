@@ -581,7 +581,11 @@ fn build_hdag_prompt(
         p.push_str("- You MUST import: use tracing::{info, warn, error};  // if you use logging\n");
         p.push_str("- Service functions take `pool: &PgPool` as first parameter\n");
         p.push_str("- Service functions return `Result<T, AppError>`\n");
-        p.push_str("- Call query functions as: {entity}_queries::function_name(pool, ...).await\n");
+        p.push_str("- Functions take OWNED payloads (not references):\n");
+        p.push_str("    pub async fn create_product(pool: &PgPool, payload: CreateProductPayload) -> Result<Product, AppError>\n");
+        p.push_str("    NOT: create_product(pool: &PgPool, payload: &CreateProductPayload)\n");
+        p.push_str("- Pass payload directly to query (already owned, no clone needed):\n");
+        p.push_str("    {entity}_queries::create_{entity}(pool, payload).await\n");
     }
 
     if node.path.contains("/models/") {
@@ -589,7 +593,7 @@ fn build_hdag_prompt(
         p.push_str("- You MUST import: use chrono::{DateTime, Utc};  // for timestamp fields\n");
         p.push_str("- You MUST import: use serde::{Serialize, Deserialize};\n");
         p.push_str("- You MUST import: use sqlx::FromRow;\n");
-        p.push_str("- The main struct derives: #[derive(Debug, Serialize, Deserialize, FromRow)]\n");
+        p.push_str("- The main struct derives: #[derive(Debug, Serialize, Deserialize, FromRow, Clone)]\n");
         p.push_str("- Timestamp fields: pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc>\n");
     }
 
@@ -598,7 +602,18 @@ fn build_hdag_prompt(
         p.push_str("- Do NOT use actix_web types (no web::Data, no web::Path, no HttpResponse)\n");
         p.push_str("- Function parameters use raw types: pool: &PgPool, id: i64, params: &PaginationParams\n");
         p.push_str("- NOT pool: web::Data<PgPool> — that is for API routes, not queries\n");
+        p.push_str("- You MUST import: use sqlx::Row;  // required for .get() on raw query results\n");
+        p.push_str("- Functions take OWNED payloads (not references):\n");
+        p.push_str("    pub async fn create_product(pool: &PgPool, payload: CreateProductPayload) -> Result<Product, AppError>\n");
+        p.push_str("    NOT: create_product(pool: &PgPool, payload: &CreateProductPayload)\n");
     }
+
+    p.push_str("\n## PASSWORD HASHING:\n");
+    p.push_str("- Use bcrypt ONLY. The bcrypt crate is in Cargo.toml.\n");
+    p.push_str("    use bcrypt::{hash, verify};\n");
+    p.push_str("    let hashed = hash(&password, 12).map_err(|e| AppError::InternalError(e.to_string()))?;\n");
+    p.push_str("    let valid = verify(&password, &stored_hash).map_err(|e| AppError::InternalError(e.to_string()))?;\n");
+    p.push_str("- NEVER use argon2, scrypt, or any other hashing library.\n");
 
     p
 }

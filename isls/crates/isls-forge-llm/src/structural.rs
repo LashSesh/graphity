@@ -18,6 +18,7 @@
 //! - Frontend: `index.html`, `style.css`, `src/api/client.js`, `src/pages/{entity}.js`
 
 use crate::{AppSpec, EntityDef};
+use isls_hypercube::domain::FieldDef;
 
 // ─── Layer 0 structural generators ───────────────────────────────────────────
 
@@ -492,6 +493,139 @@ async fn test_{first_entity}_crud() {{
     )
 }
 
+// ─── Layer 3 structural generators (entity models) ───────────────────────────
+
+/// Generate `backend/src/models/user.rs` deterministically.
+///
+/// User is a special entity — password_hash, role, is_active are mandatory auth
+/// fields that must match the hardcoded `provides_user_model_types()` signatures.
+pub fn generate_user_model_rs() -> String {
+    r#"use serde::{Serialize, Deserialize};
+use sqlx::FromRow;
+use chrono::{DateTime, Utc};
+
+#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]
+pub struct User {
+    pub id: i64,
+    pub email: String,
+    pub password_hash: String,
+    pub name: String,
+    pub role: String,
+    pub is_active: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct CreateUserPayload {
+    pub email: String,
+    pub password: String,
+    pub name: String,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct UpdateUserPayload {
+    pub email: Option<String>,
+    pub name: Option<String>,
+    pub role: Option<String>,
+    pub is_active: Option<bool>,
+}
+"#
+    .to_string()
+}
+
+/// Generate `backend/src/models/{entity}.rs` deterministically from EntityDef.
+///
+/// Produces the main struct, `Create{Entity}Payload`, and `Update{Entity}Payload`.
+/// All derives are fixed; field types come directly from EntityDef.fields so the
+/// output is guaranteed to match the `provides_model_types()` signatures.
+pub fn generate_model_rs(entity: &EntityDef) -> String {
+    let name = &entity.name;
+    let mut s = String::new();
+
+    s.push_str("use serde::{Serialize, Deserialize};\n");
+    s.push_str("use sqlx::FromRow;\n");
+    s.push_str("use chrono::{DateTime, Utc};\n\n");
+
+    // ── Main struct ───────────────────────────────────────────────────────────
+    s.push_str(&format!("#[derive(Debug, Serialize, Deserialize, FromRow, Clone)]\n"));
+    s.push_str(&format!("pub struct {} {{\n", name));
+    s.push_str("    pub id: i64,\n");
+    for field in entity.fields.iter().filter(|f| {
+        f.name != "id" && f.name != "created_at" && f.name != "updated_at"
+    }) {
+        s.push_str(&format!("    pub {}: {},\n", field.name, model_field_type(field)));
+    }
+    s.push_str("    pub created_at: DateTime<Utc>,\n");
+    s.push_str("    pub updated_at: DateTime<Utc>,\n");
+    s.push_str("}\n\n");
+
+    // ── Create payload ────────────────────────────────────────────────────────
+    s.push_str(&format!("#[derive(Debug, Deserialize, Clone)]\n"));
+    s.push_str(&format!("pub struct Create{}Payload {{\n", name));
+    for field in entity.fields.iter().filter(|f| {
+        f.name != "id" && f.name != "created_at" && f.name != "updated_at"
+    }) {
+        s.push_str(&format!("    pub {}: {},\n", field.name, model_field_type(field)));
+    }
+    s.push_str("}\n\n");
+
+    // ── Update payload — all fields are Option<T> for partial updates ─────────
+    s.push_str(&format!("#[derive(Debug, Deserialize, Clone)]\n"));
+    s.push_str(&format!("pub struct Update{}Payload {{\n", name));
+    for field in entity.fields.iter().filter(|f| {
+        f.name != "id" && f.name != "created_at" && f.name != "updated_at"
+    }) {
+        s.push_str(&format!("    pub {}: Option<{}>,\n", field.name, model_field_base_type(field)));
+    }
+    s.push_str("}\n");
+
+    s
+}
+
+/// Compute the Rust type for a field, applying `Option<>` wrapping if nullable.
+fn model_field_type(field: &FieldDef) -> String {
+    let base = model_field_base_type(field);
+    if field.nullable {
+        format!("Option<{}>", base)
+    } else {
+        base
+    }
+}
+
+/// Base Rust type for a field — never wrapped in Option.
+///
+/// Normalises DateTime variants to `DateTime<Utc>` (compatible with the
+/// `use chrono::{DateTime, Utc};` import in the generated file).
+fn model_field_base_type(field: &FieldDef) -> String {
+    if !field.rust_type.is_empty() {
+        return match field.rust_type.as_str() {
+            "DateTime<Utc>"
+            | "chrono::DateTime<Utc>"
+            | "chrono::DateTime<chrono::Utc>" => "DateTime<Utc>".to_string(),
+            t => t.to_string(),
+        };
+    }
+    // Fallback: infer from sql_type
+    let sql = field.sql_type.to_uppercase();
+    if sql.contains("BIGSERIAL") || sql.contains("BIGINT") {
+        "i64".to_string()
+    } else if sql.contains("SERIAL") || sql.contains("INTEGER") || sql.contains("INT") {
+        "i32".to_string()
+    } else if sql.contains("BOOL") {
+        "bool".to_string()
+    } else if sql.contains("FLOAT") || sql.contains("REAL") || sql.contains("DOUBLE")
+        || sql.contains("DECIMAL") || sql.contains("NUMERIC")
+    {
+        "f64".to_string()
+    } else if sql.contains("TIMESTAMPTZ") || sql.contains("TIMESTAMP") {
+        "DateTime<Utc>".to_string()
+    } else {
+        "String".to_string()
+    }
+}
+
 // ─── Layer 1 structural generators ───────────────────────────────────────────
 
 /// Generate `backend/src/errors.rs` deterministically.
@@ -749,6 +883,17 @@ pub async fn create_pool() -> Result<PgPool, sqlx::Error> {
 pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     if path.ends_with("main.rs") {
         return generate_main_rs(spec);
+    }
+    // Layer 3: entity model files (deterministic from EntityDef)
+    if path.contains("src/models/") && path.ends_with(".rs") && !path.ends_with("mod.rs") {
+        if path.ends_with("user.rs") {
+            return generate_user_model_rs();
+        }
+        for entity in spec.entities.iter().filter(|e| e.name != "User") {
+            if path.ends_with(&format!("{}.rs", entity.snake_name)) {
+                return generate_model_rs(entity);
+            }
+        }
     }
     // Layer 1: foundation infrastructure (deterministic — must match ProvidedSymbol sigs)
     if path.ends_with("errors.rs") {
