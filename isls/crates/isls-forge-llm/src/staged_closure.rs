@@ -235,17 +235,23 @@ impl StagedClosure {
             eprintln!("[HDAG S6] Coagula: cycle {}/3", cycle);
             tracing::warn!(cycle, "S6 Coagula: cycle {}/3", cycle);
 
-            let errors_by_file = parse_errors_by_file(&current_errors);
-            if errors_by_file.is_empty() {
-                tracing::error!(
+            let parsed = parse_errors_by_file(&current_errors);
+            let errors_by_file = if !parsed.is_empty() {
+                parsed
+            } else {
+                tracing::warn!(
                     cycle,
-                    "S6 Coagula: could not identify error files from cargo output"
+                    "S6 Coagula: could not parse errors by file — using full stderr as fallback"
                 );
-                return Err(ForgeLlmError::CompileCheck(format!(
-                    "S6 Coagula cycle {}: could not parse error files.\nOutput:\n{}",
-                    cycle, current_errors
-                )));
-            }
+                // Graceful degradation: log the raw output and skip per-file regeneration.
+                // The cycle will re-run cargo check, which may surface cleaner output next time.
+                let mut fallback = HashMap::new();
+                fallback.insert(
+                    "unknown".to_string(),
+                    vec![CompilerError { line: 0, message: current_errors.clone() }],
+                );
+                fallback
+            };
 
             // Read module map from generated files on disk
             let module_map = self.read_module_map();
@@ -511,14 +517,19 @@ fn build_hdag_prompt(
     }
 
     // Always-available crate imports
-    p.push_str("## CRATE IMPORTS (always available):\n");
-    p.push_str("use actix_web::{web, HttpResponse, Responder};\n");
+    p.push_str("## CRATE IMPORTS (always available — include what you need):\n");
+    p.push_str("use actix_web::{web, HttpRequest, HttpResponse, Responder};\n");
+    p.push_str("use actix_web::FromRequest;\n");
     p.push_str("use sqlx::PgPool;\n");
+    p.push_str("use sqlx::FromRow;\n");
     p.push_str("use sqlx::Row;  // for .get() on query results\n");
     p.push_str("use serde::{Serialize, Deserialize};\n");
-    p.push_str("use sqlx::FromRow;\n");
+    p.push_str("use serde_json::json;\n");
     p.push_str("use chrono::{DateTime, Utc};\n");
     p.push_str("use tracing::{info, warn, error};\n");
+    p.push_str("use bcrypt::{hash, verify, DEFAULT_COST};\n");
+    p.push_str("use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};\n");
+    p.push_str("use std::env;\n");
     p.push('\n');
 
     // Full type signatures from predecessor symbols
@@ -553,6 +564,32 @@ fn build_hdag_prompt(
     p.push_str("- No new external crates beyond those in Cargo.toml\n");
     p.push_str("- bcrypt: use DEFAULT_COST for password hashing\n");
     p.push_str("- JWT: use jsonwebtoken crate, secret from env JWT_SECRET\n");
+
+    // Role-specific rules based on file path
+    if node.path.contains("/services/") {
+        p.push_str("\n## SERVICE FILE RULES:\n");
+        p.push_str("- You MUST import: use sqlx::PgPool;\n");
+        p.push_str("- You MUST import: use tracing::{info, warn, error};  // if you use logging\n");
+        p.push_str("- Service functions take `pool: &PgPool` as first parameter\n");
+        p.push_str("- Service functions return `Result<T, AppError>`\n");
+        p.push_str("- Call query functions as: {entity}_queries::function_name(pool, ...).await\n");
+    }
+
+    if node.path.contains("/models/") {
+        p.push_str("\n## MODEL FILE RULES:\n");
+        p.push_str("- You MUST import: use chrono::{DateTime, Utc};  // for timestamp fields\n");
+        p.push_str("- You MUST import: use serde::{Serialize, Deserialize};\n");
+        p.push_str("- You MUST import: use sqlx::FromRow;\n");
+        p.push_str("- The main struct derives: #[derive(Debug, Serialize, Deserialize, FromRow)]\n");
+        p.push_str("- Timestamp fields: pub created_at: DateTime<Utc>, pub updated_at: DateTime<Utc>\n");
+    }
+
+    if node.path.contains("_queries.rs") {
+        p.push_str("\n## QUERY FILE RULES:\n");
+        p.push_str("- Do NOT use actix_web types (no web::Data, no web::Path, no HttpResponse)\n");
+        p.push_str("- Function parameters use raw types: pool: &PgPool, id: i64, params: &PaginationParams\n");
+        p.push_str("- NOT pool: web::Data<PgPool> — that is for API routes, not queries\n");
+    }
 
     p
 }
@@ -628,18 +665,20 @@ fn parse_errors_by_file(errors: &str) -> HashMap<String, Vec<CompilerError>> {
     let mut map: HashMap<String, Vec<CompilerError>> = HashMap::new();
 
     // Short format: "src/path.rs:line:col: error[E...]: message"
-    let re_short = Regex::new(r"^(src/[^\s:]+\.rs):(\d+):\d+:\s*error(?:\[E\d+\])?:\s*(.+)")
+    // Handles both forward slashes (Linux/Mac) and backslashes (Windows).
+    let re_short = Regex::new(r"^(src[/\\][^\s:]+\.rs):(\d+):\d+:\s*error(?:\[E\d+\])?:\s*(.+)")
         .expect("regex compiles");
-    // Standard format: " --> src/path.rs:line:col"
+    // Standard format: " --> src/path.rs:line:col" (also handles backslashes)
     let re_loc =
-        Regex::new(r"-->\s+(src/[^\s:]+\.rs):(\d+):\d+").expect("regex compiles");
+        Regex::new(r"-->\s+(src[/\\][^\s:]+\.rs):(\d+):\d+").expect("regex compiles");
     let re_err =
         Regex::new(r"^error(?:\[E\d+\])?:\s*(.+)").expect("regex compiles");
 
     // First pass: short format
     for line in errors.lines() {
         if let Some(caps) = re_short.captures(line) {
-            let file = caps[1].to_string();
+            // Normalize backslashes to forward slashes for consistent map keys
+            let file = caps[1].replace('\\', "/");
             let line_num: usize = caps[2].parse().unwrap_or(0);
             let message = caps[3].to_string();
             map.entry(file)
@@ -656,7 +695,8 @@ fn parse_errors_by_file(errors: &str) -> HashMap<String, Vec<CompilerError>> {
         }
         if let Some(caps) = re_loc.captures(line) {
             if let Some(ref err_msg) = current_error {
-                let file = caps[1].to_string();
+                // Normalize backslashes to forward slashes
+                let file = caps[1].replace('\\', "/");
                 let line_num: usize = caps[2].parse().unwrap_or(0);
                 let already = map.get(&file).map_or(false, |errs| {
                     errs.iter().any(|e| e.line == line_num && e.message == *err_msg)
