@@ -19,7 +19,7 @@ use thiserror::Error;
 
 use crate::{
     AppSpec, EntityDef, FileSpec, ForgePlan, ForgeStats, GeneratedFile, GenerationMethod,
-    mock, order, prompt, static_files,
+    mock, order, prompt, staged_closure, static_files,
 };
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -88,57 +88,60 @@ impl LlmForge {
 
     /// Generate the entire application, file by file, in dependency order.
     ///
+    /// In **mock mode**: uses the existing layer-by-layer mock generators
+    /// (unchanged from v3.1).
+    ///
+    /// In **LLM mode**: delegates to [`staged_closure::StagedClosure`] which
+    /// implements the PCR S0–S7 HDAG pipeline (ISLS v3.4).
+    ///
     /// Returns the list of all generated files on success.
     pub fn generate(&mut self) -> Result<Vec<GeneratedFile>> {
         let start = Instant::now();
         tracing::info!(
             app = %self.plan.spec.app_name,
             mock = self.mock_mode,
-            "forge v3.1 generation starting"
+            "forge v3.4 generation starting"
         );
 
-        // Layer 0: static files (no LLM, no TypeContext update)
-        self.generate_static_files()?;
+        if self.mock_mode {
+            // ── Mock mode: unchanged layer-by-layer generation ────────────────
+            // Layer 0: static files (no LLM, no TypeContext update)
+            self.generate_static_files()?;
 
-        // Layers 1-9: LLM or mock generation
-        let file_specs = order::generation_order(&self.plan);
-        let total = file_specs.len();
+            // Layers 1-9: mock generation
+            let file_specs = order::generation_order(&self.plan);
+            let total = file_specs.len();
 
-        for (i, spec) in file_specs.iter().enumerate() {
-            tracing::info!(
-                layer = spec.layer,
-                path = %spec.path,
-                progress = format!("{}/{}", i + 1, total),
-                "generating file"
-            );
+            for (i, spec) in file_specs.iter().enumerate() {
+                tracing::info!(
+                    layer = spec.layer,
+                    path = %spec.path,
+                    progress = format!("{}/{}", i + 1, total),
+                    "mock: generating file"
+                );
 
-            let generated = if self.mock_mode {
-                self.generate_mock(&spec)?
-            } else if is_structural_file(&spec.path) {
-                // Structural files (mod.rs, main.rs) are deterministic —
-                // generate statically even in LLM mode to eliminate an
-                // entire class of module-visibility and naming errors.
-                self.generate_static_structural(&spec)?
-            } else {
-                self.generate_llm(&spec)?
-            };
+                let generated = self.generate_mock(&spec)?;
 
-            // Update TypeContext after each Rust file
-            if spec.is_rust {
-                self.type_context.add_file(&spec.path, &generated.content);
+                // Update TypeContext after each Rust file
+                if spec.is_rust {
+                    self.type_context.add_file(&spec.path, &generated.content);
+                }
+
+                self.stats.files_generated += 1;
+                self.stats.total_tokens += generated.tokens_used;
+                self.generated_files.push(generated);
             }
-
-            self.stats.files_generated += 1;
-            self.stats.total_tokens += generated.tokens_used;
-            self.generated_files.push(generated);
-        }
-
-        // Final compile check (LLM mode only).
-        // Mock mode skips cargo check — mock generators are deterministic and
-        // validated by unit tests.  LLM mode runs a single cargo check after
-        // ALL files exist so the full module tree is available.
-        if !self.mock_mode {
-            self.final_check_and_fix(&file_specs)?;
+            // Mock mode skips cargo check — mock generators are deterministic
+            // and validated by unit tests.
+        } else {
+            // ── LLM mode: HDAG StagedClosure pipeline (v3.4) ─────────────────
+            let mut closure = staged_closure::StagedClosure::new(
+                self.plan.clone(),
+                self.output_dir.clone(),
+            );
+            let files = closure.execute(self.oracle.as_ref())?;
+            self.stats = closure.stats;
+            self.generated_files = files;
         }
 
         self.stats.total_time_secs = start.elapsed().as_secs_f64();
@@ -146,7 +149,7 @@ impl LlmForge {
             files = self.stats.files_generated,
             tokens = self.stats.total_tokens,
             secs = self.stats.total_time_secs,
-            "forge v3.1 generation complete"
+            "forge v3.4 generation complete"
         );
 
         Ok(self.generated_files.clone())
@@ -177,6 +180,7 @@ impl LlmForge {
     // ── LLM generation ───────────────────────────────────────────────────────
 
     /// Generate a file using the LLM oracle (no per-file cargo check).
+    #[allow(dead_code)]
     ///
     /// Compile checking happens after ALL files are generated via
     /// [`final_check_and_fix`], because per-file checks fail on early files
@@ -228,6 +232,7 @@ impl LlmForge {
     // ── Static structural generation ──────────────────────────────────────────
 
     /// Generate a structural file (mod.rs, main.rs) statically — no LLM call.
+    #[allow(dead_code)]
     fn generate_static_structural(&mut self, spec: &FileSpec) -> Result<GeneratedFile> {
         let content = generate_structural(spec, &self.plan.spec);
         self.write_file(&spec.path, &content)?;
@@ -295,6 +300,7 @@ impl LlmForge {
     /// - Per-file compiler errors (not the entire cargo output)
     /// - The real module map extracted from generated mod.rs files
     /// - The full type context
+    #[allow(dead_code)]
     fn final_check_and_fix(&mut self, file_specs: &[FileSpec]) -> Result<()> {
         for round in 1u32..=3 {
             self.stats.compile_checks += 1;
@@ -417,6 +423,7 @@ impl LlmForge {
     /// After all files are generated, the mod.rs and main.rs files exist on
     /// disk with the real module declarations. This reads them to build a
     /// ground-truth module map for the fix prompt.
+    #[allow(dead_code)]
     fn read_module_map(&self) -> String {
         let backend_src = self.output_dir.join("backend/src");
         let mut map = String::new();
