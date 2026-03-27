@@ -492,6 +492,254 @@ async fn test_{first_entity}_crud() {{
     )
 }
 
+// ─── Layer 1 structural generators ───────────────────────────────────────────
+
+/// Generate `backend/src/errors.rs` deterministically.
+///
+/// The variants MUST match the ProvidedSymbol signatures in `provided.rs` exactly.
+/// Making this structural eliminates the #1 source of type mismatch errors.
+pub fn generate_errors_rs() -> String {
+    r#"use actix_web::{HttpResponse, ResponseError};
+use serde::Serialize;
+use std::fmt;
+
+#[derive(Debug, Serialize)]
+pub enum AppError {
+    NotFound(String),
+    InternalError(String),
+    ValidationError(Vec<String>),
+    Unauthorized,
+    Forbidden,
+    BadRequest(String),
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
+            AppError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            AppError::ValidationError(msgs) => write!(f, "Validation: {}", msgs.join(", ")),
+            AppError::Unauthorized => write!(f, "Unauthorized"),
+            AppError::Forbidden => write!(f, "Forbidden"),
+            AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+        }
+    }
+}
+
+impl ResponseError for AppError {
+    fn error_response(&self) -> HttpResponse {
+        match self {
+            AppError::NotFound(msg) => {
+                HttpResponse::NotFound().json(serde_json::json!({"error": msg}))
+            }
+            AppError::InternalError(msg) => {
+                HttpResponse::InternalServerError().json(serde_json::json!({"error": msg}))
+            }
+            AppError::ValidationError(msgs) => {
+                HttpResponse::BadRequest().json(serde_json::json!({"errors": msgs}))
+            }
+            AppError::Unauthorized => {
+                HttpResponse::Unauthorized().json(serde_json::json!({"error": "Unauthorized"}))
+            }
+            AppError::Forbidden => {
+                HttpResponse::Forbidden().json(serde_json::json!({"error": "Forbidden"}))
+            }
+            AppError::BadRequest(msg) => {
+                HttpResponse::BadRequest().json(serde_json::json!({"error": msg}))
+            }
+        }
+    }
+}
+"#
+    .to_string()
+}
+
+/// Generate `backend/src/pagination.rs` deterministically.
+///
+/// Method names match the ProvidedSymbol signatures exactly.
+pub fn generate_pagination_rs() -> String {
+    r#"use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PaginationParams {
+    pub page: Option<i64>,
+    pub per_page: Option<i64>,
+}
+
+impl PaginationParams {
+    pub fn page(&self) -> i64 {
+        self.page.unwrap_or(1).max(1)
+    }
+
+    pub fn per_page(&self) -> i64 {
+        self.per_page.unwrap_or(20).clamp(1, 100)
+    }
+
+    pub fn offset(&self) -> i64 {
+        (self.page() - 1) * self.per_page()
+    }
+
+    /// Alias for per_page() — used as SQL LIMIT.
+    pub fn limit(&self) -> i64 {
+        self.per_page()
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct PaginatedResponse<T: Serialize> {
+    pub items: Vec<T>,
+    pub total: i64,
+    pub page: i64,
+    pub per_page: i64,
+}
+"#
+    .to_string()
+}
+
+/// Generate `backend/src/auth.rs` deterministically.
+///
+/// Exports: AuthUser (FromRequest extractor), Claims, encode_jwt, require_role.
+/// All downstream consumers (auth_routes) receive these symbols via HDAG edges.
+pub fn generate_auth_rs() -> String {
+    r#"use actix_web::{HttpRequest, FromRequest};
+use actix_web::dev::Payload;
+use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
+use serde::{Serialize, Deserialize};
+use std::future::{Ready, ready};
+
+use crate::errors::AppError;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthUser {
+    pub user_id: i64,
+    pub email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Claims {
+    pub sub: i64,
+    pub email: String,
+    pub role: String,
+    pub exp: usize,
+}
+
+impl FromRequest for AuthUser {
+    type Error = actix_web::Error;
+    type Future = Ready<Result<Self, Self::Error>>;
+
+    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        let jwt_secret = std::env::var("JWT_SECRET")
+            .unwrap_or_else(|_| "dev-secret-change-in-production".to_string());
+
+        let auth_header = req
+            .headers()
+            .get("Authorization")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.strip_prefix("Bearer "));
+
+        match auth_header {
+            Some(token) => {
+                match decode::<Claims>(
+                    token,
+                    &DecodingKey::from_secret(jwt_secret.as_bytes()),
+                    &Validation::default(),
+                ) {
+                    Ok(data) => ready(Ok(AuthUser {
+                        user_id: data.claims.sub,
+                        email: data.claims.email,
+                        role: data.claims.role,
+                    })),
+                    Err(_) => ready(Err(AppError::Unauthorized.into())),
+                }
+            }
+            None => ready(Err(AppError::Unauthorized.into())),
+        }
+    }
+}
+
+pub fn encode_jwt(user_id: i64, email: &str, role: &str) -> Result<String, AppError> {
+    let jwt_secret = std::env::var("JWT_SECRET")
+        .unwrap_or_else(|_| "dev-secret-change-in-production".to_string());
+
+    let expiration = chrono::Utc::now()
+        .checked_add_signed(chrono::Duration::hours(24))
+        .expect("valid timestamp")
+        .timestamp() as usize;
+
+    let claims = Claims {
+        sub: user_id,
+        email: email.to_string(),
+        role: role.to_string(),
+        exp: expiration,
+    };
+
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(jwt_secret.as_bytes()),
+    )
+    .map_err(|e| AppError::InternalError(e.to_string()))
+}
+
+pub fn require_role(user: &AuthUser, required: &str) -> Result<(), AppError> {
+    if user.role == required || user.role == "admin" {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+"#
+    .to_string()
+}
+
+/// Generate `backend/src/config.rs` deterministically.
+pub fn generate_config_rs() -> String {
+    r#"use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AppConfig {
+    pub database_url: String,
+    pub jwt_secret: String,
+    pub port: u16,
+}
+
+impl AppConfig {
+    pub fn from_env() -> Self {
+        Self {
+            database_url: std::env::var("DATABASE_URL")
+                .unwrap_or_else(|_| "postgres://postgres:postgres@localhost/app".to_string()),
+            jwt_secret: std::env::var("JWT_SECRET")
+                .unwrap_or_else(|_| "dev-secret-change-in-production".to_string()),
+            port: std::env::var("PORT")
+                .unwrap_or_else(|_| "8080".to_string())
+                .parse()
+                .unwrap_or(8080),
+        }
+    }
+}
+"#
+    .to_string()
+}
+
+/// Generate `backend/src/database/pool.rs` deterministically.
+pub fn generate_pool_rs() -> String {
+    r#"use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
+
+pub async fn create_pool() -> Result<PgPool, sqlx::Error> {
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost/app".to_string());
+
+    PgPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+}
+"#
+    .to_string()
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /// Dispatch structural generation by file path.
@@ -501,6 +749,22 @@ async fn test_{first_entity}_crud() {{
 pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     if path.ends_with("main.rs") {
         return generate_main_rs(spec);
+    }
+    // Layer 1: foundation infrastructure (deterministic — must match ProvidedSymbol sigs)
+    if path.ends_with("errors.rs") {
+        return generate_errors_rs();
+    }
+    if path.ends_with("pagination.rs") {
+        return generate_pagination_rs();
+    }
+    if path.ends_with("auth.rs") {
+        return generate_auth_rs();
+    }
+    if path.ends_with("config.rs") {
+        return generate_config_rs();
+    }
+    if path.contains("database/pool.rs") {
+        return generate_pool_rs();
     }
     if path.contains("models/mod.rs") {
         return generate_models_mod(spec);
