@@ -606,6 +606,37 @@ fn build_hdag_prompt(
         p.push_str("- Functions take OWNED payloads (not references):\n");
         p.push_str("    pub async fn create_product(pool: &PgPool, payload: CreateProductPayload) -> Result<Product, AppError>\n");
         p.push_str("    NOT: create_product(pool: &PgPool, payload: &CreateProductPayload)\n");
+        p.push_str("- When updating, access payload fields with the correct Option<T> types:\n");
+        p.push_str("    payload.name is Option<String> — bind with .bind(payload.name.as_deref())\n");
+        p.push_str("    payload.quantity is Option<i32> — bind with .bind(payload.quantity)\n");
+    }
+
+    if node.path.contains("/api/") {
+        p.push_str("\n## AUTH EXTRACTION (MANDATORY):\n");
+        p.push_str("- AuthUser implements FromRequest. Use it as a FUNCTION PARAMETER — never extract manually:\n");
+        p.push_str("    pub async fn list_products(\n");
+        p.push_str("        pool: web::Data<PgPool>,\n");
+        p.push_str("        params: web::Query<PaginationParams>,\n");
+        p.push_str("        user: AuthUser,\n");
+        p.push_str("    ) -> Result<impl Responder, AppError>\n");
+        p.push_str("- NEVER use any of these — they do NOT compile:\n");
+        p.push_str("    req.extensions().get::<AuthUser>()  // WRONG\n");
+        p.push_str("    req.headers().get(\"Authorization\")  // WRONG\n");
+        p.push_str("    HttpRequest parameter for auth purposes  // WRONG\n");
+        p.push_str("- actix-web extracts AuthUser automatically from the Authorization: Bearer header\n");
+        p.push_str("- Pool is accessed via pool.get_ref(): let pool = pool.get_ref();\n");
+        p.push_str("- Service functions are called via module alias:\n");
+        p.push_str("    use crate::services::product as product_service;\n");
+        p.push_str("    product_service::create_product(pool, payload.into_inner()).await\n");
+    }
+
+    if node.path.contains("auth_routes") {
+        p.push_str("\n## AUTH ROUTES PUBLIC/PROTECTED:\n");
+        p.push_str("- POST /api/auth/register — PUBLIC: no AuthUser parameter\n");
+        p.push_str("- POST /api/auth/login — PUBLIC: no AuthUser parameter\n");
+        p.push_str("- GET /api/auth/me — PROTECTED: AuthUser as function parameter\n");
+        p.push_str("- Login: call user_queries::get_user_by_email, verify bcrypt hash, return encode_jwt result\n");
+        p.push_str("- Register: hash password with bcrypt, call user_queries::create_user\n");
     }
 
     p.push_str("\n## PASSWORD HASHING:\n");

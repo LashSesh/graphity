@@ -105,45 +105,49 @@ pub fn provides_model_types(entity: &EntityDef) -> Vec<ProvidedSymbol> {
     let sn = &entity.snake_name;
     let pn = &entity.name;
 
-    // Main struct signature built from entity fields
+    // Main struct signature built from entity fields.
+    // Uses DateTime<Utc> (not chrono::DateTime<chrono::Utc>) to match the structural
+    // generator output which imports `use chrono::{DateTime, Utc};`.
     let mut main_sig = format!(
-        "#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]\npub struct {} {{\n    pub id: i64,\n",
+        "#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]\npub struct {} {{\n    pub id: i64,\n",
         pn
     );
     for field in &entity.fields {
         if field.name == "id" || field.name == "created_at" || field.name == "updated_at" {
             continue;
         }
-        let rust_t = field_rust_type(field);
+        let rust_t = field_rust_type_short(field);
         main_sig.push_str(&format!("    pub {}: {},\n", field.name, rust_t));
     }
-    main_sig.push_str("    pub created_at: chrono::DateTime<chrono::Utc>,\n");
-    main_sig.push_str("    pub updated_at: chrono::DateTime<chrono::Utc>,\n}");
+    main_sig.push_str("    pub created_at: DateTime<Utc>,\n");
+    main_sig.push_str("    pub updated_at: DateTime<Utc>,\n}");
 
-    // Create payload — user-settable fields only (no id/timestamps)
+    // Create payload — all user-settable fields with COMPLETE type info (no placeholders).
+    // Clone is required: the structural model derives it and callers move the payload.
     let mut create_sig = format!(
-        "#[derive(Debug, Deserialize)]\npub struct Create{}Payload {{\n",
+        "#[derive(Debug, Deserialize, Clone)]\npub struct Create{}Payload {{\n",
         pn
     );
     for field in &entity.fields {
         if field.name == "id" || field.name == "created_at" || field.name == "updated_at" {
             continue;
         }
-        let rust_t = field_rust_type(field);
+        let rust_t = field_rust_type_short(field);
         create_sig.push_str(&format!("    pub {}: {},\n", field.name, rust_t));
     }
     create_sig.push('}');
 
-    // Update payload — all fields are Option<T>
+    // Update payload — ALL fields as Option<T> for partial updates.
+    // Complete field list so LLM query code knows exact types when binding SQL params.
     let mut update_sig = format!(
-        "#[derive(Debug, Deserialize)]\npub struct Update{}Payload {{\n",
+        "#[derive(Debug, Deserialize, Clone)]\npub struct Update{}Payload {{\n",
         pn
     );
     for field in &entity.fields {
         if field.name == "id" || field.name == "created_at" || field.name == "updated_at" {
             continue;
         }
-        let base_t = field_base_rust_type(field);
+        let base_t = field_base_rust_type_short(field);
         update_sig.push_str(&format!("    pub {}: Option<{}>,\n", field.name, base_t));
     }
     update_sig.push('}');
@@ -282,6 +286,7 @@ pub fn provides_service_fns(entity: &EntityDef) -> Vec<ProvidedSymbol> {
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Map an entity field to its Rust type (respecting nullable → Option<T>).
+/// Uses fully-qualified `chrono::DateTime<chrono::Utc>` form.
 fn field_rust_type(field: &isls_hypercube::domain::FieldDef) -> String {
     if field.nullable {
         format!("Option<{}>", field_base_rust_type(field))
@@ -291,6 +296,7 @@ fn field_rust_type(field: &isls_hypercube::domain::FieldDef) -> String {
 }
 
 /// Base Rust type for a field (without Option wrapper).
+/// Uses fully-qualified `chrono::DateTime<chrono::Utc>` form.
 fn field_base_rust_type(field: &isls_hypercube::domain::FieldDef) -> String {
     // Use existing rust_type if provided
     if !field.rust_type.is_empty() {
@@ -314,6 +320,44 @@ fn field_base_rust_type(field: &isls_hypercube::domain::FieldDef) -> String {
         "f64".into()
     } else if sql.contains("TIMESTAMPTZ") || sql.contains("TIMESTAMP") {
         "chrono::DateTime<chrono::Utc>".into()
+    } else {
+        "String".into()
+    }
+}
+
+/// Like `field_rust_type` but normalises DateTime to the short `DateTime<Utc>` form,
+/// matching the structural generator which imports `use chrono::{DateTime, Utc};`.
+fn field_rust_type_short(field: &isls_hypercube::domain::FieldDef) -> String {
+    if field.nullable {
+        format!("Option<{}>", field_base_rust_type_short(field))
+    } else {
+        field_base_rust_type_short(field)
+    }
+}
+
+/// Like `field_base_rust_type` but normalises DateTime to `DateTime<Utc>` (short form).
+fn field_base_rust_type_short(field: &isls_hypercube::domain::FieldDef) -> String {
+    if !field.rust_type.is_empty() {
+        return match field.rust_type.as_str() {
+            "DateTime<Utc>"
+            | "chrono::DateTime<Utc>"
+            | "chrono::DateTime<chrono::Utc>" => "DateTime<Utc>".into(),
+            t => t.to_string(),
+        };
+    }
+    let sql = field.sql_type.to_uppercase();
+    if sql.contains("BIGSERIAL") || sql.contains("BIGINT") {
+        "i64".into()
+    } else if sql.contains("SERIAL") || sql.contains("INTEGER") || sql.contains("INT") {
+        "i32".into()
+    } else if sql.contains("BOOL") {
+        "bool".into()
+    } else if sql.contains("FLOAT") || sql.contains("REAL") || sql.contains("DOUBLE")
+        || sql.contains("DECIMAL") || sql.contains("NUMERIC")
+    {
+        "f64".into()
+    } else if sql.contains("TIMESTAMPTZ") || sql.contains("TIMESTAMP") {
+        "DateTime<Utc>".into()
     } else {
         "String".into()
     }
