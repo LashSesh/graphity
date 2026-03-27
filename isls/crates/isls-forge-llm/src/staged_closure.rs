@@ -76,13 +76,20 @@ impl StagedClosure {
         let spec = self.plan.spec.clone();
 
         // S0: Ingest — AppSpec is already available
+        eprintln!("[HDAG S0] Ingest: AppSpec ready (app={})", spec.app_name);
         tracing::info!(app = %spec.app_name, "S0 Ingest: AppSpec ready");
 
         // S1: Canon — entity names already canonicalized by lib.rs::to_snake_case
+        eprintln!("[HDAG S1] Canon: entity names canonicalized");
         tracing::info!("S1 Canon: entity names canonicalized");
 
         // S2: Expand — build Codegen-HDAG deterministically from AppSpec
         let hdag = CodegenHdag::build(&spec);
+        eprintln!(
+            "[HDAG S2] Expand: HDAG built ({} nodes, {} edges)",
+            hdag.nodes.len(),
+            hdag.edges.len()
+        );
         tracing::info!(
             nodes = hdag.nodes.len(),
             edges = hdag.edges.len(),
@@ -90,6 +97,7 @@ impl StagedClosure {
         );
 
         // S4: Solve — topological traversal
+        eprintln!("[HDAG S4] Solve: topological traversal beginning");
         tracing::info!("S4 Solve: topological traversal beginning");
         let order = hdag.topological_sort();
         let total = order.len();
@@ -106,6 +114,7 @@ impl StagedClosure {
 
             match node.node_type {
                 NodeType::Structural => {
+                    eprintln!("[HDAG S4]   structural  [{}/{}] {}", i + 1, total, node.path);
                     let content = self.generate_structural_content(&node, &spec);
                     self.write_file(&node.path, &content)?;
                     self.generated_files.push(GeneratedFile {
@@ -118,6 +127,7 @@ impl StagedClosure {
                     self.stats.files_generated += 1;
                 }
                 NodeType::Llm => {
+                    eprintln!("[HDAG S4]   llm         [{}/{}] {}", i + 1, total, node.path);
                     let provided = hdag.provided_symbols(*node_idx);
                     let prompt = build_hdag_prompt(&node, &provided, &self.type_context, &self.plan);
                     let tokens_in = estimate_tokens(&prompt);
@@ -154,21 +164,28 @@ impl StagedClosure {
             }
         }
 
+        eprintln!("[HDAG S4] Solve: all {} nodes traversed", self.stats.files_generated);
         tracing::info!(
             files = self.stats.files_generated,
             "S4 Solve: all nodes traversed"
         );
 
         // S5: Gate — single cargo check after complete generation
+        eprintln!("[HDAG S5] Gate: running cargo check on complete project");
         tracing::info!("S5 Gate: running cargo check on complete project");
         self.stats.compile_checks += 1;
 
         match self.cargo_check() {
             Ok(()) => {
+                eprintln!("[HDAG S5] Gate: passed — proceeding to S7 Emit");
                 tracing::info!("S5 Gate: passed — proceeding to S7 Emit");
             }
             Err(errors) => {
                 // S6: Coagula — anomaly path (MUST be logged)
+                eprintln!(
+                    "[HDAG S6] Coagula triggered — anomaly path ({} error lines)",
+                    errors.lines().count()
+                );
                 tracing::warn!(
                     error_lines = errors.lines().count(),
                     "S6 Coagula triggered — anomaly path"
@@ -180,6 +197,12 @@ impl StagedClosure {
 
         // S7: Emit — project directory is the output
         self.stats.total_time_secs = start.elapsed().as_secs_f64();
+        eprintln!(
+            "[HDAG S7] Emit: project complete ({} files, {} tokens, {:.2}s)",
+            self.stats.files_generated,
+            self.stats.total_tokens,
+            self.stats.total_time_secs
+        );
         tracing::info!(
             files = self.stats.files_generated,
             tokens = self.stats.total_tokens,
@@ -209,6 +232,7 @@ impl StagedClosure {
         let mut current_errors = initial_errors;
 
         for cycle in 1u32..=3 {
+            eprintln!("[HDAG S6] Coagula: cycle {}/3", cycle);
             tracing::warn!(cycle, "S6 Coagula: cycle {}/3", cycle);
 
             let errors_by_file = parse_errors_by_file(&current_errors);
