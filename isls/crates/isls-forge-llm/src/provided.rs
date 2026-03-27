@@ -50,12 +50,27 @@ pub fn provides_pagination() -> Vec<ProvidedSymbol> {
 }
 
 /// Symbols provided by `auth.rs` to API handler nodes.
+///
+/// Includes AuthUser (extractor), encode_jwt, and require_role — all exported
+/// by the structural auth.rs generator.  auth_routes needs encode_jwt for login.
 pub fn provides_authuser() -> Vec<ProvidedSymbol> {
-    vec![ProvidedSymbol {
-        import_path: "crate::auth::AuthUser".into(),
-        kind: SymbolKind::Struct,
-        signature: "/// Extractor that validates Bearer JWT and exposes claims.\n#[derive(Debug, Clone)]\npub struct AuthUser {\n    pub user_id: i64,\n    pub email: String,\n    pub role: String,\n}\nimpl actix_web::FromRequest for AuthUser { ... }".into(),
-    }]
+    vec![
+        ProvidedSymbol {
+            import_path: "crate::auth::AuthUser".into(),
+            kind: SymbolKind::Struct,
+            signature: "/// Extractor that validates Bearer JWT and exposes claims.\n#[derive(Debug, Clone)]\npub struct AuthUser {\n    pub user_id: i64,\n    pub email: String,\n    pub role: String,\n}\nimpl actix_web::FromRequest for AuthUser { ... }".into(),
+        },
+        ProvidedSymbol {
+            import_path: "crate::auth::encode_jwt".into(),
+            kind: SymbolKind::Function,
+            signature: "pub fn encode_jwt(user_id: i64, email: &str, role: &str) -> Result<String, AppError>;".into(),
+        },
+        ProvidedSymbol {
+            import_path: "crate::auth::require_role".into(),
+            kind: SymbolKind::Function,
+            signature: "pub fn require_role(user: &AuthUser, required: &str) -> Result<(), AppError>;".into(),
+        },
+    ]
 }
 
 /// Symbols provided by `config.rs` to nodes that need AppConfig.
@@ -68,11 +83,15 @@ pub fn provides_config() -> Vec<ProvidedSymbol> {
 }
 
 /// Symbols provided by `database/pool.rs` to query and service nodes.
+///
+/// Note: create_pool() returns sqlx::Error (not AppError) — matches the
+/// structural generator exactly.  Downstream query/service nodes receive
+/// &PgPool as a parameter and never call create_pool() directly.
 pub fn provides_pool() -> Vec<ProvidedSymbol> {
     vec![ProvidedSymbol {
         import_path: "crate::database::pool::create_pool".into(),
         kind: SymbolKind::Function,
-        signature: "pub async fn create_pool() -> Result<sqlx::PgPool, AppError>;\n// Use: let pool = create_pool().await?;".into(),
+        signature: "pub async fn create_pool() -> Result<sqlx::PgPool, sqlx::Error>;".into(),
     }]
 }
 

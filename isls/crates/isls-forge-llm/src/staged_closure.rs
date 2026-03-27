@@ -564,6 +564,15 @@ fn build_hdag_prompt(
     p.push_str("- No new external crates beyond those in Cargo.toml\n");
     p.push_str("- bcrypt: use DEFAULT_COST for password hashing\n");
     p.push_str("- JWT: use jsonwebtoken crate, secret from env JWT_SECRET\n");
+    p.push_str("\n## FUNCTION VISIBILITY RULE:\n");
+    p.push_str("- ALL functions listed in AVAILABLE IMPORTS MUST be declared `pub async fn` (or `pub fn` for sync)\n");
+    p.push_str("- Private functions (without `pub`) cannot be called from other modules — causes E0603\n");
+    p.push_str("\n## API ROUTE IMPORT PATTERN:\n");
+    p.push_str("- Import service module, then call functions via module path:\n");
+    p.push_str("    use crate::services::product as product_service;\n");
+    p.push_str("    product_service::get_product(&pool, id).await\n");
+    p.push_str("- DO NOT import individual service functions directly (causes visibility errors):\n");
+    p.push_str("    use crate::services::product::{get_product};  // WRONG — use module path instead\n");
 
     // Role-specific rules based on file path
     if node.path.contains("/services/") {
