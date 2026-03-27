@@ -35,10 +35,14 @@
 //! ```
 
 pub mod forge;
+pub mod hdag;
 pub mod mock;
 pub mod order;
 pub mod prompt;
+pub mod provided;
+pub mod staged_closure;
 pub mod static_files;
+pub mod structural;
 
 pub use forge::{ForgeLlmError, LlmForge, Result};
 
