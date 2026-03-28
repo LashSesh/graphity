@@ -281,7 +281,7 @@ impl OpenAIOracle {
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-4o".to_string(),
             endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
             max_retries: 3,
             timeout_ms: 60_000,
@@ -1729,7 +1729,7 @@ mod tests {
     fn test_openai_oracle_creation() {
         let oracle = OpenAIOracle::new("test-key");
         assert_eq!(oracle.name(), "openai");
-        assert_eq!(oracle.model(), "gpt-4o-mini");
+        assert_eq!(oracle.model(), "gpt-4o");
         // "test-key" doesn't start with "sk-" → unavailable
         assert!(!oracle.available());
     }

@@ -476,7 +476,7 @@ fn parse_args(args: &[String]) -> Command {
             let model = args.iter().position(|a| a == "--model")
                 .and_then(|i| args.get(i + 1))
                 .cloned()
-                .unwrap_or_else(|| "gpt-4o-mini".to_string());
+                .unwrap_or_else(|| "gpt-4o".to_string());
             let passes: u32 = args.iter().position(|a| a == "--passes")
                 .and_then(|i| args.get(i + 1))
                 .and_then(|s| s.parse().ok())
@@ -963,7 +963,7 @@ fn cmd_oracle_diagnose() {
     let (provider, mut config) = if has_openai {
         let c = OracleConfig {
             provider: Some("openai".to_string()),
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-4o".to_string(),
             api_key_source: "env:OPENAI_API_KEY".to_string(),
             ..Default::default()
         };
@@ -1871,7 +1871,7 @@ fn cmd_forge_multilang(
             cfg.provider = Some(p.to_string());
             match p {
                 "openai" => {
-                    cfg.model = "gpt-4o-mini".to_string();
+                    cfg.model = "gpt-4o".to_string();
                     cfg.api_key_source = "env:OPENAI_API_KEY".to_string();
                 }
                 "anthropic" | "claude" => {
@@ -3501,7 +3501,7 @@ fn build_full_html(
         let openai_set = std::env::var("OPENAI_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
         let anthropic_set = std::env::var("ANTHROPIC_API_KEY").map(|k| !k.is_empty()).unwrap_or(false);
         if openai_set {
-            ("OpenAIOracle (gpt-4o-mini)".to_string(), "env:OPENAI_API_KEY (set)".to_string())
+            ("OpenAIOracle (gpt-4o)".to_string(), "env:OPENAI_API_KEY (set)".to_string())
         } else if anthropic_set {
             ("ClaudeOracle (claude-sonnet-4-20250514)".to_string(), "env:ANTHROPIC_API_KEY (set)".to_string())
         } else {
