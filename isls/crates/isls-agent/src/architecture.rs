@@ -5,8 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use isls_oracle::{OutputFormat, SynthesisOracle, SynthesisPrompt};
-use isls_templates::{Archetype, FillStrategy, TemplateCatalog};
+use crate::stubs::{
+    Archetype, FillStrategy, OutputFormat, SynthesisOracle, SynthesisPrompt, TemplateCatalog,
+};
 
 use crate::apply::strip_markdown_fences;
 use crate::feature::Feature;
@@ -364,7 +365,7 @@ fn plan_delta_components(feature: &Feature, workspace: &AgentWorkspace) -> Vec<T
 mod tests {
     use super::*;
     use crate::feature::Feature;
-    use isls_oracle::{OracleCost, OracleResponse, Result as OracleResult};
+    use crate::stubs::{OracleCost, OracleResponse, OracleResult};
 
     // Mock Oracle that does nothing (planning is deterministic)
     struct MockOracle;
@@ -415,7 +416,7 @@ mod tests {
     fn at_ag14_architecture_planning() {
         let features = sample_features();
         let oracle = MockOracle;
-        let catalog = TemplateCatalog::new(isls_templates::TemplateConfig::default());
+        let catalog = TemplateCatalog::new(crate::stubs::TemplateConfig::default());
 
         let plan = plan_architecture(&features, &None, &catalog, &oracle)
             .expect("plan should succeed");
@@ -479,7 +480,7 @@ mod tests {
 
         let ws = AgentWorkspace::analyze(&dir).expect("analyze");
         let oracle = MockOracle;
-        let catalog = TemplateCatalog::new(isls_templates::TemplateConfig::default());
+        let catalog = TemplateCatalog::new(crate::stubs::TemplateConfig::default());
 
         // Add a single new feature to existing project
         let new_feature = Feature {

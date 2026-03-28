@@ -8,8 +8,6 @@ license = "MIT"
 
 [dependencies]
 isls-types     = { path = "../isls-types" }
-isls-oracle    = { path = "../isls-oracle" }
-isls-templates = { path = "../isls-templates" }
 isls-norms     = { path = "../isls-norms" }
 isls-chat      = { path = "../isls-chat" }
 serde          = { workspace = true }

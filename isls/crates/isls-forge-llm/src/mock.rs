@@ -357,21 +357,25 @@ pub struct User {
     pub email: String,
     #[serde(skip_serializing)]
     pub password_hash: String,
+    pub name: String,
     pub role: String,
     pub is_active: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateUserPayload {
     pub email: String,
     pub password: String,
+    pub name: String,
     pub role: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct UpdateUserPayload {
     pub email: Option<String>,
+    pub name: Option<String>,
     pub role: Option<String>,
     pub is_active: Option<bool>,
 }
@@ -425,9 +429,10 @@ pub async fn list_users(
 pub async fn create_user(pool: &PgPool, payload: CreateUserPayload) -> Result<User, AppError> {
     let hash = bcrypt::hash(&payload.password, bcrypt::DEFAULT_COST)
         .map_err(|e| AppError::InternalError(e.to_string()))?;
-    sqlx::query_as::<_, User>("INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3) RETURNING id, email, password_hash, role, is_active, created_at")
+    sqlx::query_as::<_, User>("INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4) RETURNING id, email, password_hash, name, role, is_active, created_at, updated_at")
         .bind(&payload.email)
         .bind(&hash)
+        .bind(&payload.name)
         .bind(payload.role.as_deref().unwrap_or("operator"))
         .fetch_one(pool)
         .await
@@ -441,11 +446,13 @@ pub async fn update_user(
 ) -> Result<User, AppError> {
     let mut current = get_user(pool, id).await?;
     if let Some(v) = payload.email { current.email = v; }
+    if let Some(v) = payload.name { current.name = v; }
     if let Some(v) = payload.role { current.role = v; }
     if let Some(v) = payload.is_active { current.is_active = v; }
-    sqlx::query_as::<_, User>("UPDATE users SET (email, role, is_active) = ($2, $3, $4) WHERE id = $1 RETURNING id, email, password_hash, role, is_active, created_at")
+    sqlx::query_as::<_, User>("UPDATE users SET (email, name, role, is_active, updated_at) = ($2, $3, $4, $5, NOW()) WHERE id = $1 RETURNING id, email, password_hash, name, role, is_active, created_at, updated_at")
         .bind(id)
         .bind(&current.email)
+        .bind(&current.name)
         .bind(&current.role)
         .bind(&current.is_active)
         .fetch_one(pool)
@@ -488,17 +495,19 @@ pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
     id            BIGSERIAL PRIMARY KEY,
     email         VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    role          VARCHAR(50)  NOT NULL DEFAULT 'operator',
+    name          VARCHAR(255) NOT NULL DEFAULT '',
+    role          VARCHAR(50)  NOT NULL DEFAULT 'user',
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
 "#,
     );
     sql.push_str(&format!(
         "-- Seed admin user (password: admin123)\n\
-         INSERT INTO users (email, password_hash, role, is_active)\n\
-         VALUES ('admin@example.com', '{}', 'admin', true)\n\
+         INSERT INTO users (email, password_hash, name, role, is_active)\n\
+         VALUES ('admin@example.com', '{}', 'Admin', 'admin', true)\n\
          ON CONFLICT (email) DO NOTHING;\n\n",
         admin_hash
     ));
@@ -979,11 +988,12 @@ pub async fn register(
         .map_err(|e| AppError::InternalError(e.to_string()))?;
 
     let user = sqlx::query_as::<_, User>(
-        "INSERT INTO users (email, password_hash, role) VALUES ($1, $2, $3)
-         RETURNING id, email, password_hash, role, is_active, created_at",
+        "INSERT INTO users (email, password_hash, name, role) VALUES ($1, $2, $3, $4)
+         RETURNING id, email, password_hash, name, role, is_active, created_at, updated_at",
     )
     .bind(&payload.email)
     .bind(&hash)
+    .bind(&payload.name)
     .bind(payload.role.as_deref().unwrap_or("operator"))
     .fetch_one(pool.get_ref())
     .await

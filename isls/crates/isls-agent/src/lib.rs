@@ -23,6 +23,7 @@ pub mod feature;
 pub mod launcher;
 pub mod pipeline;
 pub mod prompt;
+pub mod stubs;
 pub mod workspace;
 
 // Re-exports for convenience

@@ -2,7 +2,7 @@
 name = "isls-cli"
 version = "1.0.0"
 edition = "2021"
-description = "ISLS single-binary operator interface — commands, dashboard, config (C11)"
+description = "ISLS single-binary operator interface — D1 Final Architecture (C11)"
 authors = ["Sebastian Klemm"]
 license = "MIT"
 
@@ -11,46 +11,11 @@ name = "isls"
 path = "src/main.rs"
 
 [dependencies]
-isls-types = { path = "../isls-types" }
-isls-engine = { path = "../isls-engine" }
-isls-archive = { path = "../isls-archive" }
-isls-persist = { path = "../isls-persist" }
-isls-observe = { path = "../isls-observe" }
-isls-harness = { path = "../isls-harness" }
-isls-registry = { path = "../isls-registry" }
-isls-manifest = { path = "../isls-manifest" }
-isls-capsule = { path = "../isls-capsule" }
-isls-scheduler = { path = "../isls-scheduler" }
-isls-store = { path = "../isls-store" }
-isls-topology = { path = "../isls-topology" }
-isls-scale = { path = "../isls-scale" }
-isls-oracle = { path = "../isls-oracle", features = ["llm"] }
-isls-artifact-ir = { path = "../isls-artifact-ir" }
-isls-forge = { path = "../isls-forge" }
-isls-templates = { path = "../isls-templates" }
-isls-compose = { path = "../isls-compose" }
-isls-pmhd = { path = "../isls-pmhd" }
-isls-gateway = { path = "../isls-gateway" }
-isls-multilang = { path = "../isls-multilang" }
-isls-navigator = { path = "../isls-navigator" }
-isls-agent = { path = "../isls-agent" }
-isls-orchestrator = { path = "../isls-orchestrator" }
-isls-planner = { path = "../isls-planner" }
-isls-blueprint = { path = "../isls-blueprint" }
+isls-forge-llm = { path = "../isls-forge-llm" }
 isls-hypercube = { path = "../isls-hypercube" }
-isls-decomposer = { path = "../isls-decomposer" }
-isls-renderloop = { path = "../isls-renderloop" }
+isls-gateway   = { path = "../isls-gateway" }
 
-serde = { workspace = true }
 dotenv = "0.15"
-tokio = { workspace = true }
-serde_json = { workspace = true }
-chrono = { workspace = true }
-tracing = { workspace = true }
-thiserror = { workspace = true }
-
-[features]
-# Enable when metatron_triton is available as a path dependency.
-triton = []
+tokio  = { workspace = true }
 
 [dev-dependencies]

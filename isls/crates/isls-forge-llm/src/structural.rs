@@ -202,6 +202,7 @@ pub fn generate_migration(spec: &AppSpec) -> String {
     id            BIGSERIAL PRIMARY KEY,
     email         VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    name          VARCHAR(255) NOT NULL DEFAULT '',
     role          VARCHAR(50)  NOT NULL DEFAULT 'user',
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -211,9 +212,9 @@ pub fn generate_migration(spec: &AppSpec) -> String {
 "#,
     );
 
-    // Seed admin user with bcrypt hash
+    // Seed admin user with bcrypt hash (Rule 8: INSERT must match entity fields)
     sql.push_str(&format!(
-        "-- Seed admin user (password: admin123)\nINSERT INTO users (email, password_hash, role, is_active)\nVALUES ('admin@example.com', '{}', 'admin', true)\nON CONFLICT (email) DO NOTHING;\n\n",
+        "-- Seed admin user (password: admin123)\nINSERT INTO users (email, password_hash, name, role, is_active)\nVALUES ('admin@example.com', '{}', 'Admin', 'admin', true)\nON CONFLICT (email) DO NOTHING;\n\n",
         admin_hash
     ));
 

@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use isls_renderloop::{estimate_tokens, Oracle};
-use isls_renderloop::type_context::TypeContext;
+use crate::oracle::{estimate_tokens, Oracle};
+use crate::type_context::TypeContext;
 use regex::Regex;
 use thiserror::Error;
 

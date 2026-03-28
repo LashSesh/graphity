@@ -26,7 +26,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use isls_norms::{ActivatedNorm, FieldSpec, FieldSource, NormRegistry};
-use isls_renderloop::oracle::Oracle;
+use isls_forge_llm::oracle::Oracle;
 
 // ─── Error ────────────────────────────────────────────────────────────────────
 

@@ -1,19 +1,20 @@
 // Copyright (c) 2026 Sebastian Klemm
 // SPDX-License-Identifier: MIT
 //
-//! Oracle abstraction for ISLS v2.1 multi-pass rendering.
+//! Oracle abstraction for ISLS code generation.
 //!
-//! The `Oracle` trait decouples the render loop from any specific LLM backend.
+//! The `Oracle` trait decouples the forge pipeline from any specific LLM backend.
 //! `MockOracle` is used for offline / CI runs. `OpenAiOracle` calls the OpenAI
 //! chat completions API with temperature 0.2 for deterministic code generation.
 
 use serde_json::json;
 
-use crate::RenderloopError;
+use crate::forge::ForgeLlmError;
 
-pub type Result<T> = std::result::Result<T, RenderloopError>;
+/// Oracle result type using [`ForgeLlmError`].
+pub type Result<T> = std::result::Result<T, ForgeLlmError>;
 
-/// Approximate token count: 1 token ≈ 4 bytes of UTF-8 text.
+/// Approximate token count: 1 token ~ 4 bytes of UTF-8 text.
 pub fn estimate_tokens(text: &str) -> u64 {
     (text.len() as u64).saturating_add(3) / 4
 }
@@ -25,7 +26,7 @@ pub fn estimate_tokens(text: &str) -> u64 {
 /// Searches for the **first** closing fence from the end, so any trailing
 /// explanation the LLM appends after the block is also discarded.
 /// If no complete fence pair is found the input is returned unchanged.
-fn strip_markdown_fences(response: &str) -> String {
+pub fn strip_markdown_fences(response: &str) -> String {
     let trimmed = response.trim();
 
     let delimiter = if trimmed.starts_with("```") {
@@ -60,7 +61,7 @@ fn strip_markdown_fences(response: &str) -> String {
 
 // ─── Oracle trait ─────────────────────────────────────────────────────────────
 
-/// Abstraction over an LLM backend used during multi-pass rendering.
+/// Abstraction over an LLM backend used during code generation.
 pub trait Oracle: Send + Sync {
     /// Send a prompt and return the model's text response.
     fn call(&self, prompt: &str, max_tokens: u32) -> Result<String>;
@@ -68,7 +69,7 @@ pub trait Oracle: Send + Sync {
     /// Send a prompt that must return a JSON value.
     fn call_json(&self, prompt: &str, max_tokens: u32) -> Result<serde_json::Value>;
 
-    /// Identifier of the underlying model, e.g. `"gpt-4o-mini"`.
+    /// Identifier of the underlying model, e.g. `"gpt-4o"`.
     fn model_name(&self) -> &str;
 
     /// Estimated cost per 1 000 tokens in USD.
@@ -85,7 +86,7 @@ pub trait Oracle: Send + Sync {
 /// No-op oracle for offline and CI use.
 ///
 /// Returns deterministic placeholder strings without making any network calls.
-/// Useful for verifying the render loop machinery without an API key.
+/// Useful for verifying the forge pipeline machinery without an API key.
 pub struct MockOracle;
 
 impl Oracle for MockOracle {
@@ -130,7 +131,7 @@ impl OpenAiOracle {
         let key = match api_key {
             Some(k) if !k.is_empty() => k,
             _ => std::env::var("OPENAI_API_KEY")
-                .map_err(|_| RenderloopError::OracleConfig(
+                .map_err(|_| ForgeLlmError::Oracle(
                     "OPENAI_API_KEY not set and no --api-key provided".into()
                 ))?,
         };
@@ -138,7 +139,7 @@ impl OpenAiOracle {
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
-            .map_err(|e| RenderloopError::OracleConfig(e.to_string()))?;
+            .map_err(|e| ForgeLlmError::Oracle(e.to_string()))?;
         Ok(OpenAiOracle {
             api_key: key,
             model,
@@ -167,30 +168,30 @@ impl OpenAiOracle {
             .bearer_auth(&self.api_key)
             .json(&body)
             .send()
-            .map_err(|e| RenderloopError::OracleCall(e.to_string()))?;
+            .map_err(|e| ForgeLlmError::Oracle(e.to_string()))?;
 
         let status = resp.status();
         let text = resp.text()
-            .map_err(|e| RenderloopError::OracleCall(
+            .map_err(|e| ForgeLlmError::Oracle(
                 format!("Failed to read response: {}", e)
             ))?;
 
         eprintln!("[Oracle] Response status: {}, {} bytes", status, text.len());
 
         if !status.is_success() {
-            return Err(RenderloopError::OracleCall(
+            return Err(ForgeLlmError::Oracle(
                 format!("OpenAI API error {}: {}", status, text)
             ));
         }
 
         let json: serde_json::Value = serde_json::from_str(&text)
-            .map_err(|e| RenderloopError::OracleCall(
+            .map_err(|e| ForgeLlmError::Oracle(
                 format!("Failed to parse response: {e}: {text}")
             ))?;
 
         let content = json["choices"][0]["message"]["content"]
             .as_str()
-            .ok_or_else(|| RenderloopError::OracleCall(
+            .ok_or_else(|| ForgeLlmError::Oracle(
                 format!("No content in response: {}", text)
             ))?
             .to_string();
@@ -213,10 +214,9 @@ impl Oracle for OpenAiOracle {
     }
 
     fn call_json(&self, prompt: &str, max_tokens: u32) -> Result<serde_json::Value> {
-        // chat_completions already strips fences; strip again defensively and trim
         let text = self.chat_completions(Self::SYSTEM_PROMPT_JSON, prompt, max_tokens)?;
         serde_json::from_str(text.trim())
-            .map_err(|e| RenderloopError::OracleCall(
+            .map_err(|e| ForgeLlmError::Oracle(
                 format!("failed to parse oracle JSON response: {e}: {text}")
             ))
     }
@@ -226,7 +226,6 @@ impl Oracle for OpenAiOracle {
     }
 
     fn cost_per_1k_tokens(&self) -> f64 {
-        // gpt-4o-mini pricing as of early 2026 (approximate)
         0.15
     }
 }
@@ -282,7 +281,6 @@ mod tests {
 
     #[test]
     fn unclosed_fence_unchanged() {
-        // No closing ``` — must not strip anything
         let input = "```rust\nfn main() {}";
         assert_eq!(strip_markdown_fences(input), input);
     }
@@ -301,10 +299,7 @@ mod tests {
 
     #[test]
     fn trailing_explanation_discarded() {
-        // LLM sometimes appends prose after the closing fence
         let input = "```rust\nfn foo() {}\n```\nThis implements foo.";
-        // The closing fence is found on the first scan from the end, so
-        // everything from the fence onward is dropped.
         assert_eq!(strip_markdown_fences(input), "fn foo() {}");
     }
 }

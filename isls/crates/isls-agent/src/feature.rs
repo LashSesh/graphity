@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use isls_oracle::{OutputFormat, OracleResponse, SynthesisOracle, SynthesisPrompt};
+use crate::stubs::{OutputFormat, OracleResponse, SynthesisOracle, SynthesisPrompt};
 
 use crate::apply::strip_markdown_fences;
 

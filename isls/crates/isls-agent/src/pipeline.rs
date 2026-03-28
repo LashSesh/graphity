@@ -5,8 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use isls_oracle::SynthesisOracle;
-use isls_templates::{FillStrategy, TemplateCatalog};
+use crate::stubs::{FillStrategy, SynthesisOracle, TemplateCatalog};
 
 use crate::accumulation::AccumulationMetrics;
 use crate::architecture::{plan_architecture, TechnicalPlan};
@@ -355,7 +354,7 @@ pub fn execute_pipeline_with_norms(
     intent: &str,
     workspace: &Option<AgentWorkspace>,
     oracle: &dyn SynthesisOracle,
-    catalog: &isls_templates::TemplateCatalog,
+    catalog: &crate::stubs::TemplateCatalog,
     metrics: &mut AccumulationMetrics,
     conversation: &mut crate::conversation::Conversation,
     config: &PipelineConfig,
@@ -401,7 +400,7 @@ pub fn execute_pipeline_with_norms(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use isls_oracle::{OracleCost, OracleResponse, Result as OracleResult, SynthesisPrompt};
+    use crate::stubs::{OracleCost, OracleResponse, OracleResult, SynthesisPrompt};
 
     struct MockOracle;
     impl SynthesisOracle for MockOracle {
@@ -424,7 +423,7 @@ mod tests {
     #[test]
     fn at_ag16_full_pipeline() {
         let oracle = MockOracle;
-        let catalog = TemplateCatalog::new(isls_templates::TemplateConfig::default());
+        let catalog = TemplateCatalog::new(crate::stubs::TemplateConfig::default());
         let mut metrics = AccumulationMetrics::default();
         let mut conversation = Conversation::new(20);
         let config = PipelineConfig {
@@ -484,7 +483,7 @@ mod tests {
     #[test]
     fn at_ag17_follow_up_delta() {
         let oracle = MockOracle;
-        let catalog = TemplateCatalog::new(isls_templates::TemplateConfig::default());
+        let catalog = TemplateCatalog::new(crate::stubs::TemplateConfig::default());
         let mut metrics = AccumulationMetrics::default();
         let mut conversation = Conversation::new(20);
         let config = PipelineConfig {
@@ -656,7 +655,7 @@ mod tests {
     #[test]
     fn at_ag21_graceful_failure() {
         let oracle = MockOracle;
-        let catalog = TemplateCatalog::new(isls_templates::TemplateConfig::default());
+        let catalog = TemplateCatalog::new(crate::stubs::TemplateConfig::default());
         let mut metrics = AccumulationMetrics::default();
         let mut conversation = Conversation::new(20);
         let config = PipelineConfig {
@@ -695,7 +694,7 @@ mod tests {
     #[test]
     fn at_ag22_german_io() {
         let oracle = MockOracle;
-        let catalog = TemplateCatalog::new(isls_templates::TemplateConfig::default());
+        let catalog = TemplateCatalog::new(crate::stubs::TemplateConfig::default());
         let mut metrics = AccumulationMetrics::default();
         let mut conversation = Conversation::new(20);
         let config = PipelineConfig {
