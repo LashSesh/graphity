@@ -12,4 +12,4 @@ serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 isls-norms  = { path = "../isls-norms" }
-isls-renderloop = { path = "../isls-renderloop" }
+isls-forge-llm = { path = "../isls-forge-llm" }

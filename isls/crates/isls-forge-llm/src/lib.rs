@@ -26,7 +26,7 @@
 //! # Example
 //! ```rust,ignore
 //! use isls_forge_llm::{LlmForge, ForgePlan, AppSpec};
-//! use isls_renderloop::MockOracle;
+//! use isls_forge_llm::oracle::MockOracle;
 //!
 //! let oracle = Box::new(MockOracle);
 //! let plan = ForgePlan::warehouse_default("warehouse-app");
@@ -37,14 +37,18 @@
 pub mod forge;
 pub mod hdag;
 pub mod mock;
+pub mod oracle;
 pub mod order;
 pub mod prompt;
 pub mod provided;
 pub mod staged_closure;
 pub mod static_files;
 pub mod structural;
+pub mod type_context;
 
 pub use forge::{ForgeLlmError, LlmForge, Result};
+pub use oracle::{estimate_tokens, MockOracle, OpenAiOracle, Oracle};
+pub use type_context::TypeContext;
 
 use isls_hypercube::domain::FieldDef;
 use serde::{Deserialize, Serialize};

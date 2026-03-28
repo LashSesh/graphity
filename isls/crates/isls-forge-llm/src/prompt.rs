@@ -7,7 +7,7 @@
 //! application context → growing type context → norm requirements → file to
 //! generate → critical rules → domain-specific requirements.
 
-use isls_renderloop::type_context::TypeContext;
+use crate::type_context::TypeContext;
 
 use crate::{AppSpec, EntityDef, FileSpec, ForgePlan};
 

@@ -129,42 +129,12 @@ impl GatewayOracle {
 impl ApplyOracle for GatewayOracle {
     fn fix_compile_error(
         &self,
-        file_path: &str,
-        bad_code: &str,
-        error: &str,
+        _file_path: &str,
+        _bad_code: &str,
+        _error: &str,
     ) -> Result<String, String> {
-        if !self.available {
-            return Err("No oracle API key available; cannot auto-fix".into());
-        }
-
-        use isls_oracle::{ClaudeOracle, SynthesisOracle, SynthesisPrompt, OutputFormat};
-
-        // Resolve API key from environment
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .or_else(|_| std::env::var("CLAUDE_API_KEY"))
-            .map_err(|_| "ANTHROPIC_API_KEY not set".to_string())?;
-
-        let oracle = ClaudeOracle::new(api_key);
-
-        let system = format!(
-            "You are a Rust compiler assistant. The following code for {} failed to compile.\n\
-             Fix the compile error. Output ONLY the complete corrected file. No explanation. No markdown fences.\n\n\
-             COMPILE ERROR:\n{}",
-            file_path, error
-        );
-
-        let prompt = SynthesisPrompt {
-            system,
-            user: bad_code.to_string(),
-            output_format: OutputFormat::Rust,
-            max_tokens: 4096,
-            temperature: 0.0,
-        };
-
-        let response = oracle.synthesize(&prompt)
-            .map_err(|e| format!("oracle: {}", e))?;
-
-        Ok(isls_agent::strip_markdown_fences(&response.content))
+        // Oracle (isls-oracle) is no longer available; auto-fix is disabled.
+        Err("oracle not available".into())
     }
 }
 
@@ -228,8 +198,8 @@ pub async fn run_chat_job(
         return;
     }
 
-    // Build workspace prompt
-    let prompt = build_workspace_prompt(
+    // Build workspace prompt (retained for future use)
+    let _prompt = build_workspace_prompt(
         &req.message,
         &ws,
         &relevant,
@@ -245,40 +215,9 @@ pub async fn run_chat_job(
     for (i, file_path) in plan_files.iter().enumerate() {
         let step_start = std::time::Instant::now();
 
-        // For now: if oracle is available, build content via oracle prompt
-        // Otherwise: leave the file unchanged and just record the attempt
-        let new_content_opt = if oracle.available {
-            // Build a targeted prompt for this specific file
-            let file_system = format!(
-                "{}\n\nModify the file {} to implement: {}",
-                prompt.system, file_path, req.message
-            );
-            let file_prompt = isls_oracle::SynthesisPrompt {
-                system: file_system,
-                user: format!("Implement: {}", req.message),
-                output_format: isls_oracle::OutputFormat::Rust,
-                max_tokens: 4096,
-                temperature: 0.0,
-            };
-
-            use isls_oracle::{ClaudeOracle, SynthesisOracle};
-            if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY")
-                .or_else(|_| std::env::var("CLAUDE_API_KEY")) {
-                let raw_oracle = ClaudeOracle::new(api_key);
-                match raw_oracle.synthesize(&file_prompt) {
-                    Ok(resp) => {
-                        let cost = resp.tokens_used as f64 * 0.000015;
-                        metrics.record_oracle_call(cost);
-                        Some(isls_agent::strip_markdown_fences(&resp.content))
-                    }
-                    Err(_) => None,
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        // Oracle synthesis (isls-oracle) is no longer available.
+        // Skip synthesis and just record the attempt.
+        let new_content_opt: Option<String> = None;
 
         let source = if new_content_opt.is_some() { "oracle" } else { "skip" };
         let duration_ms = step_start.elapsed().as_millis() as u64;
