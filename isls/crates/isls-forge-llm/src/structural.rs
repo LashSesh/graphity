@@ -118,6 +118,9 @@ pub fn generate_database_mod(spec: &AppSpec) -> String {
         s.push_str(&format!("pub mod {}_queries;\n", entity.snake_name));
     }
     s.push_str("\npub use pool::create_pool;\n");
+    for entity in &spec.entities {
+        s.push_str(&format!("pub use {}_queries::*;\n", entity.snake_name));
+    }
     s
 }
 
@@ -126,6 +129,10 @@ pub fn generate_services_mod(spec: &AppSpec) -> String {
     let mut s = String::from("// Copyright (c) 2026 Sebastian Klemm — ISLS v3.4 structural generated\n");
     for entity in &spec.entities {
         s.push_str(&format!("pub mod {};\n", entity.snake_name));
+    }
+    s.push('\n');
+    for entity in &spec.entities {
+        s.push_str(&format!("pub use {}::*;\n", entity.snake_name));
     }
     s
 }

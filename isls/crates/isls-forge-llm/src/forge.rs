@@ -596,6 +596,9 @@ fn generate_mod_rs(path: &str, spec: &AppSpec) -> String {
             code.push_str(&format!("pub mod {}_queries;\n", snake));
         }
         code.push_str("\npub use pool::create_pool;\n");
+        for snake in &all_snakes {
+            code.push_str(&format!("pub use {}_queries::*;\n", snake));
+        }
         return code;
     }
 
@@ -603,6 +606,10 @@ fn generate_mod_rs(path: &str, spec: &AppSpec) -> String {
         let mut code = "// ISLS v3.1 mock generated\n".to_string();
         for snake in &all_snakes {
             code.push_str(&format!("pub mod {};\n", snake));
+        }
+        code.push('\n');
+        for snake in &all_snakes {
+            code.push_str(&format!("pub use {}::*;\n", snake));
         }
         return code;
     }
