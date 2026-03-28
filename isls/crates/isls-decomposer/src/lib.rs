@@ -377,7 +377,7 @@ impl Default for DecomposerConfig {
             mock_oracle: true,
             blueprint_path: None,
             api_key: None,
-            model: "gpt-4o-mini".to_string(),
+            model: "gpt-4o".to_string(),
             passes: 0,
             skip_passes: vec![],
             token_budget_override: None,

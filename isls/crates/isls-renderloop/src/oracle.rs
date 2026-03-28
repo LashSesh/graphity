@@ -134,7 +134,7 @@ impl OpenAiOracle {
                     "OPENAI_API_KEY not set and no --api-key provided".into()
                 ))?,
         };
-        let model = model.unwrap_or_else(|| "gpt-4o-mini".to_string());
+        let model = model.unwrap_or_else(|| "gpt-4o".to_string());
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
             .build()
