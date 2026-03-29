@@ -163,6 +163,10 @@ pub struct HyperCube {
     pub depth: u32,
     /// Content-addressed signature of parent cube (if any).
     pub parent_signature: Option<String>,
+    /// Whether entities were parsed from explicit `[[entities]]` in the TOML
+    /// (D2 generic path) rather than detected from the domain registry.
+    #[serde(default)]
+    pub entities_from_toml: bool,
 }
 
 impl HyperCube {
@@ -180,6 +184,21 @@ impl HyperCube {
             .iter()
             .filter(|d| !matches!(d.state, DimState::Fixed(_)))
             .map(|d| d.name.clone())
+            .collect()
+    }
+
+    /// Extract all `EntityTemplate`s stored in model dimensions.
+    ///
+    /// Returns the entity templates that were injected during TOML parsing,
+    /// enabling the CLI to build a `ForgePlan` directly from parsed entities.
+    pub fn extract_entities(&self) -> Vec<EntityTemplate> {
+        self.dimensions
+            .iter()
+            .filter(|d| d.name.starts_with("model."))
+            .filter_map(|d| match &d.state {
+                DimState::Free { default: Some(DimValue::EntityDef(et)), .. } => Some(et.clone()),
+                _ => None,
+            })
             .collect()
     }
 
@@ -248,6 +267,7 @@ impl HyperCube {
             couplings,
             depth: self.depth + 1,
             parent_signature: Some(self.signature()),
+            entities_from_toml: self.entities_from_toml,
         }
     }
 
@@ -291,6 +311,7 @@ mod tests {
             couplings: vec![],
             depth: 0,
             parent_signature: None,
+            entities_from_toml: false,
         };
         assert_eq!(cube.dof(), 0);
     }
@@ -317,6 +338,7 @@ mod tests {
             couplings: vec![],
             depth: 0,
             parent_signature: None,
+            entities_from_toml: false,
         };
         assert_eq!(cube.dof(), 2);
         cube.fix("a", DimValue::Choice("fixed".into()));
@@ -336,6 +358,7 @@ mod tests {
             couplings: vec![],
             depth: 0,
             parent_signature: None,
+            entities_from_toml: false,
         };
         assert_eq!(cube.signature(), cube.signature());
     }
@@ -355,6 +378,7 @@ mod tests {
             ],
             depth: 0,
             parent_signature: None,
+            entities_from_toml: false,
         };
         let sub = cube.extract_subcube(&["a".into(), "b".into()]);
         assert_eq!(sub.dimensions.len(), 2);

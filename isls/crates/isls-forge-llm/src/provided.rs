@@ -391,9 +391,11 @@ mod tests {
                 FieldDef { name: "sku".into(), rust_type: "String".into(), sql_type: "VARCHAR(255)".into(), nullable: false, default_value: None, description: "SKU".into() },
                 FieldDef { name: "price".into(), rust_type: "i64".into(), sql_type: "BIGINT".into(), nullable: false, default_value: None, description: "Price in cents".into() },
             ],
+            foreign_keys: vec![],
             validations: vec![],
             business_rules: vec![],
             relationships: vec![],
+            plural_name: None,
         };
         let syms = provides_model_types(&entity);
         assert_eq!(syms.len(), 3, "should provide main struct + create + update payloads");

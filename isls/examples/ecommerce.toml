@@ -31,3 +31,233 @@ compose = true
 max_crates     = 1
 test_coverage  = "integration"
 evidence_chain = true
+
+# ─── D2: Explicit entity definitions ─────────────────────────────────────────
+
+[[entities]]
+name = "User"
+[[entities.fields]]
+name = "email"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "password_hash"
+field_type = "String"
+[[entities.fields]]
+name = "role"
+field_type = "String"
+default = "'user'"
+[[entities.fields]]
+name = "is_active"
+field_type = "bool"
+default = "true"
+
+[[entities]]
+name = "Category"
+[[entities.fields]]
+name = "name"
+field_type = "String"
+[[entities.fields]]
+name = "slug"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "description"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "is_active"
+field_type = "bool"
+default = "true"
+
+[[entities]]
+name = "Product"
+[[entities.fields]]
+name = "name"
+field_type = "String"
+[[entities.fields]]
+name = "slug"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "description"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "price_cents"
+field_type = "i64"
+[[entities.fields]]
+name = "compare_at_price_cents"
+field_type = "i64"
+nullable = true
+[[entities.fields]]
+name = "sku"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "inventory_count"
+field_type = "i32"
+default = "0"
+[[entities.fields]]
+name = "is_published"
+field_type = "bool"
+default = "false"
+[[entities.fields]]
+name = "image_url"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "weight_grams"
+field_type = "i32"
+nullable = true
+[[entities.foreign_keys]]
+target = "Category"
+nullable = true
+
+[[entities]]
+name = "Customer"
+[[entities.fields]]
+name = "email"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "password_hash"
+field_type = "String"
+[[entities.fields]]
+name = "first_name"
+field_type = "String"
+[[entities.fields]]
+name = "last_name"
+field_type = "String"
+[[entities.fields]]
+name = "phone"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "is_active"
+field_type = "bool"
+default = "true"
+
+[[entities]]
+name = "Address"
+[[entities.fields]]
+name = "label"
+field_type = "String"
+[[entities.fields]]
+name = "street"
+field_type = "String"
+[[entities.fields]]
+name = "city"
+field_type = "String"
+[[entities.fields]]
+name = "state"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "postal_code"
+field_type = "String"
+[[entities.fields]]
+name = "country"
+field_type = "String"
+[[entities.fields]]
+name = "is_default"
+field_type = "bool"
+default = "false"
+[[entities.foreign_keys]]
+target = "Customer"
+
+[[entities]]
+name = "Cart"
+[[entities.fields]]
+name = "session_id"
+field_type = "String"
+[[entities.fields]]
+name = "status"
+field_type = "String"
+default = "'active'"
+[[entities.foreign_keys]]
+target = "Customer"
+nullable = true
+
+[[entities]]
+name = "CartItem"
+[[entities.fields]]
+name = "quantity"
+field_type = "i32"
+[[entities.fields]]
+name = "unit_price_cents"
+field_type = "i64"
+[[entities.foreign_keys]]
+target = "Cart"
+[[entities.foreign_keys]]
+target = "Product"
+
+[[entities]]
+name = "Order"
+[[entities.fields]]
+name = "order_number"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "status"
+field_type = "String"
+default = "'pending'"
+[[entities.fields]]
+name = "subtotal_cents"
+field_type = "i64"
+[[entities.fields]]
+name = "tax_cents"
+field_type = "i64"
+default = "0"
+[[entities.fields]]
+name = "shipping_cents"
+field_type = "i64"
+default = "0"
+[[entities.fields]]
+name = "total_cents"
+field_type = "i64"
+[[entities.fields]]
+name = "payment_status"
+field_type = "String"
+default = "'unpaid'"
+[[entities.fields]]
+name = "notes"
+field_type = "String"
+nullable = true
+[[entities.foreign_keys]]
+target = "Customer"
+
+[[entities]]
+name = "OrderLine"
+[[entities.fields]]
+name = "quantity"
+field_type = "i32"
+[[entities.fields]]
+name = "unit_price_cents"
+field_type = "i64"
+[[entities.foreign_keys]]
+target = "Order"
+[[entities.foreign_keys]]
+target = "Product"
+
+[[entities]]
+name = "Review"
+[[entities.fields]]
+name = "rating"
+field_type = "i32"
+[[entities.fields]]
+name = "title"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "body"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "is_approved"
+field_type = "bool"
+default = "false"
+[[entities.foreign_keys]]
+target = "Product"
+[[entities.foreign_keys]]
+target = "Customer"
