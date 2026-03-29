@@ -881,6 +881,126 @@ pub async fn create_pool() -> Result<PgPool, sqlx::Error> {
     .to_string()
 }
 
+// ─── Layer 6: Service generators ─────────────────────────────────────────────
+
+/// Generate a service file for a non-User entity.
+///
+/// Produces thin delegation wrappers around the entity's `_queries` module.
+/// Function names match `provides_service_fns()` exactly: `get_{snake}`,
+/// `list_{snake}s`, `create_{snake}`, `update_{snake}`, `delete_{snake}`.
+pub fn generate_service_rs(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let sn = &entity.snake_name;
+    format!(
+        r#"use sqlx::PgPool;
+use crate::errors::AppError;
+use crate::models::{sn}::{{{n}, Create{n}Payload, Update{n}Payload}};
+use crate::pagination::{{PaginationParams, PaginatedResponse}};
+use crate::database::{sn}_queries;
+
+/// Fetch a single {n} by ID.
+pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
+    tracing::debug!("getting {sn} id={{}}", id);
+    {sn}_queries::get_{sn}(pool, id).await
+}}
+
+/// List {n}s with pagination.
+pub async fn list_{sn}s(
+    pool: &PgPool,
+    params: &PaginationParams,
+) -> Result<PaginatedResponse<{n}>, AppError> {{
+    tracing::debug!("listing {sn}s page={{}}", params.page);
+    {sn}_queries::list_{sn}s(pool, params).await
+}}
+
+/// Create a new {n}.
+pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
+    tracing::info!("creating {sn}");
+    {sn}_queries::create_{sn}(pool, payload).await
+}}
+
+/// Update an existing {n}.
+pub async fn update_{sn}(
+    pool: &PgPool,
+    id: i64,
+    payload: Update{n}Payload,
+) -> Result<{n}, AppError> {{
+    tracing::info!("updating {sn} id={{}}", id);
+    {sn}_queries::update_{sn}(pool, id, payload).await
+}}
+
+/// Delete a {n} by ID.
+pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
+    tracing::info!("deleting {sn} id={{}}", id);
+    {sn}_queries::delete_{sn}(pool, id).await
+}}
+"#,
+        n = n,
+        sn = sn
+    )
+}
+
+/// Generate the User service file.
+///
+/// Identical to `generate_service_rs` but adds `get_user_by_email`.
+pub fn generate_user_service_rs(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let sn = &entity.snake_name;
+    format!(
+        r#"use sqlx::PgPool;
+use crate::errors::AppError;
+use crate::models::{sn}::{{{n}, Create{n}Payload, Update{n}Payload}};
+use crate::pagination::{{PaginationParams, PaginatedResponse}};
+use crate::database::{sn}_queries;
+
+/// Fetch a single {n} by ID.
+pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
+    tracing::debug!("getting {sn} id={{}}", id);
+    {sn}_queries::get_{sn}(pool, id).await
+}}
+
+/// Fetch a {n} by email address.
+pub async fn get_{sn}_by_email(pool: &PgPool, email: &str) -> Result<{n}, AppError> {{
+    tracing::debug!("getting {sn} by email");
+    {sn}_queries::get_{sn}_by_email(pool, email).await
+}}
+
+/// List {n}s with pagination.
+pub async fn list_{sn}s(
+    pool: &PgPool,
+    params: &PaginationParams,
+) -> Result<PaginatedResponse<{n}>, AppError> {{
+    tracing::debug!("listing {sn}s page={{}}", params.page);
+    {sn}_queries::list_{sn}s(pool, params).await
+}}
+
+/// Create a new {n}.
+pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
+    tracing::info!("creating {sn}");
+    {sn}_queries::create_{sn}(pool, payload).await
+}}
+
+/// Update an existing {n}.
+pub async fn update_{sn}(
+    pool: &PgPool,
+    id: i64,
+    payload: Update{n}Payload,
+) -> Result<{n}, AppError> {{
+    tracing::info!("updating {sn} id={{}}", id);
+    {sn}_queries::update_{sn}(pool, id, payload).await
+}}
+
+/// Delete a {n} by ID.
+pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
+    tracing::info!("deleting {sn} id={{}}", id);
+    {sn}_queries::delete_{sn}(pool, id).await
+}}
+"#,
+        n = n,
+        sn = sn
+    )
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /// Dispatch structural generation by file path.
@@ -926,6 +1046,18 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     }
     if path.contains("services/mod.rs") {
         return generate_services_mod(spec);
+    }
+    // Layer 6: entity service files (thin delegation wrappers — deterministic)
+    if path.contains("services/") && path.ends_with(".rs") && !path.ends_with("mod.rs") {
+        for entity in &spec.entities {
+            if path.ends_with(&format!("{}.rs", entity.snake_name)) {
+                return if entity.name == "User" {
+                    generate_user_service_rs(entity)
+                } else {
+                    generate_service_rs(entity)
+                };
+            }
+        }
     }
     if path.contains("api/mod.rs") {
         return generate_api_mod(spec);

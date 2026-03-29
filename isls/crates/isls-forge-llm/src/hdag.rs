@@ -258,15 +258,15 @@ impl CodegenHdag {
             entity_query_indices.push((entity.name.clone(), idx));
         }
 
-        // ── Layer 5: Service LLM nodes ────────────────────────────────────────
+        // ── Layer 6: Service Structural nodes (thin delegation wrappers) ─────
         let mut entity_service_indices: Vec<(String, usize)> = Vec::new();
         for entity in &all_entities {
             let idx = add_node(
                 &format!("backend/src/services/{}.rs", entity.snake_name),
-                NodeType::Llm, 5, Some(entity.name.clone()), true,
+                NodeType::Structural, 5, Some(entity.name.clone()), true,
                 &format!(
-                    "Business logic for {}: thin wrappers around DB queries with validation and business rules. All fns take &PgPool, return Result<_, AppError>.",
-                    entity.name
+                    "Service layer for {}: thin delegation wrappers around {}_queries. Deterministic.",
+                    entity.name, entity.snake_name
                 ),
             );
             // errors → service
