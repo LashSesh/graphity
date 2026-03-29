@@ -989,6 +989,88 @@ pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
     )
 }
 
+// ─── Layer 7: API route generators ───────────────────────────────────────────
+
+/// Generate an API route file for a non-User entity.
+///
+/// Produces actix-web CRUD handlers + `{snake}_routes` registration function.
+/// Scope is `/api/{snake}s` so that `configure_routes` in `api/mod.rs` composes
+/// correctly without the LLM inventing its own prefix.
+pub fn generate_api_routes_rs(entity: &EntityDef) -> String {
+    let n = &entity.name;
+    let sn = &entity.snake_name;
+    format!(
+        r#"use actix_web::{{web, HttpResponse, Responder}};
+use sqlx::PgPool;
+use crate::errors::AppError;
+use crate::auth::AuthUser;
+use crate::models::{sn}::{{Create{n}Payload, Update{n}Payload}};
+use crate::pagination::PaginationParams;
+use crate::services::{sn} as {sn}_service;
+
+pub async fn list_{sn}s(
+    pool: web::Data<PgPool>,
+    params: web::Query<PaginationParams>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::list_{sn}s(pool.get_ref(), &params).await?;
+    Ok(HttpResponse::Ok().json(result))
+}}
+
+pub async fn get_{sn}(
+    pool: web::Data<PgPool>,
+    path: web::Path<i64>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::get_{sn}(pool.get_ref(), path.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(result))
+}}
+
+pub async fn create_{sn}(
+    pool: web::Data<PgPool>,
+    body: web::Json<Create{n}Payload>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::create_{sn}(pool.get_ref(), body.into_inner()).await?;
+    Ok(HttpResponse::Created().json(result))
+}}
+
+pub async fn update_{sn}(
+    pool: web::Data<PgPool>,
+    path: web::Path<i64>,
+    body: web::Json<Update{n}Payload>,
+    _user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    let result = {sn}_service::update_{sn}(pool.get_ref(), path.into_inner(), body.into_inner()).await?;
+    Ok(HttpResponse::Ok().json(result))
+}}
+
+pub async fn delete_{sn}(
+    pool: web::Data<PgPool>,
+    path: web::Path<i64>,
+    user: AuthUser,
+) -> Result<impl Responder, AppError> {{
+    crate::auth::require_role(&user, "admin")?;
+    {sn}_service::delete_{sn}(pool.get_ref(), path.into_inner()).await?;
+    Ok(HttpResponse::NoContent().finish())
+}}
+
+pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
+    cfg.service(
+        web::scope("/api/{sn}s")
+            .route("", web::get().to(list_{sn}s))
+            .route("", web::post().to(create_{sn}))
+            .route("/{{id}}", web::get().to(get_{sn}))
+            .route("/{{id}}", web::put().to(update_{sn}))
+            .route("/{{id}}", web::delete().to(delete_{sn})),
+    );
+}}
+"#,
+        n = n,
+        sn = sn
+    )
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /// Dispatch structural generation by file path.
@@ -1049,6 +1131,14 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     }
     if path.contains("api/mod.rs") {
         return generate_api_mod(spec);
+    }
+    // Layer 7: entity API route files (deterministic CRUD handlers)
+    if path.contains("api/") && path.ends_with(".rs") && !path.ends_with("mod.rs") && !path.contains("auth_routes") {
+        for entity in spec.entities.iter().filter(|e| e.name != "User") {
+            if path.ends_with(&format!("{}.rs", entity.snake_name)) {
+                return generate_api_routes_rs(entity);
+            }
+        }
     }
     if path.ends_with("001_initial.sql") {
         return generate_migration(spec);
