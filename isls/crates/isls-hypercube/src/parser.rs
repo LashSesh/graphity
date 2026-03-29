@@ -26,6 +26,38 @@ struct RawSpec {
     deployment: Option<RawDeployment>,
     #[allow(dead_code)]
     constraints: Option<RawConstraints>,
+    /// D2: explicit entity definitions parsed from `[[entities]]` arrays.
+    entities: Option<Vec<RawEntity>>,
+}
+
+// ─── D2 entity TOML structures ──────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct RawEntity {
+    name: String,
+    #[serde(default)]
+    fields: Vec<RawEntityField>,
+    #[serde(default)]
+    foreign_keys: Vec<RawForeignKey>,
+}
+
+#[derive(Deserialize)]
+struct RawEntityField {
+    name: String,
+    field_type: String,
+    #[serde(default)]
+    nullable: bool,
+    #[serde(default)]
+    unique: bool,
+    #[serde(default)]
+    default: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RawForeignKey {
+    target: String,
+    #[serde(default)]
+    nullable: bool,
 }
 
 #[derive(Deserialize)]
@@ -107,29 +139,38 @@ pub fn parse_toml_str_to_cube(content: &str) -> Result<HyperCube> {
     dimensions.push(dim_fixed("arch.auth_method", DimCategory::Security, &auth_method, 0, "Authentication method"));
     dimensions.push(dim_fixed("arch.app_name", DimCategory::Architecture, &raw.app.name, 0, "Application name"));
 
-    // ── Detect domain ────────────────────────────────────────────────────
-    let all_module_text = raw.app.modules
-        .as_ref()
-        .map(|m| {
-            let mut text = raw.app.description.clone();
-            for (k, v) in m {
-                text.push(' ');
-                text.push_str(k);
-                text.push(' ');
-                text.push_str(v);
-            }
-            text
-        })
-        .unwrap_or_else(|| raw.app.description.clone());
+    // ── Detect domain or parse explicit entities ──────────────────────────
+    let has_toml_entities = raw.entities.as_ref().map_or(false, |e| !e.is_empty());
 
-    let domain = registry.detect(&all_module_text);
-
-    // ── Entity dimensions from domain template ───────────────────────────
-    let entities: Vec<EntityTemplate> = if let Some(dom) = domain {
-        dom.entities.clone()
+    let (entities, domain) = if has_toml_entities {
+        // D2 path: parse entities directly from TOML [[entities]] arrays
+        let toml_entities = raw.entities.unwrap();
+        let parsed = parse_raw_entities(&toml_entities);
+        (parsed, None)
     } else {
-        // Fallback: infer simple entities from module descriptions
-        infer_entities_from_modules(&raw.app.modules.unwrap_or_default())
+        // D1 path: detect domain from module descriptions
+        let all_module_text = raw.app.modules
+            .as_ref()
+            .map(|m| {
+                let mut text = raw.app.description.clone();
+                for (k, v) in m {
+                    text.push(' ');
+                    text.push_str(k);
+                    text.push(' ');
+                    text.push_str(v);
+                }
+                text
+            })
+            .unwrap_or_else(|| raw.app.description.clone());
+
+        let domain = registry.detect(&all_module_text);
+
+        let entities: Vec<EntityTemplate> = if let Some(dom) = domain {
+            dom.entities.clone()
+        } else {
+            infer_entities_from_modules(&raw.app.modules.unwrap_or_default())
+        };
+        (entities, domain)
     };
 
     for entity in &entities {
@@ -338,7 +379,150 @@ pub fn parse_toml_str_to_cube(content: &str) -> Result<HyperCube> {
         couplings,
         depth: 0,
         parent_signature: None,
+        entities_from_toml: has_toml_entities,
     })
+}
+
+// ─── D2 Entity Parsing ──────────────────────────────────────────────────────
+
+/// Convert TOML `[[entities]]` into `EntityTemplate`s with auto-generated
+/// id, timestamp, and FK fields.
+fn parse_raw_entities(raw_entities: &[RawEntity]) -> Vec<EntityTemplate> {
+    let mut entities: Vec<EntityTemplate> = Vec::new();
+
+    for raw in raw_entities {
+        let mut fields = Vec::new();
+
+        // id field (always first)
+        fields.push(crate::domain::FieldDef {
+            name: "id".into(),
+            rust_type: "i64".into(),
+            sql_type: "BIGSERIAL PRIMARY KEY".into(),
+            nullable: false,
+            default_value: None,
+            description: "Primary key".into(),
+        });
+
+        // User-defined fields
+        for rf in &raw.fields {
+            let (rust_type, sql_type) = map_field_type(&rf.field_type, rf.nullable, rf.unique, rf.default.as_deref());
+            fields.push(crate::domain::FieldDef {
+                name: rf.name.clone(),
+                rust_type,
+                sql_type,
+                nullable: rf.nullable,
+                default_value: rf.default.clone(),
+                description: format!("{} field", rf.name),
+            });
+        }
+
+        // Foreign key fields — auto-generated from [[entities.foreign_keys]]
+        for fk in &raw.foreign_keys {
+            let target_snake = to_snake_case(&fk.target);
+            let target_table = pluralize_snake(&target_snake);
+            let fk_field_name = format!("{}_id", target_snake);
+            let (rust_type, sql_type) = if fk.nullable {
+                (
+                    "Option<i64>".to_string(),
+                    format!("BIGINT REFERENCES {}(id)", target_table),
+                )
+            } else {
+                (
+                    "i64".to_string(),
+                    format!("BIGINT NOT NULL REFERENCES {}(id)", target_table),
+                )
+            };
+            fields.push(crate::domain::FieldDef {
+                name: fk_field_name,
+                rust_type,
+                sql_type,
+                nullable: fk.nullable,
+                default_value: None,
+                description: format!("FK to {}", fk.target),
+            });
+        }
+
+        // Timestamps
+        fields.push(crate::domain::FieldDef {
+            name: "created_at".into(),
+            rust_type: "String".into(),
+            sql_type: "TIMESTAMPTZ NOT NULL DEFAULT NOW()".into(),
+            nullable: false,
+            default_value: Some("NOW()".into()),
+            description: "Creation timestamp".into(),
+        });
+        fields.push(crate::domain::FieldDef {
+            name: "updated_at".into(),
+            rust_type: "String".into(),
+            sql_type: "TIMESTAMPTZ NOT NULL DEFAULT NOW()".into(),
+            nullable: false,
+            default_value: Some("NOW()".into()),
+            description: "Update timestamp".into(),
+        });
+
+        entities.push(EntityTemplate {
+            name: raw.name.clone(),
+            description: format!("{} entity", raw.name),
+            fields,
+            validations: vec![],
+            indices: vec![],
+        });
+    }
+
+    entities
+}
+
+/// Map a D2 spec field_type to (rust_type, sql_type).
+fn map_field_type(field_type: &str, nullable: bool, unique: bool, default: Option<&str>) -> (String, String) {
+    let (base_rust, base_sql) = match field_type {
+        "String" => ("String", "VARCHAR(255)"),
+        "i64" => ("i64", "BIGINT"),
+        "i32" => ("i32", "INTEGER"),
+        "f64" => ("f64", "DOUBLE PRECISION"),
+        "bool" => ("bool", "BOOLEAN"),
+        _ => ("String", "VARCHAR(255)"),
+    };
+
+    let rust_type = if nullable {
+        format!("Option<{}>", base_rust)
+    } else {
+        base_rust.to_string()
+    };
+
+    let mut sql_parts = base_sql.to_string();
+    if !nullable {
+        sql_parts.push_str(" NOT NULL");
+    }
+    if unique {
+        sql_parts.push_str(" UNIQUE");
+    }
+    if let Some(d) = default {
+        sql_parts.push_str(&format!(" DEFAULT {}", d));
+    }
+
+    (rust_type, sql_parts)
+}
+
+/// Pluralize a snake_case name (mirrors isls_forge_llm::pluralize).
+fn pluralize_snake(name: &str) -> String {
+    if name.is_empty() {
+        return name.to_string();
+    }
+    if name.ends_with("ss") || name.ends_with("sh") || name.ends_with("ch") || name.ends_with("x") {
+        return format!("{}es", name);
+    }
+    if name.ends_with('y') {
+        let before_y = &name[..name.len() - 1];
+        if let Some(c) = before_y.chars().last() {
+            if !"aeiou".contains(c) {
+                return format!("{}ies", before_y);
+            }
+        }
+    }
+    if name.ends_with('s') {
+        return name.to_string();
+    }
+    format!("{}s", name)
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

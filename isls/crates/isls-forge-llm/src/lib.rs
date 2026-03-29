@@ -53,6 +53,17 @@ pub use type_context::TypeContext;
 use isls_hypercube::domain::FieldDef;
 use serde::{Deserialize, Serialize};
 
+// ─── ForeignKeyDef ───────────────────────────────────────────────────────────
+
+/// A foreign key relationship from this entity to another.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ForeignKeyDef {
+    /// Target entity name in PascalCase (e.g. `"Category"`).
+    pub target: String,
+    /// Whether this FK is nullable (optional relationship).
+    pub nullable: bool,
+}
+
 // ─── EntityDef ────────────────────────────────────────────────────────────────
 
 /// A domain entity definition used by the forge pipeline.
@@ -67,12 +78,16 @@ pub struct EntityDef {
     pub snake_name: String,
     /// All entity fields including id and timestamps.
     pub fields: Vec<FieldDef>,
+    /// Foreign key relationships to other entities.
+    pub foreign_keys: Vec<ForeignKeyDef>,
     /// Validation rules expressed as Rust boolean conditions.
     pub validations: Vec<ValidationRule>,
     /// Business rules driving the service layer.
     pub business_rules: Vec<String>,
     /// Related entities (for join/FK awareness in prompts).
     pub relationships: Vec<String>,
+    /// Optional override for the plural table name (e.g. `"categories"`).
+    pub plural_name: Option<String>,
 }
 
 /// A simple validation rule (maps to `if !{condition} { errors.push({message}) }`).
@@ -150,6 +165,7 @@ impl ForgePlan {
                 name: et.name.clone(),
                 snake_name: to_snake_case(&et.name),
                 fields: et.fields.clone(),
+                foreign_keys: Vec::new(),
                 validations: et
                     .validations
                     .iter()
@@ -160,6 +176,7 @@ impl ForgePlan {
                     .collect(),
                 business_rules: Vec::new(),
                 relationships: Vec::new(),
+                plural_name: None,
             })
             .collect();
 
@@ -241,9 +258,11 @@ impl ForgePlan {
                 name: model.struct_name.clone(),
                 snake_name: snake,
                 fields,
+                foreign_keys: Vec::new(),
                 validations,
                 business_rules,
                 relationships,
+                plural_name: None,
             }
         }).collect();
 
@@ -295,6 +314,7 @@ impl ForgePlan {
                 name: et.name.clone(),
                 snake_name: to_snake_case(&et.name),
                 fields: et.fields.clone(),
+                foreign_keys: Vec::new(),
                 validations: et
                     .validations
                     .iter()
@@ -305,6 +325,7 @@ impl ForgePlan {
                     .collect(),
                 business_rules: Vec::new(),
                 relationships: Vec::new(),
+                plural_name: None,
             })
             .collect();
 
@@ -330,6 +351,86 @@ impl ForgePlan {
                 "ISLS-NORM-0096".into(),
                 "ISLS-NORM-0103".into(),
                 "ISLS-NORM-0500".into(),
+            ],
+        }
+    }
+
+    /// Build a `ForgePlan` from TOML-parsed entity templates (D2 generic path).
+    ///
+    /// Converts `EntityTemplate`s from the parser into `EntityDef`s, extracting
+    /// foreign key information from the field sql_type strings. If no User entity
+    /// is present, one is injected for JWT authentication support.
+    pub fn from_toml_entities(
+        app_name: &str,
+        description: &str,
+        domain_name: &str,
+        templates: &[isls_hypercube::domain::EntityTemplate],
+    ) -> Self {
+        let mut entities: Vec<EntityDef> = templates
+            .iter()
+            .map(|et| {
+                // Extract FK info from fields that have REFERENCES in sql_type
+                let foreign_keys: Vec<ForeignKeyDef> = et.fields.iter()
+                    .filter_map(|f| {
+                        if f.sql_type.contains("REFERENCES ") {
+                            // Field name like "category_id" → target "Category"
+                            let target_name = f.name.trim_end_matches("_id");
+                            let target = target_name.split('_')
+                                .map(|w| {
+                                    let mut c = w.chars();
+                                    match c.next() {
+                                        None => String::new(),
+                                        Some(fc) => fc.to_uppercase().collect::<String>() + c.as_str(),
+                                    }
+                                })
+                                .collect::<String>();
+                            Some(ForeignKeyDef {
+                                target,
+                                nullable: f.nullable,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+                EntityDef {
+                    name: et.name.clone(),
+                    snake_name: to_snake_case(&et.name),
+                    fields: et.fields.clone(),
+                    foreign_keys,
+                    validations: et.validations.iter().map(|v| ValidationRule {
+                        condition: v.condition.clone(),
+                        message: v.message.clone(),
+                    }).collect(),
+                    business_rules: Vec::new(),
+                    relationships: Vec::new(),
+                    plural_name: None,
+                }
+            })
+            .collect();
+
+        // Inject User entity if missing
+        let has_user = entities.iter().any(|e| e.name == "User");
+        if !has_user {
+            entities.push(standard_user_entity());
+        }
+
+        let spec = AppSpec {
+            app_name: app_name.to_string(),
+            description: description.to_string(),
+            domain_name: domain_name.to_string(),
+            entities,
+            business_rules: Vec::new(),
+        };
+
+        Self {
+            spec,
+            norm_ids: vec![
+                "ISLS-NORM-0042".into(),
+                "ISLS-NORM-0088".into(),
+                "ISLS-NORM-0096".into(),
+                "ISLS-NORM-0103".into(),
             ],
         }
     }
@@ -415,6 +516,44 @@ pub fn to_snake_case(s: &str) -> String {
     out
 }
 
+/// Pluralize a snake_case name for use as a database table name.
+///
+/// Rules:
+/// - Already ends in `s` → no change (e.g. `address` → `address` is wrong, handled by `ss` rule)
+/// - Ends in `ss`, `sh`, `ch`, `x` → append `es`
+/// - Ends in `y` after a consonant → replace `y` with `ies`
+/// - Ends in `s` (but not `ss`/`sh`/`ch`/`x`) → no change
+/// - Otherwise → append `s`
+pub fn pluralize(name: &str) -> String {
+    if name.is_empty() {
+        return name.to_string();
+    }
+    if name.ends_with("ss") || name.ends_with("sh") || name.ends_with("ch") || name.ends_with("x") {
+        return format!("{}es", name);
+    }
+    if name.ends_with('y') {
+        let before_y = &name[..name.len() - 1];
+        if let Some(c) = before_y.chars().last() {
+            if !"aeiou".contains(c) {
+                return format!("{}ies", before_y);
+            }
+        }
+    }
+    if name.ends_with('s') {
+        return name.to_string();
+    }
+    format!("{}s", name)
+}
+
+/// Get the database table name for an entity.
+pub fn table_name(entity: &EntityDef) -> String {
+    if let Some(ref plural) = entity.plural_name {
+        plural.clone()
+    } else {
+        pluralize(&entity.snake_name)
+    }
+}
+
 /// Build a standard User entity for authentication when no User-like entity
 /// exists in the composed plan.
 fn standard_user_entity() -> EntityDef {
@@ -431,12 +570,14 @@ fn standard_user_entity() -> EntityDef {
             FieldDef { name: "created_at".into(), rust_type: "String".into(), sql_type: "TIMESTAMPTZ NOT NULL DEFAULT NOW()".into(), nullable: false, default_value: Some("NOW()".into()), description: "Account creation timestamp".into() },
             FieldDef { name: "updated_at".into(), rust_type: "String".into(), sql_type: "TIMESTAMPTZ NOT NULL DEFAULT NOW()".into(), nullable: false, default_value: Some("NOW()".into()), description: "Last update timestamp".into() },
         ],
+        foreign_keys: Vec::new(),
         validations: vec![
             ValidationRule { condition: "!self.email.is_empty()".into(), message: "Email must not be empty".into() },
             ValidationRule { condition: "self.email.contains('@')".into(), message: "Email must contain @".into() },
         ],
         business_rules: vec!["Password must be hashed before storage".into()],
         relationships: vec!["Referenced by all authenticated endpoints".into()],
+        plural_name: None,
     }
 }
 

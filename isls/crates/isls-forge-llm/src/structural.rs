@@ -17,7 +17,7 @@
 //! - `backend/tests/api_tests.rs`
 //! - Frontend: `index.html`, `style.css`, `src/api/client.js`, `src/pages/{entity}.js`
 
-use crate::{AppSpec, EntityDef};
+use crate::{AppSpec, EntityDef, pluralize};
 use isls_hypercube::domain::FieldDef;
 
 // ─── Layer 0 structural generators ───────────────────────────────────────────
@@ -222,9 +222,10 @@ pub fn generate_migration(spec: &AppSpec) -> String {
     let ordered = topological_sort_entities(&non_user);
 
     for entity in &ordered {
+        let tn = pluralize(&entity.snake_name);
         sql.push_str(&format!(
-            "CREATE TABLE IF NOT EXISTS {}s (\n",
-            entity.snake_name
+            "CREATE TABLE IF NOT EXISTS {} (\n",
+            tn
         ));
         let field_count = entity.fields.len();
         for (i, f) in entity.fields.iter().enumerate() {
@@ -1007,6 +1008,7 @@ pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
 pub fn generate_api_routes_rs(entity: &EntityDef) -> String {
     let n = &entity.name;
     let sn = &entity.snake_name;
+    let tn = pluralize(sn);
     format!(
         r#"use actix_web::{{web, HttpResponse, Responder}};
 use sqlx::PgPool;
@@ -1065,7 +1067,7 @@ pub async fn delete_{sn}(
 
 pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
     cfg.service(
-        web::scope("/api/{sn}s")
+        web::scope("/api/{tn}")
             .route("", web::get().to(list_{sn}s))
             .route("", web::post().to(create_{sn}))
             .route("/{{id}}", web::get().to(get_{sn}))
@@ -1075,7 +1077,8 @@ pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
 }}
 "#,
         n = n,
-        sn = sn
+        sn = sn,
+        tn = tn
     )
 }
 
@@ -1331,7 +1334,7 @@ fn topological_sort_entities<'a>(entities: &[&'a EntityDef]) -> Vec<&'a EntityDe
                 .collect();
             if deps.iter().all(|d| placed.contains(d)) {
                 result.push(entity);
-                placed.insert(format!("{}s", entity.snake_name));
+                placed.insert(pluralize(&entity.snake_name));
             } else {
                 next_remaining.push(*entity);
             }
@@ -1358,17 +1361,21 @@ mod tests {
                     name: "User".into(),
                     snake_name: "user".into(),
                     fields: vec![],
+                    foreign_keys: vec![],
                     validations: vec![],
                     business_rules: vec![],
                     relationships: vec![],
+                    plural_name: None,
                 },
                 EntityDef {
                     name: "Product".into(),
                     snake_name: "product".into(),
                     fields: vec![],
+                    foreign_keys: vec![],
                     validations: vec![],
                     business_rules: vec![],
                     relationships: vec![],
+                    plural_name: None,
                 },
             ],
             business_rules: vec![],

@@ -31,3 +31,156 @@ compose = true
 max_crates     = 1
 test_coverage  = "integration"
 evidence_chain = true
+
+# ─── D2: Explicit entity definitions ─────────────────────────────────────────
+
+[[entities]]
+name = "User"
+[[entities.fields]]
+name = "email"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "password_hash"
+field_type = "String"
+[[entities.fields]]
+name = "display_name"
+field_type = "String"
+[[entities.fields]]
+name = "avatar_url"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "role"
+field_type = "String"
+default = "'user'"
+[[entities.fields]]
+name = "is_active"
+field_type = "bool"
+default = "true"
+
+[[entities]]
+name = "Project"
+[[entities.fields]]
+name = "name"
+field_type = "String"
+[[entities.fields]]
+name = "description"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "status"
+field_type = "String"
+default = "'planning'"
+[[entities.fields]]
+name = "start_date"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "target_end_date"
+field_type = "String"
+nullable = true
+
+[[entities]]
+name = "Sprint"
+[[entities.fields]]
+name = "name"
+field_type = "String"
+[[entities.fields]]
+name = "goal"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "start_date"
+field_type = "String"
+[[entities.fields]]
+name = "end_date"
+field_type = "String"
+[[entities.fields]]
+name = "status"
+field_type = "String"
+default = "'planning'"
+[[entities.foreign_keys]]
+target = "Project"
+
+[[entities]]
+name = "Task"
+[[entities.fields]]
+name = "title"
+field_type = "String"
+[[entities.fields]]
+name = "description"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "status"
+field_type = "String"
+default = "'todo'"
+[[entities.fields]]
+name = "priority"
+field_type = "String"
+default = "'medium'"
+[[entities.fields]]
+name = "estimate_hours"
+field_type = "f64"
+nullable = true
+[[entities.fields]]
+name = "actual_hours"
+field_type = "f64"
+nullable = true
+[[entities.fields]]
+name = "due_date"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "position"
+field_type = "i32"
+default = "0"
+[[entities.foreign_keys]]
+target = "Project"
+[[entities.foreign_keys]]
+target = "Sprint"
+nullable = true
+[[entities.foreign_keys]]
+target = "User"
+nullable = true
+
+[[entities]]
+name = "Comment"
+[[entities.fields]]
+name = "body"
+field_type = "String"
+[[entities.foreign_keys]]
+target = "Task"
+[[entities.foreign_keys]]
+target = "User"
+
+[[entities]]
+name = "Label"
+[[entities.fields]]
+name = "name"
+field_type = "String"
+[[entities.fields]]
+name = "color"
+field_type = "String"
+default = "'#3B82F6'"
+[[entities.foreign_keys]]
+target = "Project"
+
+[[entities]]
+name = "TaskLabel"
+[[entities.foreign_keys]]
+target = "Task"
+[[entities.foreign_keys]]
+target = "Label"
+
+[[entities]]
+name = "TeamMember"
+[[entities.fields]]
+name = "role"
+field_type = "String"
+default = "'member'"
+[[entities.foreign_keys]]
+target = "User"
+[[entities.foreign_keys]]
+target = "Project"

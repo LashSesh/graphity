@@ -13,7 +13,7 @@
 //! - No OpenAI API key is available
 //! - Tests that don't need real LLM output
 
-use crate::{AppSpec, EntityDef};
+use crate::{AppSpec, EntityDef, pluralize};
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -511,9 +511,10 @@ pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
     let ordered = topological_sort_entities(&non_user);
 
     for entity in &ordered {
+        let tn = pluralize(&entity.snake_name);
         sql.push_str(&format!(
-            "CREATE TABLE IF NOT EXISTS {}s (\n",
-            entity.snake_name
+            "CREATE TABLE IF NOT EXISTS {} (\n",
+            tn
         ));
         let field_count = entity.fields.len();
         for (i, f) in entity.fields.iter().enumerate() {
@@ -549,7 +550,7 @@ pub fn mock_generate_migrations(entities: &[EntityDef]) -> String {
 /// Entities that reference other entities (via REFERENCES in sql_type) come after them.
 fn topological_sort_entities<'a>(entities: &[&'a EntityDef]) -> Vec<&'a EntityDef> {
     let names: std::collections::HashSet<String> = entities.iter()
-        .map(|e| format!("{}s", e.snake_name))
+        .map(|e| pluralize(&e.snake_name))
         .collect();
 
     let mut result: Vec<&EntityDef> = Vec::new();
@@ -566,7 +567,6 @@ fn topological_sort_entities<'a>(entities: &[&'a EntityDef]) -> Vec<&'a EntityDe
         for entity in &remaining {
             let deps: Vec<String> = entity.fields.iter()
                 .filter_map(|f| {
-                    // Extract referenced table from "REFERENCES tablename(col)"
                     if let Some(pos) = f.sql_type.find("REFERENCES ") {
                         let rest = &f.sql_type[pos + 11..];
                         let table = rest.split('(').next().unwrap_or("").trim();
@@ -579,14 +579,13 @@ fn topological_sort_entities<'a>(entities: &[&'a EntityDef]) -> Vec<&'a EntityDe
                 .collect();
             if deps.iter().all(|d| placed.contains(d)) {
                 result.push(entity);
-                placed.insert(format!("{}s", entity.snake_name));
+                placed.insert(pluralize(&entity.snake_name));
             } else {
                 next_remaining.push(*entity);
             }
         }
         remaining = next_remaining;
     }
-    // Add any remaining (circular deps) at the end
     result.extend(remaining);
     result
 }
@@ -595,6 +594,7 @@ fn topological_sort_entities<'a>(entities: &[&'a EntityDef]) -> Vec<&'a EntityDe
 pub fn mock_generate_queries(entity: &EntityDef) -> String {
     let n = &entity.name;
     let sn = &entity.snake_name;
+    let tn = pluralize(sn); // table name (correctly pluralized)
 
     // All columns for SELECT
     let cols: Vec<&str> = entity.fields.iter().map(|f| f.name.as_str()).collect();
@@ -622,7 +622,7 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
         "pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{\n"
     ));
     code.push_str(&format!(
-        "    sqlx::query_as::<_, {n}>(\"SELECT {col_list} FROM {sn}s WHERE id = $1\")\n"
+        "    sqlx::query_as::<_, {n}>(\"SELECT {col_list} FROM {tn} WHERE id = $1\")\n"
     ));
     code.push_str("        .bind(id)\n");
     code.push_str("        .fetch_optional(pool)\n");
@@ -637,13 +637,13 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
         "pub async fn list_{sn}s(\n    pool: &PgPool,\n    params: &PaginationParams,\n) -> Result<PaginatedResponse<{n}>, AppError> {{\n"
     ));
     code.push_str(&format!(
-        "    let row: (i64,) = sqlx::query_as(\"SELECT COUNT(*) FROM {sn}s\")\n"
+        "    let row: (i64,) = sqlx::query_as(\"SELECT COUNT(*) FROM {tn}\")\n"
     ));
     code.push_str("        .fetch_one(pool)\n");
     code.push_str("        .await?;\n");
     code.push_str("    let total = row.0;\n\n");
     code.push_str(&format!(
-        "    let items = sqlx::query_as::<_, {n}>(\"SELECT {col_list} FROM {sn}s ORDER BY id DESC LIMIT $1 OFFSET $2\")\n"
+        "    let items = sqlx::query_as::<_, {n}>(\"SELECT {col_list} FROM {tn} ORDER BY id DESC LIMIT $1 OFFSET $2\")\n"
     ));
     code.push_str("        .bind(params.limit())\n");
     code.push_str("        .bind(params.offset())\n");
@@ -657,7 +657,7 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
         "pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{\n"
     ));
     code.push_str(&format!(
-        "    sqlx::query_as::<_, {n}>(\"INSERT INTO {sn}s ({uname_list}) VALUES ({ph_list}) RETURNING {col_list}\")\n",
+        "    sqlx::query_as::<_, {n}>(\"INSERT INTO {tn} ({uname_list}) VALUES ({ph_list}) RETURNING {col_list}\")\n",
         uname_list = unames.join(", "),
         ph_list = placeholders.join(", "),
     ));
@@ -679,13 +679,11 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
     // Field-by-field merge with proper nullable handling
     for f in &ufields {
         if f.nullable {
-            // Struct field is Option<T>, payload field is Option<T>
             code.push_str(&format!(
                 "    if let Some(v) = payload.{name} {{ current.{name} = Some(v); }}\n",
                 name = f.name
             ));
         } else {
-            // Struct field is T, payload field is Option<T>
             code.push_str(&format!(
                 "    if let Some(v) = payload.{name} {{ current.{name} = v; }}\n",
                 name = f.name
@@ -695,7 +693,7 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
     let set_cols = unames.join(", ");
     let set_ph: Vec<String> = (2..=unames.len() + 1).map(|i| format!("${}", i)).collect();
     code.push_str(&format!(
-        "    sqlx::query_as::<_, {n}>(\"UPDATE {sn}s SET ({set_cols}) = ({set_ph}) WHERE id = $1 RETURNING {col_list}\")\n",
+        "    sqlx::query_as::<_, {n}>(\"UPDATE {tn} SET ({set_cols}) = ({set_ph}) WHERE id = $1 RETURNING {col_list}\")\n",
         set_cols = set_cols,
         set_ph = set_ph.join(", "),
     ));
@@ -713,7 +711,7 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
         "pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{\n"
     ));
     code.push_str(&format!(
-        "    let result = sqlx::query(\"DELETE FROM {sn}s WHERE id = $1\")\n"
+        "    let result = sqlx::query(\"DELETE FROM {tn} WHERE id = $1\")\n"
     ));
     code.push_str("        .bind(id)\n");
     code.push_str("        .execute(pool)\n");
@@ -782,6 +780,7 @@ pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
 pub fn mock_generate_api(entity: &EntityDef) -> String {
     let n = &entity.name;
     let sn = &entity.snake_name;
+    let tn = pluralize(sn); // correctly pluralized route path
     format!(
         r#"// ISLS v3.1 mock generated
 use actix_web::{{web, HttpResponse, Responder}};
@@ -840,7 +839,7 @@ pub async fn delete_{sn}(
 
 pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
     cfg.service(
-        web::scope("/api/{sn}s")
+        web::scope("/api/{tn}")
             .route("", web::get().to(list_{sn}s))
             .route("", web::post().to(create_{sn}))
             .route("/{{id}}", web::get().to(get_{sn}))
@@ -850,7 +849,8 @@ pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
 }}
 "#,
         n = n,
-        sn = sn
+        sn = sn,
+        tn = tn
     )
 }
 
