@@ -310,14 +310,14 @@ impl CodegenHdag {
             edges.push(HdagEdge { from: q_idx, to: auth_routes_idx, provides: provided::provides_query_fns_user() });
         }
 
-        // entity api handlers
+        // entity api handlers (structural — deterministic CRUD route wrappers)
         for entity in spec.entities.iter().filter(|e| e.name != "User") {
             let idx = add_node(
                 &format!("backend/src/api/{}.rs", entity.snake_name),
-                NodeType::Llm, 6, Some(entity.name.clone()), true,
+                NodeType::Structural, 6, Some(entity.name.clone()), true,
                 &format!(
-                    "Actix-web handlers for {}: list (paginated), get by id, create, update, delete. Require AuthUser. Admin-only delete.",
-                    entity.name
+                    "Actix-web CRUD handlers for {} with /api/{}s scope. Deterministic.",
+                    entity.name, entity.snake_name
                 ),
             );
             edges.push(HdagEdge { from: errors_idx, to: idx, provides: provided::provides_apperror() });
