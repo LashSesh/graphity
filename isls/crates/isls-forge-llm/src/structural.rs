@@ -515,7 +515,6 @@ pub struct User {
     pub id: i64,
     pub email: String,
     pub password_hash: String,
-    pub name: String,
     pub role: String,
     pub is_active: bool,
     pub created_at: DateTime<Utc>,
@@ -526,14 +525,12 @@ pub struct User {
 pub struct CreateUserPayload {
     pub email: String,
     pub password: String,
-    pub name: String,
     pub role: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct UpdateUserPayload {
     pub email: Option<String>,
-    pub name: Option<String>,
     pub role: Option<String>,
     pub is_active: Option<bool>,
 }
