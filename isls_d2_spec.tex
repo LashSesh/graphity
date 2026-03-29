@@ -1,0 +1,613 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs,tabularx}
+\usepackage{enumitem}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\geometry{margin=2.2cm,top=2.8cm,bottom=2.8cm}
+
+\definecolor{codebg}{HTML}{F5F5F5}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!60!black,
+  urlcolor=blue!60!black,
+  pdftitle={ISLS D2 --- Multi-Domain Proof},
+  pdfauthor={Sebastian Klemm},
+}
+
+\lstset{
+  basicstyle=\ttfamily\scriptsize,
+  breaklines=true,
+  frame=single,
+  backgroundcolor=\color{codebg},
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{green!50!black}\itshape,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=5pt,
+  tabsize=4,
+  showstringspaces=false,
+  xleftmargin=1.5em,
+  framexleftmargin=1em,
+}
+
+\titleformat{\section}{\Large\bfseries}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{1em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small ISLS D2 --- Multi-Domain Proof}
+\fancyhead[R]{\small Klemm, 2026}
+\fancyfoot[C]{\thepage}
+
+\begin{document}
+
+% ============================================================
+\begin{titlepage}
+\begin{center}
+\vspace*{1.5cm}
+{\Huge\bfseries ISLS D2}\\[0.4cm]
+{\LARGE\bfseries Multi-Domain Proof}\\[0.3cm]
+{\LARGE\bfseries Resonanz-Breite}\\[1.2cm]
+{\Large Drei Dom\"anen. Ein Generator. Drei funktionierende Apps.}\\[1.5cm]
+{\large Sebastian Klemm}\\[0.3cm]
+{\small 29. M\"arz 2026}\\[2cm]
+
+\begin{tabular}{ll}
+\textbf{Repository:} & \texttt{graphity/isls} \\
+\textbf{Baut auf:} & D1 (Pipeline $\to$ Compile $\to$ Docker $\to$ Browser) \\
+\textbf{Crate:} & \texttt{isls-hypercube} (neue Domains) \\
+\textbf{Ziel:} & Beweis: der Generator ist dom\"anenunabh\"angig \\
+\end{tabular}
+
+\vfill
+{\small
+D1 hat bewiesen dass die Pipeline funktioniert: TOML $\to$ HDAG $\to$
+kompilierbarer Code $\to$ Docker $\to$ Login $\to$ CRUD.\\[0.2cm]
+D2 beweist dass die Pipeline \emph{universell} funktioniert: drei
+v\"ollig verschiedene Dom\"anen durchlaufen dieselbe Pipeline und
+erzeugen drei funktionierende Anwendungen.\\[0.2cm]
+Wenn D2 steht, ist das System kein Warehouse-Generator.\\
+Es ist ein App-Generator.
+}
+\end{center}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Ziel}
+% ============================================================
+
+Drei TOML-Dateien. Drei v\"ollig verschiedene Dom\"anen. Derselbe Generator.
+Alle drei kompilieren, starten in Docker, Login funktioniert, CRUD funktioniert.
+
+\begin{center}
+\begin{tabular}{l l l l}
+\toprule
+\textbf{Dom\"ane} & \textbf{TOML} & \textbf{Entities} & \textbf{Besonderheit} \\
+\midrule
+Warehouse & \texttt{warehouse.toml} & 7 & D1 --- existiert bereits \\
+E-Commerce & \texttt{ecommerce.toml} & 9 & Warenkorb, Bestellstatus, Reviews \\
+Projektmanagement & \texttt{project.toml} & 8 & Sprints, Tasks, Kanban-Status \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ============================================================
+\section{Neue TOML: E-Commerce}
+% ============================================================
+
+Datei: \texttt{examples/ecommerce.toml}
+
+\begin{lstlisting}
+[app]
+name = "ecommerce-platform"
+description = "Online store with product catalog, shopping cart, and orders"
+
+[backend]
+language = "rust"
+framework = "actix-web"
+database = "postgresql"
+auth_method = "jwt"
+
+[frontend]
+type = "spa"
+framework = "vanilla"
+styling = "minimal"
+
+[deployment]
+containerized = true
+compose = true
+
+[[entities]]
+name = "Category"
+fields = [
+    { name = "name", type = "String" },
+    { name = "slug", type = "String", unique = true },
+    { name = "description", type = "String", nullable = true },
+    { name = "is_active", type = "bool", default = "true" },
+]
+
+[[entities]]
+name = "Product"
+fields = [
+    { name = "name", type = "String" },
+    { name = "slug", type = "String", unique = true },
+    { name = "description", type = "String", nullable = true },
+    { name = "price_cents", type = "i64" },
+    { name = "compare_at_price_cents", type = "i64", nullable = true },
+    { name = "sku", type = "String", unique = true },
+    { name = "inventory_count", type = "i32", default = "0" },
+    { name = "is_published", type = "bool", default = "false" },
+    { name = "image_url", type = "String", nullable = true },
+    { name = "weight_grams", type = "i32", nullable = true },
+]
+foreign_keys = [
+    { target = "Category", nullable = true },
+]
+
+[[entities]]
+name = "Customer"
+fields = [
+    { name = "email", type = "String", unique = true },
+    { name = "password_hash", type = "String" },
+    { name = "first_name", type = "String" },
+    { name = "last_name", type = "String" },
+    { name = "phone", type = "String", nullable = true },
+    { name = "is_active", type = "bool", default = "true" },
+]
+
+[[entities]]
+name = "Address"
+fields = [
+    { name = "label", type = "String" },
+    { name = "street", type = "String" },
+    { name = "city", type = "String" },
+    { name = "state", type = "String", nullable = true },
+    { name = "postal_code", type = "String" },
+    { name = "country", type = "String" },
+    { name = "is_default", type = "bool", default = "false" },
+]
+foreign_keys = [
+    { target = "Customer" },
+]
+
+[[entities]]
+name = "Cart"
+fields = [
+    { name = "session_id", type = "String" },
+    { name = "status", type = "String", default = "active" },
+]
+foreign_keys = [
+    { target = "Customer", nullable = true },
+]
+
+[[entities]]
+name = "CartItem"
+fields = [
+    { name = "quantity", type = "i32" },
+    { name = "unit_price_cents", type = "i64" },
+]
+foreign_keys = [
+    { target = "Cart" },
+    { target = "Product" },
+]
+
+[[entities]]
+name = "Order"
+fields = [
+    { name = "order_number", type = "String", unique = true },
+    { name = "status", type = "String", default = "pending" },
+    { name = "subtotal_cents", type = "i64" },
+    { name = "tax_cents", type = "i64", default = "0" },
+    { name = "shipping_cents", type = "i64", default = "0" },
+    { name = "total_cents", type = "i64" },
+    { name = "payment_status", type = "String", default = "unpaid" },
+    { name = "notes", type = "String", nullable = true },
+]
+foreign_keys = [
+    { target = "Customer" },
+]
+
+[[entities]]
+name = "OrderLine"
+fields = [
+    { name = "quantity", type = "i32" },
+    { name = "unit_price_cents", type = "i64" },
+]
+foreign_keys = [
+    { target = "Order" },
+    { target = "Product" },
+]
+
+[[entities]]
+name = "Review"
+fields = [
+    { name = "rating", type = "i32" },
+    { name = "title", type = "String", nullable = true },
+    { name = "body", type = "String", nullable = true },
+    { name = "is_approved", type = "bool", default = "false" },
+]
+foreign_keys = [
+    { target = "Product" },
+    { target = "Customer" },
+]
+
+[[entities]]
+name = "User"
+fields = [
+    { name = "email", type = "String", unique = true },
+    { name = "password_hash", type = "String" },
+    { name = "role", type = "String", default = "user" },
+    { name = "is_active", type = "bool", default = "true" },
+]
+\end{lstlisting}
+
+% ============================================================
+\section{Neue TOML: Projektmanagement}
+% ============================================================
+
+Datei: \texttt{examples/project.toml}
+
+\begin{lstlisting}
+[app]
+name = "project-tracker"
+description = "Project management with tasks, sprints, and team collaboration"
+
+[backend]
+language = "rust"
+framework = "actix-web"
+database = "postgresql"
+auth_method = "jwt"
+
+[frontend]
+type = "spa"
+framework = "vanilla"
+styling = "minimal"
+
+[deployment]
+containerized = true
+compose = true
+
+[[entities]]
+name = "Project"
+fields = [
+    { name = "name", type = "String" },
+    { name = "description", type = "String", nullable = true },
+    { name = "status", type = "String", default = "planning" },
+    { name = "start_date", type = "String", nullable = true },
+    { name = "target_end_date", type = "String", nullable = true },
+]
+
+[[entities]]
+name = "Sprint"
+fields = [
+    { name = "name", type = "String" },
+    { name = "goal", type = "String", nullable = true },
+    { name = "start_date", type = "String" },
+    { name = "end_date", type = "String" },
+    { name = "status", type = "String", default = "planning" },
+]
+foreign_keys = [
+    { target = "Project" },
+]
+
+[[entities]]
+name = "Task"
+fields = [
+    { name = "title", type = "String" },
+    { name = "description", type = "String", nullable = true },
+    { name = "status", type = "String", default = "todo" },
+    { name = "priority", type = "String", default = "medium" },
+    { name = "estimate_hours", type = "f64", nullable = true },
+    { name = "actual_hours", type = "f64", nullable = true },
+    { name = "due_date", type = "String", nullable = true },
+    { name = "position", type = "i32", default = "0" },
+]
+foreign_keys = [
+    { target = "Project" },
+    { target = "Sprint", nullable = true },
+    { target = "User", nullable = true },
+]
+
+[[entities]]
+name = "Comment"
+fields = [
+    { name = "body", type = "String" },
+]
+foreign_keys = [
+    { target = "Task" },
+    { target = "User" },
+]
+
+[[entities]]
+name = "Label"
+fields = [
+    { name = "name", type = "String" },
+    { name = "color", type = "String", default = "#3B82F6" },
+]
+foreign_keys = [
+    { target = "Project" },
+]
+
+[[entities]]
+name = "TaskLabel"
+fields = []
+foreign_keys = [
+    { target = "Task" },
+    { target = "Label" },
+]
+
+[[entities]]
+name = "TeamMember"
+fields = [
+    { name = "role", type = "String", default = "member" },
+]
+foreign_keys = [
+    { target = "User" },
+    { target = "Project" },
+]
+
+[[entities]]
+name = "User"
+fields = [
+    { name = "email", type = "String", unique = true },
+    { name = "password_hash", type = "String" },
+    { name = "display_name", type = "String" },
+    { name = "avatar_url", type = "String", nullable = true },
+    { name = "role", type = "String", default = "user" },
+    { name = "is_active", type = "bool", default = "true" },
+]
+\end{lstlisting}
+
+% ============================================================
+\section{Was sich \"andern muss}
+% ============================================================
+
+\subsection{TOML-Parser in \texttt{isls-hypercube}}
+
+Die TOML-Dateien oben verwenden ein \textbf{generisches Format} ---
+Entities werden direkt in der TOML definiert, nicht \"uber hardcodierte
+Domain-Templates. Der Parser muss:
+
+\begin{enumerate}[nosep]
+\item \texttt{[[entities]]} Array parsen: Name, Fields, Foreign Keys.
+\item Jedes Field hat: \texttt{name}, \texttt{type}, optional \texttt{nullable},
+      \texttt{unique}, \texttt{default}.
+\item Jede Foreign Key hat: \texttt{target} (Entity-Name), optional \texttt{nullable}.
+\item Das Ergebnis ist ein \texttt{AppSpec} mit \texttt{Vec<EntityDef>}.
+\end{enumerate}
+
+\textbf{KRITISCH:} Wenn der aktuelle Parser Entity-Definitionen aus
+hardcodierten Domain-Templates l\"adt (z.B. \texttt{warehouse\_domain()}),
+muss er auf das TOML-basierte Format umgestellt werden. Die TOML ist
+die Wahrheit. Keine hardcodierten Domains mehr.
+
+Wenn der Parser bereits das generische Format unterst\"utzt, reicht es
+die zwei neuen TOML-Dateien anzulegen.
+
+\subsection{Pr\"ufe: \texttt{EntityDef} Struktur}
+
+Die \texttt{EntityDef} in \texttt{isls-types} muss unterst\"utzen:
+
+\begin{lstlisting}[language=C]
+pub struct EntityDef {
+    pub name: String,              // "Product"
+    pub fields: Vec<FieldDef>,
+    pub foreign_keys: Vec<ForeignKeyDef>,
+}
+
+pub struct FieldDef {
+    pub name: String,              // "price_cents"
+    pub field_type: String,        // "i64"
+    pub nullable: bool,            // false
+    pub unique: bool,              // false
+    pub default: Option<String>,   // Some("0")
+}
+
+pub struct ForeignKeyDef {
+    pub target: String,            // "Category"
+    pub nullable: bool,            // true
+}
+\end{lstlisting}
+
+Wenn \texttt{FieldDef} noch kein \texttt{unique} oder \texttt{default}
+hat, hinzuf\"ugen. Wenn \texttt{ForeignKeyDef} nicht existiert, erstellen.
+
+\subsection{Strukturelle Generatoren: FK-Felder}
+
+Die strukturellen Generatoren m\"ussen Foreign Keys korrekt verarbeiten:
+
+\begin{itemize}[nosep]
+\item \textbf{Model:} F\"ur jede FK ein Feld \texttt{\{target\_snake\}\_id: i64}
+      (oder \texttt{Option<i64>} wenn nullable).
+\item \textbf{Migration:} F\"ur jede FK ein
+      \texttt{\{target\_snake\}\_id BIGINT [NOT NULL] REFERENCES \{target\_table\}(id)}.
+      Tabellen m\"ussen in topologischer Reihenfolge erzeugt werden
+      (referenzierte Tabelle vor referenzierender).
+\item \textbf{CreatePayload:} FK-Felder als \texttt{i64} (required) oder
+      \texttt{Option<i64>} (nullable FK).
+\item \textbf{UpdatePayload:} FK-Felder immer als \texttt{Option<i64>}.
+\item \textbf{Query INSERT:} FK-Felder im INSERT-Statement.
+\end{itemize}
+
+\subsection{Migration: Topologische Tabellenreihenfolge}
+
+Die Migration muss Tabellen in der richtigen Reihenfolge erzeugen.
+\texttt{products} referenziert \texttt{categories} --- also muss
+\texttt{categories} zuerst kommen. \texttt{users} hat keine FKs ---
+kommt ganz am Anfang.
+
+\begin{lstlisting}[language=C]
+fn topological_sort_entities(entities: &[EntityDef]) -> Vec<&EntityDef> {
+    // Entities ohne FKs zuerst (users, categories, projects, labels)
+    // Dann Entities deren FKs bereits erzeugt wurden
+    // Zyklus-Erkennung: wenn A -> B -> A, Fehler
+}
+\end{lstlisting}
+
+\subsection{Plural-Namen}
+
+Der Generator braucht korrekte Pluralformen:
+
+\begin{center}
+\small
+\begin{tabular}{l l}
+\toprule
+\textbf{Entity} & \textbf{Plural} \\
+\midrule
+Product & products \\
+Category & categories \\
+Address & addresses \\
+OrderLine & order\_lines \\
+CartItem & cart\_items \\
+StockMovement & stock\_movements \\
+TeamMember & team\_members \\
+TaskLabel & task\_labels \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Einfache Regel: Wenn der snake\_case-Name auf \texttt{s} endet,
+kein zus\"atzliches \texttt{s}. Wenn auf \texttt{y} endet (nach
+Konsonant), ersetze mit \texttt{ies}. Wenn auf \texttt{ss}/\texttt{sh}/\texttt{ch}/\texttt{x}
+endet, h\"ange \texttt{es} an. Sonst h\"ange \texttt{s} an.
+
+Oder: ein \texttt{plural\_name} Feld in EntityDef das optional
+\"uberschrieben werden kann.
+
+\subsection{Entity mit 0 eigenen Feldern}
+
+\texttt{TaskLabel} hat keine eigenen Felder --- nur zwei FKs
+(\texttt{task\_id}, \texttt{label\_id}). Das ist eine reine
+Join-Tabelle. Die Generatoren m\"ussen damit umgehen:
+
+\begin{itemize}[nosep]
+\item Model: Struct hat nur \texttt{id}, \texttt{task\_id},
+      \texttt{label\_id}, \texttt{created\_at}, \texttt{updated\_at}.
+\item CreatePayload: nur \texttt{task\_id: i64}, \texttt{label\_id: i64}.
+\item UpdatePayload: nur \texttt{task\_id: Option<i64>},
+      \texttt{label\_id: Option<i64>}.
+\end{itemize}
+
+% ============================================================
+\section{Verifikation}
+% ============================================================
+
+\begin{lstlisting}[language=bash]
+# 1. Workspace
+cargo build --workspace --release
+cargo test --workspace
+
+# 2. Warehouse (existiert, Regression-Test)
+rm -rf output/warehouse
+cargo run --release -p isls-cli -- forge-v2 \
+    --requirements examples/warehouse.toml \
+    --api-key %OPENAI_API_KEY% --output ./output/warehouse
+cd output/warehouse/backend && cargo build && cd ../../..
+
+# 3. E-Commerce (NEU)
+rm -rf output/ecommerce
+cargo run --release -p isls-cli -- forge-v2 \
+    --requirements examples/ecommerce.toml \
+    --api-key %OPENAI_API_KEY% --output ./output/ecommerce
+cd output/ecommerce/backend && cargo build && cd ../../..
+
+# 4. Projektmanagement (NEU)
+rm -rf output/project
+cargo run --release -p isls-cli -- forge-v2 \
+    --requirements examples/project.toml \
+    --api-key %OPENAI_API_KEY% --output ./output/project
+cd output/project/backend && cargo build && cd ../../..
+
+# 5. Docker-Test fuer alle drei
+for dir in warehouse ecommerce project; do
+    cd output/$dir
+    docker-compose up -d --build
+    timeout 30
+    curl -s http://localhost:8080/api/health
+    curl -s -X POST http://localhost:8080/api/auth/login \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"admin@example.com\",\"password\":\"admin123\"}"
+    docker-compose down -v
+    cd ../..
+done
+
+# Alle drei muessen:
+# - cargo build: 0 errors
+# - health: 200 OK
+# - login: 200 OK mit JWT
+\end{lstlisting}
+
+% ============================================================
+\section{Constraints f\"ur Claude Code}
+% ============================================================
+
+\begin{enumerate}
+\item \textbf{Keine hardcodierten Domain-Templates.} Entities kommen
+      aus der TOML, nicht aus \texttt{warehouse\_domain()} oder
+      \texttt{ecommerce\_domain()}. Die TOML ist die einzige Wahrheit.
+\item \textbf{Alle drei TOMLs m\"ussen den identischen Pipeline-Pfad
+      durchlaufen.} Kein Spezialcode f\"ur einzelne Domains.
+\item \textbf{Foreign Keys m\"ussen funktionieren.} Model, Migration,
+      CreatePayload, Queries --- alles muss FK-Felder korrekt
+      verarbeiten.
+\item \textbf{Migration: topologische Reihenfolge.} Referenzierte
+      Tabellen zuerst.
+\item \textbf{Join-Tabellen (0 eigene Felder) m\"ussen funktionieren.}
+\item \textbf{D1 darf nicht brechen.} \texttt{warehouse.toml} muss
+      weiterhin kompilierbaren Output erzeugen.
+\item \textbf{Die TOML-Dateien in dieser Spec sind exakt.} Nicht
+      \"andern. Die Entity-Definitionen, Felder, Foreign Keys und
+      Defaults sind absichtlich so gew\"ahlt.
+\item \textbf{Alle bestehenden Tests m\"ussen bestehen.}
+\item \textbf{Ein Commit nach Abschluss.}
+\item \textbf{Mock-Modus und LLM-Modus m\"ussen f\"ur alle drei
+      Domains kompilierbaren Output erzeugen.}
+\end{enumerate}
+
+% ============================================================
+\section{Was D2 beweist}
+% ============================================================
+
+Wenn alle drei Domains kompilieren, starten und CRUD funktioniert:
+
+\begin{itemize}[nosep]
+\item Der Generator ist dom\"anenunabh\"angig.
+\item Die strukturellen Generatoren arbeiten korrekt mit beliebigen
+      EntityDefs, nicht nur mit Warehouse-Entities.
+\item Foreign Keys, Join-Tabellen und verschiedene Feldtypen
+      werden korrekt verarbeitet.
+\item Die LLM-generierten SQL-Queries funktionieren f\"ur
+      verschiedene Schemata.
+\item Der HDAG skaliert: 7 Entities (Warehouse), 9 Entities
+      (E-Commerce), 8 Entities (Projekt).
+\end{itemize}
+
+D2 ist der Beweis dass das System kein Warehouse-Drucker ist.
+Es ist ein App-Drucker.
+
+\vfill
+\noindent\rule{\textwidth}{0.4pt}
+\begin{center}
+\small
+ISLS D2 --- Multi-Domain Proof --- Sebastian Klemm --- 29. M\"arz 2026\\
+Drei Dom\"anen. Ein Generator. Drei funktionierende Apps.\\
+Warehouse. E-Commerce. Projektmanagement.\\
+Derselbe HDAG. Derselbe Pipeline. Drei verschiedene Welten.\\
+\url{https://github.com/LashSesh/graphity}
+\end{center}
+
+\end{document}
