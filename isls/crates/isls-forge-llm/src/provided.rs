@@ -177,17 +177,17 @@ pub fn provides_user_model_types() -> Vec<ProvidedSymbol> {
         ProvidedSymbol {
             import_path: "crate::models::user::User".into(),
             kind: SymbolKind::Struct,
-            signature: "#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]\npub struct User {\n    pub id: i64,\n    pub email: String,\n    pub password_hash: String,\n    pub name: String,\n    pub role: String,\n    pub is_active: bool,\n    pub created_at: chrono::DateTime<chrono::Utc>,\n    pub updated_at: chrono::DateTime<chrono::Utc>,\n}".into(),
+            signature: "#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]\npub struct User {\n    pub id: i64,\n    pub email: String,\n    pub password_hash: String,\n    pub role: String,\n    pub is_active: bool,\n    pub created_at: chrono::DateTime<chrono::Utc>,\n    pub updated_at: chrono::DateTime<chrono::Utc>,\n}".into(),
         },
         ProvidedSymbol {
             import_path: "crate::models::user::CreateUserPayload".into(),
             kind: SymbolKind::Struct,
-            signature: "#[derive(Debug, Deserialize)]\npub struct CreateUserPayload {\n    pub email: String,\n    pub password: String,\n    pub name: String,\n    pub role: Option<String>,\n}".into(),
+            signature: "#[derive(Debug, Deserialize)]\npub struct CreateUserPayload {\n    pub email: String,\n    pub password: String,\n    pub role: Option<String>,\n}".into(),
         },
         ProvidedSymbol {
             import_path: "crate::models::user::UpdateUserPayload".into(),
             kind: SymbolKind::Struct,
-            signature: "#[derive(Debug, Deserialize)]\npub struct UpdateUserPayload {\n    pub email: Option<String>,\n    pub name: Option<String>,\n    pub role: Option<String>,\n    pub is_active: Option<bool>,\n}".into(),
+            signature: "#[derive(Debug, Deserialize)]\npub struct UpdateUserPayload {\n    pub email: Option<String>,\n    pub role: Option<String>,\n    pub is_active: Option<bool>,\n}".into(),
         },
     ]
 }

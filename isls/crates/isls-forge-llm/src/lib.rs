@@ -426,7 +426,6 @@ fn standard_user_entity() -> EntityDef {
             FieldDef { name: "id".into(), rust_type: "i64".into(), sql_type: "BIGSERIAL PRIMARY KEY".into(), nullable: false, default_value: None, description: "Primary key".into() },
             FieldDef { name: "email".into(), rust_type: "String".into(), sql_type: "VARCHAR(255) UNIQUE NOT NULL".into(), nullable: false, default_value: None, description: "User email address".into() },
             FieldDef { name: "password_hash".into(), rust_type: "String".into(), sql_type: "VARCHAR(255) NOT NULL".into(), nullable: false, default_value: None, description: "Bcrypt password hash".into() },
-            FieldDef { name: "name".into(), rust_type: "String".into(), sql_type: "VARCHAR(255) NOT NULL".into(), nullable: false, default_value: None, description: "Display name".into() },
             FieldDef { name: "role".into(), rust_type: "String".into(), sql_type: "VARCHAR(50) NOT NULL DEFAULT 'user'".into(), nullable: false, default_value: Some("'user'".into()), description: "User role (admin, manager, user)".into() },
             FieldDef { name: "is_active".into(), rust_type: "bool".into(), sql_type: "BOOLEAN NOT NULL DEFAULT true".into(), nullable: false, default_value: Some("true".into()), description: "Account active flag".into() },
             FieldDef { name: "created_at".into(), rust_type: "String".into(), sql_type: "TIMESTAMPTZ NOT NULL DEFAULT NOW()".into(), nullable: false, default_value: Some("NOW()".into()), description: "Account creation timestamp".into() },
