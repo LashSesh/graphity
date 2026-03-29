@@ -651,6 +651,7 @@ pub enum AppError {
     Unauthorized,
     Forbidden,
     BadRequest(String),
+    Conflict(String),
 }
 
 impl fmt::Display for AppError {
@@ -662,6 +663,7 @@ impl fmt::Display for AppError {
             AppError::Unauthorized => write!(f, "Unauthorized"),
             AppError::Forbidden => write!(f, "Forbidden"),
             AppError::BadRequest(msg) => write!(f, "Bad request: {}", msg),
+            AppError::Conflict(msg) => write!(f, "Conflict: {}", msg),
         }
     }
 }
@@ -687,7 +689,16 @@ impl ResponseError for AppError {
             AppError::BadRequest(msg) => {
                 HttpResponse::BadRequest().json(serde_json::json!({"error": msg}))
             }
+            AppError::Conflict(msg) => {
+                HttpResponse::Conflict().json(serde_json::json!({"error": msg}))
+            }
         }
+    }
+}
+
+impl From<sqlx::Error> for AppError {
+    fn from(e: sqlx::Error) -> Self {
+        AppError::InternalError(e.to_string())
     }
 }
 "#
