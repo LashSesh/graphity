@@ -1071,6 +1071,122 @@ pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
     )
 }
 
+// ─── Layer 7: Auth routes generator ──────────────────────────────────────────
+
+/// Generate `api/auth_routes.rs` — deterministic auth endpoints.
+///
+/// Produces:
+/// - `POST /api/auth/register` — takes `{email, password}`, hashes with bcrypt,
+///   inserts user, returns created user.
+/// - `POST /api/auth/login` — takes `{email, password}`, verifies bcrypt hash,
+///   returns JWT.
+/// - `GET /api/auth/me` — returns current user from JWT.
+/// - `auth_routes(cfg)` — route registration function.
+pub fn generate_auth_routes_rs() -> String {
+    r#"use actix_web::{web, HttpResponse, Responder};
+use bcrypt::{hash, verify, DEFAULT_COST};
+use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
+
+use crate::errors::AppError;
+use crate::auth::{encode_jwt, AuthUser};
+use crate::models::user::{User, CreateUserPayload};
+
+#[derive(Debug, Deserialize)]
+pub struct LoginPayload {
+    pub email: String,
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenResponse {
+    pub token: String,
+}
+
+pub async fn register(
+    pool: web::Data<PgPool>,
+    body: web::Json<CreateUserPayload>,
+) -> Result<impl Responder, AppError> {
+    let payload = body.into_inner();
+
+    if payload.email.trim().is_empty() || !payload.email.contains('@') {
+        return Err(AppError::ValidationError(vec![
+            "A valid email address is required".into(),
+        ]));
+    }
+
+    let password_hash = hash(&payload.password, DEFAULT_COST)
+        .map_err(|e| AppError::InternalError(e.to_string()))?;
+
+    let user = sqlx::query_as::<_, User>(
+        "INSERT INTO users (email, password_hash, role, is_active) \
+         VALUES ($1, $2, $3, true) \
+         RETURNING *",
+    )
+    .bind(&payload.email)
+    .bind(&password_hash)
+    .bind(payload.role.as_deref().unwrap_or("user"))
+    .fetch_one(pool.get_ref())
+    .await
+    .map_err(|e| match e {
+        sqlx::Error::Database(db) if db.constraint() == Some("users_email_key") => {
+            AppError::Conflict("email already registered".into())
+        }
+        other => AppError::from(other),
+    })?;
+
+    tracing::info!(email = %user.email, "user registered");
+    Ok(HttpResponse::Created().json(user))
+}
+
+pub async fn login(
+    pool: web::Data<PgPool>,
+    body: web::Json<LoginPayload>,
+) -> Result<impl Responder, AppError> {
+    let req = body.into_inner();
+
+    let user = sqlx::query_as::<_, User>(
+        "SELECT * FROM users WHERE email = $1",
+    )
+    .bind(&req.email)
+    .fetch_optional(pool.get_ref())
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    if !user.is_active {
+        return Err(AppError::Unauthorized);
+    }
+
+    let valid = verify(&req.password, &user.password_hash)
+        .map_err(|_| AppError::Unauthorized)?;
+    if !valid {
+        return Err(AppError::Unauthorized);
+    }
+
+    let token = encode_jwt(user.id, &user.email, &user.role)?;
+    Ok(HttpResponse::Ok().json(TokenResponse { token }))
+}
+
+pub async fn me(user: AuthUser) -> Result<impl Responder, AppError> {
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "id": user.user_id,
+        "email": user.email,
+        "role": user.role,
+    })))
+}
+
+pub fn auth_routes(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::scope("/api/auth")
+            .route("/register", web::post().to(register))
+            .route("/login", web::post().to(login))
+            .route("/me", web::get().to(me)),
+    );
+}
+"#
+    .into()
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 /// Dispatch structural generation by file path.
@@ -1131,6 +1247,10 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     }
     if path.contains("api/mod.rs") {
         return generate_api_mod(spec);
+    }
+    // Layer 7: auth routes (deterministic)
+    if path.contains("auth_routes.rs") {
+        return generate_auth_routes_rs();
     }
     // Layer 7: entity API route files (deterministic CRUD handlers)
     if path.contains("api/") && path.ends_with(".rs") && !path.ends_with("mod.rs") && !path.contains("auth_routes") {

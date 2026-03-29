@@ -297,11 +297,11 @@ impl CodegenHdag {
         }
 
         // ── Layer 6: API LLM nodes ────────────────────────────────────────────
-        // auth_routes
+        // auth_routes (structural — deterministic register/login/me)
         let auth_routes_idx = add_node(
-            "backend/src/api/auth_routes.rs", NodeType::Llm, 6,
+            "backend/src/api/auth_routes.rs", NodeType::Structural, 6,
             Some("User".into()), true,
-            "Auth endpoints: POST /api/auth/register, POST /api/auth/login, GET /api/auth/me. Hash passwords with bcrypt. Return JWT on login.",
+            "Auth endpoints: register, login, me. Deterministic.",
         );
         edges.push(HdagEdge { from: errors_idx, to: auth_routes_idx, provides: provided::provides_apperror() });
         edges.push(HdagEdge { from: auth_idx, to: auth_routes_idx, provides: provided::provides_authuser() });
