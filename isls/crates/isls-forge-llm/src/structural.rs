@@ -900,7 +900,6 @@ use crate::database::{sn}_queries;
 
 /// Fetch a single {n} by ID.
 pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
-    tracing::debug!("getting {sn} id={{}}", id);
     {sn}_queries::get_{sn}(pool, id).await
 }}
 
@@ -909,13 +908,11 @@ pub async fn list_{sn}s(
     pool: &PgPool,
     params: &PaginationParams,
 ) -> Result<PaginatedResponse<{n}>, AppError> {{
-    tracing::debug!("listing {sn}s page={{}}", params.page);
     {sn}_queries::list_{sn}s(pool, params).await
 }}
 
 /// Create a new {n}.
 pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
-    tracing::info!("creating {sn}");
     {sn}_queries::create_{sn}(pool, payload).await
 }}
 
@@ -925,13 +922,11 @@ pub async fn update_{sn}(
     id: i64,
     payload: Update{n}Payload,
 ) -> Result<{n}, AppError> {{
-    tracing::info!("updating {sn} id={{}}", id);
     {sn}_queries::update_{sn}(pool, id, payload).await
 }}
 
 /// Delete a {n} by ID.
 pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
-    tracing::info!("deleting {sn} id={{}}", id);
     {sn}_queries::delete_{sn}(pool, id).await
 }}
 "#,
@@ -955,13 +950,11 @@ use crate::database::{sn}_queries;
 
 /// Fetch a single {n} by ID.
 pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
-    tracing::debug!("getting {sn} id={{}}", id);
     {sn}_queries::get_{sn}(pool, id).await
 }}
 
 /// Fetch a {n} by email address.
 pub async fn get_{sn}_by_email(pool: &PgPool, email: &str) -> Result<{n}, AppError> {{
-    tracing::debug!("getting {sn} by email");
     {sn}_queries::get_{sn}_by_email(pool, email).await
 }}
 
@@ -970,13 +963,11 @@ pub async fn list_{sn}s(
     pool: &PgPool,
     params: &PaginationParams,
 ) -> Result<PaginatedResponse<{n}>, AppError> {{
-    tracing::debug!("listing {sn}s page={{}}", params.page);
     {sn}_queries::list_{sn}s(pool, params).await
 }}
 
 /// Create a new {n}.
 pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
-    tracing::info!("creating {sn}");
     {sn}_queries::create_{sn}(pool, payload).await
 }}
 
@@ -986,13 +977,11 @@ pub async fn update_{sn}(
     id: i64,
     payload: Update{n}Payload,
 ) -> Result<{n}, AppError> {{
-    tracing::info!("updating {sn} id={{}}", id);
     {sn}_queries::update_{sn}(pool, id, payload).await
 }}
 
 /// Delete a {n} by ID.
 pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
-    tracing::info!("deleting {sn} id={{}}", id);
     {sn}_queries::delete_{sn}(pool, id).await
 }}
 "#,
