@@ -435,6 +435,21 @@ fn to_pascal_case(s: &str) -> String {
     }).collect()
 }
 
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(ch.to_lowercase().next().unwrap_or(ch));
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
 fn infer_sql_type(rust_type: &str) -> String {
     let inner = rust_type.trim_start_matches("Option<").trim_end_matches('>');
     match inner {
@@ -504,10 +519,21 @@ User's description:
     template.replace("{user_message}", message)
 }
 
+/// Rust reserved keywords — entity and field names must not collide.
+const RUST_KEYWORDS: &[&str] = &[
+    "return", "type", "match", "move", "ref", "self", "super",
+    "crate", "mod", "pub", "use", "fn", "let", "mut", "const",
+    "static", "struct", "enum", "trait", "impl", "where", "loop",
+    "while", "for", "if", "else", "break", "continue", "async",
+    "await", "unsafe", "extern", "dyn", "box", "yield", "macro",
+    "abstract", "become", "do", "final", "override", "priv",
+    "try", "typeof", "unsized", "virtual",
+];
+
 /// Validate the JSON structure extracted by the LLM.
 ///
-/// Checks entity array, User entity presence, PascalCase names, field types,
-/// and FK referential integrity. Returns `Err` if validation fails.
+/// Checks entity array, User entity presence, PascalCase names, Rust keyword
+/// collisions, field types, and FK referential integrity.
 pub fn validate_extracted_spec(json: &serde_json::Value) -> Result<()> {
     let entities = json["entities"].as_array()
         .ok_or_else(|| ChatError::Validation("no entities array".into()))?;
@@ -536,6 +562,13 @@ pub fn validate_extracted_spec(json: &serde_json::Value) -> Result<()> {
             return Err(ChatError::Validation(format!("entity '{}' not PascalCase", name)));
         }
 
+        // Rust keyword check on entity name
+        if RUST_KEYWORDS.contains(&name.to_lowercase().as_str()) {
+            return Err(ChatError::Validation(
+                format!("entity name '{}' is a Rust keyword", name),
+            ));
+        }
+
         // Must have fields or foreign_keys (or both)
         let field_count = entity["fields"].as_array().map_or(0, |f| f.len());
         let fk_count = entity["foreign_keys"].as_array().map_or(0, |f| f.len());
@@ -558,9 +591,15 @@ pub fn validate_extracted_spec(json: &serde_json::Value) -> Result<()> {
             }
         }
 
-        // Field types must be valid
+        // Field names and types must be valid
         if let Some(fields) = entity["fields"].as_array() {
             for field in fields {
+                let fname = field["name"].as_str().unwrap_or("");
+                if RUST_KEYWORDS.contains(&fname) {
+                    return Err(ChatError::Validation(
+                        format!("field name '{}' in {} is a Rust keyword", fname, name),
+                    ));
+                }
                 let ft = field["field_type"].as_str().unwrap_or("");
                 if !["String", "i32", "i64", "f64", "bool"].contains(&ft) {
                     return Err(ChatError::Validation(
@@ -613,13 +652,24 @@ pub fn json_to_toml(json: &serde_json::Value) -> Result<String> {
             toml.push_str(&format!("name = \"{}\"\n",
                 entity["name"].as_str().unwrap_or("Unknown")));
 
+            // Compute FK-generated field names to skip duplicates
+            let fk_field_names: Vec<String> = entity["foreign_keys"].as_array()
+                .map(|fks| fks.iter().filter_map(|fk| {
+                    fk["target"].as_str().map(|t| format!("{}_id", to_snake_case(t)))
+                }).collect())
+                .unwrap_or_default();
+
             // Fields
             if let Some(fields) = entity["fields"].as_array() {
                 toml.push_str("fields = [\n");
                 for field in fields {
+                    let fname = field["name"].as_str().unwrap_or("field");
+                    if fk_field_names.contains(&fname.to_string()) {
+                        continue; // FK has priority — skip duplicate user field
+                    }
                     toml.push_str(&format!(
                         "    {{ name = \"{}\", field_type = \"{}\"",
-                        field["name"].as_str().unwrap_or("field"),
+                        fname,
                         field["field_type"].as_str().unwrap_or("String"),
                     ));
                     if field["nullable"].as_bool().unwrap_or(false) {
@@ -857,5 +907,78 @@ mod tests {
 
         // FK
         assert!(toml.contains("target = \"User\""));
+    }
+
+    #[test]
+    fn test_validate_keyword_entity() {
+        let json = serde_json::json!({
+            "entities": [
+                {
+                    "name": "User",
+                    "fields": [
+                        { "name": "email", "field_type": "String" }
+                    ]
+                },
+                {
+                    "name": "Type",
+                    "fields": [
+                        { "name": "label", "field_type": "String" }
+                    ]
+                }
+            ]
+        });
+        let err = validate_extracted_spec(&json).unwrap_err();
+        assert!(err.to_string().contains("Rust keyword"), "should reject keyword entity name");
+    }
+
+    #[test]
+    fn test_validate_keyword_field() {
+        let json = serde_json::json!({
+            "entities": [
+                {
+                    "name": "User",
+                    "fields": [
+                        { "name": "email", "field_type": "String" },
+                        { "name": "match", "field_type": "String" }
+                    ]
+                }
+            ]
+        });
+        let err = validate_extracted_spec(&json).unwrap_err();
+        assert!(err.to_string().contains("Rust keyword"), "should reject keyword field name");
+    }
+
+    #[test]
+    fn test_json_to_toml_dedup_fk_field() {
+        let json = serde_json::json!({
+            "app_name": "dedup-test",
+            "description": "Test FK dedup",
+            "entities": [
+                {
+                    "name": "Category",
+                    "fields": [
+                        { "name": "label", "field_type": "String" }
+                    ]
+                },
+                {
+                    "name": "Product",
+                    "fields": [
+                        { "name": "name", "field_type": "String" },
+                        { "name": "category_id", "field_type": "i64" }
+                    ],
+                    "foreign_keys": [
+                        { "target": "Category" }
+                    ]
+                }
+            ]
+        });
+        let toml = json_to_toml(&json).unwrap();
+        // FK target must be present
+        assert!(toml.contains("target = \"Category\""));
+        // The duplicate category_id field must be removed (FK has priority)
+        assert!(!toml.contains("name = \"category_id\""),
+            "duplicate field should be removed when FK generates same name");
+        // Other fields must remain
+        assert!(toml.contains("name = \"name\""));
     }
 }
