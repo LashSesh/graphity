@@ -726,9 +726,11 @@ name = "isls-cli"
 version = "1.0.0"
 dependencies = [
  "dotenv",
+ "isls-chat",
  "isls-forge-llm",
  "isls-gateway",
  "isls-hypercube",
+ "serde_json",
  "tokio",
 ]
 

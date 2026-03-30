@@ -17,6 +17,13 @@ enum Command {
         api_key: Option<String>,
         model: String,
     },
+    /// D3: Chat-to-App — natural language to compiled application.
+    ForgeChat {
+        message: String,
+        output: String,
+        api_key: Option<String>,
+        model: String,
+    },
     /// Start the Gateway / Studio web interface.
     Serve { port: u16, api_key: Option<String> },
     /// Print help.
@@ -49,6 +56,28 @@ fn parse_args(args: &[String]) -> Command {
                 .cloned()
                 .unwrap_or_else(|| "gpt-4o".to_string());
             Command::ForgeV2 { requirements, output, mock_oracle, api_key, model }
+        }
+        "forge-chat" => {
+            let message = args.iter().position(|a| a == "--message" || a == "-m")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| {
+                    eprintln!("[ERROR] --message / -m is required");
+                    std::process::exit(1);
+                });
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "./output".to_string());
+            let api_key = args.iter().position(|a| a == "--api-key")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            let model = args.iter().position(|a| a == "--model")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "gpt-4o".to_string());
+            Command::ForgeChat { message, output, api_key, model }
         }
         "serve" => {
             let port = args.iter().position(|a| a == "--port")
@@ -226,6 +255,115 @@ fn cmd_forge_v2(
     }
 }
 
+// ─── forge-chat: D3 Chat-to-App ──────────────────────────────────────────────
+
+fn cmd_forge_chat(
+    message: &str,
+    output: &str,
+    api_key: Option<String>,
+    model: &str,
+) {
+    use isls_forge_llm::oracle::OpenAiOracle;
+
+    println!("╔══════════════════════════════════════════════════════╗");
+    println!("║     ISLS D3 — Chat to App                            ║");
+    println!("║     Natural Language → TOML → HDAG → App              ║");
+    println!("╚══════════════════════════════════════════════════════╝");
+    println!();
+
+    // Load .env if present (best-effort)
+    let _ = dotenv::dotenv();
+
+    let resolved_key = api_key.clone()
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+
+    if resolved_key.is_none() {
+        eprintln!("[ERROR] --api-key or OPENAI_API_KEY required for forge-chat");
+        std::process::exit(1);
+    }
+
+    // 1. Build extraction prompt
+    let prompt = isls_chat::build_extraction_prompt(message);
+    println!("[Chat] Extracting entities from: \"{}\"", message);
+
+    // 2. Call LLM (single call)
+    let oracle = match OpenAiOracle::new(resolved_key, Some(model.to_string())) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("[ERROR] Oracle init failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let json_str = match isls_forge_llm::Oracle::call(&oracle, &prompt, 4096) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[ERROR] LLM extraction failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // 3. Parse JSON
+    let json: serde_json::Value = match serde_json::from_str(json_str.trim()) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[ERROR] LLM returned invalid JSON: {}", e);
+            eprintln!("Raw response:\n{}", json_str);
+            std::process::exit(1);
+        }
+    };
+
+    // 4. Validate
+    if let Err(e) = isls_chat::validate_extracted_spec(&json) {
+        eprintln!("[ERROR] Validation failed: {}", e);
+        eprintln!("Try rephrasing your description or adding more detail.");
+        std::process::exit(1);
+    }
+
+    let entity_count = json["entities"].as_array().map_or(0, |e| e.len());
+    println!("[Chat] Extracted {} entities", entity_count);
+
+    // 5. Convert to TOML
+    let toml_content = match isls_chat::json_to_toml(&json) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("[ERROR] TOML conversion failed: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // 6. Save TOML
+    let output_dir = Path::new(output);
+    if let Err(e) = std::fs::create_dir_all(output_dir) {
+        eprintln!("[ERROR] Cannot create output dir: {}", e);
+        std::process::exit(1);
+    }
+    let toml_path = output_dir.join("spec.toml");
+    if let Err(e) = std::fs::write(&toml_path, &toml_content) {
+        eprintln!("[ERROR] Cannot write spec.toml: {}", e);
+        std::process::exit(1);
+    }
+
+    // 7. Print TOML for user review
+    println!();
+    println!("--- Extracted Specification ---");
+    println!("{}", toml_content);
+    println!("--- End Specification ---");
+    println!();
+    println!("[Chat] TOML saved to {}", toml_path.display());
+    println!("[Chat] Starting forge pipeline...");
+    println!();
+
+    // 8. Run the proven D2 pipeline
+    cmd_forge_v2(
+        toml_path.to_str().unwrap_or("spec.toml"),
+        output,
+        false,
+        api_key.or_else(|| std::env::var("OPENAI_API_KEY").ok()),
+        model,
+    );
+}
+
 // ─── serve: Gateway / Studio ─────────────────────────────────────────────────
 
 fn cmd_serve(port: u16, api_key: Option<String>) {
@@ -258,12 +396,13 @@ fn cmd_serve(port: u16, api_key: Option<String>) {
 // ─── help ────────────────────────────────────────────────────────────────────
 
 fn print_help() {
-    println!("ISLS — Final Architecture (D1)");
+    println!("ISLS — D3 Chat to App Architecture");
     println!();
     println!("Usage: isls <command> [options]");
     println!();
     println!("Commands:");
     println!("  forge-v2    HDAG code generation pipeline (Staged Closure)");
+    println!("  forge-chat  D3: Natural language to compiled application");
     println!("  serve       Start the Gateway / Studio web interface");
     println!("  help        Print this message");
     println!();
@@ -274,12 +413,18 @@ fn print_help() {
     println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
     println!("  --model <model>        LLM model name (default: gpt-4o)");
     println!();
+    println!("forge-chat options:");
+    println!("  --message / -m <text>  Application description in natural language (required)");
+    println!("  --output <path>        Output directory (default: ./output)");
+    println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
+    println!("  --model <model>        LLM model name (default: gpt-4o)");
+    println!();
     println!("serve options:");
     println!("  --port <port>          Port number (default: 8420)");
     println!("  --api-key <key>        API key for LLM generation");
     println!();
-    println!("Pipeline: forge-v2 -> cargo build -> docker-compose up -> browser");
-    println!("HDAG sequences. Structural holds. LLM fills. Compiler verifies. Docker deploys.");
+    println!("Pipeline: forge-chat -> TOML -> forge-v2 -> cargo build -> docker-compose up");
+    println!("One sentence. One app. Zero manual steps.");
 }
 
 // ─── main ────────────────────────────────────────────────────────────────────
@@ -291,6 +436,9 @@ fn main() {
     match cmd {
         Command::ForgeV2 { requirements, output, mock_oracle, api_key, model } => {
             cmd_forge_v2(&requirements, &output, mock_oracle, api_key, &model);
+        }
+        Command::ForgeChat { message, output, api_key, model } => {
+            cmd_forge_chat(&message, &output, api_key, &model);
         }
         Command::Serve { port, api_key } => cmd_serve(port, api_key),
         Command::Help => print_help(),
@@ -354,6 +502,41 @@ mod tests {
         match cmd {
             Command::Serve { port, .. } => assert_eq!(port, 8420),
             _ => panic!("expected Serve"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_chat() {
+        let cmd = parse_args(&args(&[
+            "isls", "forge-chat",
+            "--message", "Restaurant with reservations",
+            "--output", "/tmp/restaurant",
+        ]));
+        match cmd {
+            Command::ForgeChat { message, output, model, .. } => {
+                assert_eq!(message, "Restaurant with reservations");
+                assert_eq!(output, "/tmp/restaurant");
+                assert_eq!(model, "gpt-4o");
+            }
+            _ => panic!("expected ForgeChat"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_chat_short_flag() {
+        let cmd = parse_args(&args(&[
+            "isls", "forge-chat",
+            "-m", "Library management system",
+            "--output", "/tmp/lib",
+            "--model", "gpt-4o-mini",
+        ]));
+        match cmd {
+            Command::ForgeChat { message, output, model, .. } => {
+                assert_eq!(message, "Library management system");
+                assert_eq!(output, "/tmp/lib");
+                assert_eq!(model, "gpt-4o-mini");
+            }
+            _ => panic!("expected ForgeChat"),
         }
     }
 }
