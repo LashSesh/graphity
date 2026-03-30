@@ -198,6 +198,7 @@ pub fn provides_user_model_types() -> Vec<ProvidedSymbol> {
 pub fn provides_query_fns(entity: &EntityDef) -> Vec<ProvidedSymbol> {
     let sn = &entity.snake_name;
     let pn = &entity.name;
+    let pl = crate::pluralize(sn);
     vec![
         ProvidedSymbol {
             import_path: format!("crate::database::{}_queries::get_{}", sn, sn),
@@ -205,9 +206,9 @@ pub fn provides_query_fns(entity: &EntityDef) -> Vec<ProvidedSymbol> {
             signature: format!("pub async fn get_{sn}(pool: &sqlx::PgPool, id: i64) -> Result<{pn}, AppError>;"),
         },
         ProvidedSymbol {
-            import_path: format!("crate::database::{}_queries::list_{}s", sn, sn),
+            import_path: format!("crate::database::{}_queries::list_{}", sn, pl),
             kind: SymbolKind::Function,
-            signature: format!("pub async fn list_{sn}s(pool: &sqlx::PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{pn}>, AppError>;"),
+            signature: format!("pub async fn list_{pl}(pool: &sqlx::PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{pn}>, AppError>;", pl = pl, pn = pn),
         },
         ProvidedSymbol {
             import_path: format!("crate::database::{}_queries::create_{}", sn, sn),
@@ -253,6 +254,7 @@ pub fn provides_query_fns_user() -> Vec<ProvidedSymbol> {
 pub fn provides_service_fns(entity: &EntityDef) -> Vec<ProvidedSymbol> {
     let sn = &entity.snake_name;
     let pn = &entity.name;
+    let pl = crate::pluralize(sn);
     vec![
         ProvidedSymbol {
             import_path: format!("crate::services::{}::get_{}", sn, sn),
@@ -260,9 +262,9 @@ pub fn provides_service_fns(entity: &EntityDef) -> Vec<ProvidedSymbol> {
             signature: format!("pub async fn get_{sn}(pool: &sqlx::PgPool, id: i64) -> Result<{pn}, AppError>;"),
         },
         ProvidedSymbol {
-            import_path: format!("crate::services::{}::list_{}s", sn, sn),
+            import_path: format!("crate::services::{}::list_{}", sn, pl),
             kind: SymbolKind::Function,
-            signature: format!("pub async fn list_{sn}s(pool: &sqlx::PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{pn}>, AppError>;"),
+            signature: format!("pub async fn list_{pl}(pool: &sqlx::PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{pn}>, AppError>;", pl = pl, pn = pn),
         },
         ProvidedSymbol {
             import_path: format!("crate::services::{}::create_{}", sn, sn),

@@ -634,7 +634,7 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
 
     // LIST with pagination
     code.push_str(&format!(
-        "pub async fn list_{sn}s(\n    pool: &PgPool,\n    params: &PaginationParams,\n) -> Result<PaginatedResponse<{n}>, AppError> {{\n"
+        "pub async fn list_{tn}(\n    pool: &PgPool,\n    params: &PaginationParams,\n) -> Result<PaginatedResponse<{n}>, AppError> {{\n"
     ));
     code.push_str(&format!(
         "    let row: (i64,) = sqlx::query_as(\"SELECT COUNT(*) FROM {tn}\")\n"
@@ -731,6 +731,7 @@ pub fn mock_generate_queries(entity: &EntityDef) -> String {
 pub fn mock_generate_service(entity: &EntityDef) -> String {
     let n = &entity.name;
     let sn = &entity.snake_name;
+    let pn = pluralize(sn);
     format!(
         r#"// ISLS v3.1 mock generated
 use sqlx::PgPool;
@@ -744,12 +745,12 @@ pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
     {sn}_queries::get_{sn}(pool, id).await
 }}
 
-pub async fn list_{sn}s(
+pub async fn list_{pn}(
     pool: &PgPool,
     params: &PaginationParams,
 ) -> Result<PaginatedResponse<{n}>, AppError> {{
-    tracing::debug!("listing {sn}s page={{}}", params.page);
-    {sn}_queries::list_{sn}s(pool, params).await
+    tracing::debug!("listing {pn} page={{}}", params.page);
+    {sn}_queries::list_{pn}(pool, params).await
 }}
 
 pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError> {{
@@ -772,7 +773,8 @@ pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
 }}
 "#,
         n = n,
-        sn = sn
+        sn = sn,
+        pn = pn
     )
 }
 
@@ -790,12 +792,12 @@ use crate::models::{sn}::{{Create{n}Payload, Update{n}Payload}};
 use crate::pagination::PaginationParams;
 use crate::services::{sn} as {sn}_service;
 
-pub async fn list_{sn}s(
+pub async fn list_{tn}(
     pool: web::Data<PgPool>,
     params: web::Query<PaginationParams>,
     _user: AuthUser,
 ) -> Result<impl Responder, AppError> {{
-    let result = {sn}_service::list_{sn}s(&pool, &params).await?;
+    let result = {sn}_service::list_{tn}(&pool, &params).await?;
     Ok(HttpResponse::Ok().json(result))
 }}
 
@@ -840,7 +842,7 @@ pub async fn delete_{sn}(
 pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
     cfg.service(
         web::scope("/api/{tn}")
-            .route("", web::get().to(list_{sn}s))
+            .route("", web::get().to(list_{tn}))
             .route("", web::post().to(create_{sn}))
             .route("/{{id}}", web::get().to(get_{sn}))
             .route("/{{id}}", web::put().to(update_{sn}))

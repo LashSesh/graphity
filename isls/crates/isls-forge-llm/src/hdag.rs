@@ -215,18 +215,19 @@ impl CodegenHdag {
         let mut entity_query_indices: Vec<(String, usize)> = Vec::new();
         let all_entities: Vec<&EntityDef> = spec.entities.iter().collect();
         for entity in &all_entities {
+            let p = crate::pluralize(&entity.snake_name);
             let purpose = if entity.name == "User" {
                 format!(
-                    "CRUD query fns for {}: get_{s}, list_{s}s, create_{s}, update_{s}, delete_{s}, \
+                    "CRUD query fns for {}: get_{s}, list_{p}, create_{s}, update_{s}, delete_{s}, \
                      AND ALSO get_user_by_email (needed by auth_routes). \
                      Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
-                    entity.name, s = entity.snake_name
+                    entity.name, s = entity.snake_name, p = p
                 )
             } else {
                 format!(
-                    "CRUD query fns for {}: get_{s}, list_{s}s, create_{s}, update_{s}, delete_{s}. \
+                    "CRUD query fns for {}: get_{s}, list_{p}, create_{s}, update_{s}, delete_{s}. \
                      Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
-                    entity.name, s = entity.snake_name
+                    entity.name, s = entity.snake_name, p = p
                 )
             };
             let idx = add_node(
