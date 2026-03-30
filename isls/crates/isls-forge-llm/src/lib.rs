@@ -528,7 +528,7 @@ pub fn pluralize(name: &str) -> String {
     if name.is_empty() {
         return name.to_string();
     }
-    if name.ends_with("ss") || name.ends_with("sh") || name.ends_with("ch") || name.ends_with("x") {
+    if name.ends_with("ss") || name.ends_with("sh") || name.ends_with("ch") || name.ends_with("x") || name.ends_with('s') {
         return format!("{}es", name);
     }
     if name.ends_with('y') {
@@ -538,9 +538,6 @@ pub fn pluralize(name: &str) -> String {
                 return format!("{}ies", before_y);
             }
         }
-    }
-    if name.ends_with('s') {
-        return name.to_string();
     }
     format!("{}s", name)
 }
