@@ -39,6 +39,9 @@ pub enum ChatError {
     /// JSON parsing of oracle response failed.
     #[error("parse error: {0}")]
     Parse(#[from] serde_json::Error),
+    /// Validation of extracted specification failed.
+    #[error("validation error: {0}")]
+    Validation(String),
 }
 
 pub type Result<T> = std::result::Result<T, ChatError>;
@@ -443,6 +446,220 @@ fn infer_sql_type(rust_type: &str) -> String {
     }
 }
 
+// ─── D3: Chat-to-App entity extraction ──────────────────────────────────────
+
+/// Build the LLM prompt for entity extraction from a natural language message.
+///
+/// Returns the exact prompt from the D3 specification (§2.1).
+/// A single LLM call with this prompt extracts the complete application structure.
+pub fn build_extraction_prompt(message: &str) -> String {
+    let template = r#"You are an expert software architect. Extract the data model
+from this application description. Return ONLY valid JSON,
+no markdown fences, no explanation.
+
+The JSON must follow this exact schema:
+{
+  "app_name": "kebab-case-name",
+  "description": "one line description",
+  "entities": [
+    {
+      "name": "PascalCaseName",
+      "fields": [
+        {
+          "name": "snake_case_name",
+          "type": "String|i32|i64|f64|bool",
+          "nullable": false,
+          "unique": false,
+          "default": null
+        }
+      ],
+      "foreign_keys": [
+        {
+          "target": "OtherEntityName",
+          "nullable": false
+        }
+      ]
+    }
+  ]
+}
+
+Rules:
+- Every app needs a User entity with: email (String, unique),
+  password_hash (String), role (String, default "user"),
+  is_active (bool, default true).
+- Use i64 for money (cents), i32 for quantities, String for text,
+  bool for flags, f64 for measurements.
+- Add created_at/updated_at automatically - do NOT include them.
+- id is automatic - do NOT include it.
+- Foreign keys reference other entities by PascalCase name.
+- If an entity "belongs to" another, add a foreign_key.
+- Name entities in PascalCase singular: "Product", not "products".
+- Name fields in snake_case: "unit_price", not "unitPrice".
+- Include 4-12 entities. Not less, not more.
+- Every entity needs at least 1 own field besides foreign keys.
+
+User's description:
+{user_message}"#;
+
+    template.replace("{user_message}", message)
+}
+
+/// Validate the JSON structure extracted by the LLM.
+///
+/// Checks entity array, User entity presence, PascalCase names, field types,
+/// and FK referential integrity. Returns `Err` if validation fails.
+pub fn validate_extracted_spec(json: &serde_json::Value) -> Result<()> {
+    let entities = json["entities"].as_array()
+        .ok_or_else(|| ChatError::Validation("no entities array".into()))?;
+
+    if entities.is_empty() {
+        return Err(ChatError::Validation("no entities extracted".into()));
+    }
+
+    // Must have a User entity
+    let has_user = entities.iter().any(|e| e["name"].as_str() == Some("User"));
+    if !has_user {
+        return Err(ChatError::Validation("no User entity — required for auth".into()));
+    }
+
+    // Collect all entity names for FK validation
+    let entity_names: Vec<&str> = entities.iter()
+        .filter_map(|e| e["name"].as_str())
+        .collect();
+
+    for entity in entities {
+        let name = entity["name"].as_str()
+            .ok_or_else(|| ChatError::Validation("entity without name".into()))?;
+
+        // PascalCase check
+        if name.chars().next().map_or(true, |c| !c.is_uppercase()) {
+            return Err(ChatError::Validation(format!("entity '{}' not PascalCase", name)));
+        }
+
+        // Must have fields or foreign_keys (or both)
+        let field_count = entity["fields"].as_array().map_or(0, |f| f.len());
+        let fk_count = entity["foreign_keys"].as_array().map_or(0, |f| f.len());
+        if field_count == 0 && fk_count == 0 {
+            return Err(ChatError::Validation(
+                format!("entity '{}' has no fields and no FKs", name),
+            ));
+        }
+
+        // FK targets must reference existing entities
+        if let Some(fks) = entity["foreign_keys"].as_array() {
+            for fk in fks {
+                let target = fk["target"].as_str()
+                    .ok_or_else(|| ChatError::Validation("FK without target".into()))?;
+                if !entity_names.contains(&target) {
+                    return Err(ChatError::Validation(
+                        format!("FK target '{}' not in entities", target),
+                    ));
+                }
+            }
+        }
+
+        // Field types must be valid
+        if let Some(fields) = entity["fields"].as_array() {
+            for field in fields {
+                let ft = field["type"].as_str().unwrap_or("");
+                if !["String", "i32", "i64", "f64", "bool"].contains(&ft) {
+                    return Err(ChatError::Validation(
+                        format!("invalid field type '{}' in {}", ft, name),
+                    ));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Convert LLM-extracted JSON to a valid TOML string.
+///
+/// Deterministic conversion — no LLM call. Produces `[app]`, `[backend]`,
+/// `[frontend]`, `[deployment]`, and `[[entities]]` sections.
+pub fn json_to_toml(json: &serde_json::Value) -> Result<String> {
+    let mut toml = String::new();
+
+    // [app] section
+    toml.push_str("[app]\n");
+    toml.push_str(&format!("name = \"{}\"\n",
+        json["app_name"].as_str().unwrap_or("my-app")));
+    toml.push_str(&format!("description = \"{}\"\n\n",
+        json["description"].as_str().unwrap_or("Generated application")));
+
+    // [backend] section
+    toml.push_str("[backend]\n");
+    toml.push_str("language = \"rust\"\n");
+    toml.push_str("framework = \"actix-web\"\n");
+    toml.push_str("database = \"postgresql\"\n");
+    toml.push_str("auth_method = \"jwt\"\n\n");
+
+    // [frontend] section
+    toml.push_str("[frontend]\n");
+    toml.push_str("type = \"spa\"\n");
+    toml.push_str("framework = \"vanilla\"\n");
+    toml.push_str("styling = \"minimal\"\n\n");
+
+    // [deployment] section
+    toml.push_str("[deployment]\n");
+    toml.push_str("containerized = true\n");
+    toml.push_str("compose = true\n\n");
+
+    // [[entities]] sections
+    if let Some(entities) = json["entities"].as_array() {
+        for entity in entities {
+            toml.push_str("[[entities]]\n");
+            toml.push_str(&format!("name = \"{}\"\n",
+                entity["name"].as_str().unwrap_or("Unknown")));
+
+            // Fields
+            if let Some(fields) = entity["fields"].as_array() {
+                toml.push_str("fields = [\n");
+                for field in fields {
+                    toml.push_str(&format!(
+                        "    {{ name = \"{}\", type = \"{}\"",
+                        field["name"].as_str().unwrap_or("field"),
+                        field["type"].as_str().unwrap_or("String"),
+                    ));
+                    if field["nullable"].as_bool().unwrap_or(false) {
+                        toml.push_str(", nullable = true");
+                    }
+                    if field["unique"].as_bool().unwrap_or(false) {
+                        toml.push_str(", unique = true");
+                    }
+                    if let Some(def) = field["default"].as_str() {
+                        toml.push_str(&format!(", default = \"{}\"", def));
+                    }
+                    toml.push_str(" },\n");
+                }
+                toml.push_str("]\n");
+            }
+
+            // Foreign keys
+            if let Some(fks) = entity["foreign_keys"].as_array() {
+                if !fks.is_empty() {
+                    toml.push_str("foreign_keys = [\n");
+                    for fk in fks {
+                        toml.push_str(&format!(
+                            "    {{ target = \"{}\"",
+                            fk["target"].as_str().unwrap_or("Unknown"),
+                        ));
+                        if fk["nullable"].as_bool().unwrap_or(false) {
+                            toml.push_str(", nullable = true");
+                        }
+                        toml.push_str(" },\n");
+                    }
+                    toml.push_str("]\n");
+                }
+            }
+            toml.push_str("\n");
+        }
+    }
+
+    Ok(toml)
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -502,5 +719,143 @@ mod tests {
         assert!(files.iter().any(|f| f.contains("models/product")));
         assert!(files.iter().any(|f| f.contains("services/product")));
         assert!(files.iter().any(|f| f.contains("migrations")));
+    }
+
+    // ─── D3 tests ────────────────────────────────────────────────────────────
+
+    fn sample_valid_json() -> serde_json::Value {
+        serde_json::json!({
+            "app_name": "test-app",
+            "description": "A test application",
+            "entities": [
+                {
+                    "name": "User",
+                    "fields": [
+                        { "name": "email", "type": "String", "nullable": false, "unique": true },
+                        { "name": "password_hash", "type": "String", "nullable": false, "unique": false },
+                        { "name": "role", "type": "String", "nullable": false, "unique": false, "default": "user" },
+                        { "name": "is_active", "type": "bool", "nullable": false, "unique": false, "default": "true" }
+                    ],
+                    "foreign_keys": []
+                },
+                {
+                    "name": "Product",
+                    "fields": [
+                        { "name": "name", "type": "String", "nullable": false, "unique": false },
+                        { "name": "price", "type": "i64", "nullable": false, "unique": false },
+                        { "name": "in_stock", "type": "bool", "nullable": false, "unique": false }
+                    ],
+                    "foreign_keys": [
+                        { "target": "User", "nullable": false }
+                    ]
+                }
+            ]
+        })
+    }
+
+    #[test]
+    fn test_build_extraction_prompt() {
+        let prompt = build_extraction_prompt("Restaurant with reservations");
+        assert!(prompt.contains("Restaurant with reservations"), "should contain user message");
+        assert!(prompt.contains("User entity"), "should mention User entity requirement");
+        assert!(prompt.contains("PascalCase"), "should mention PascalCase");
+        assert!(prompt.contains("snake_case"), "should mention snake_case");
+        assert!(prompt.contains("4-12 entities"), "should mention entity count bounds");
+    }
+
+    #[test]
+    fn test_validate_valid_spec() {
+        let json = sample_valid_json();
+        assert!(validate_extracted_spec(&json).is_ok(), "valid spec should pass validation");
+    }
+
+    #[test]
+    fn test_validate_missing_user() {
+        let json = serde_json::json!({
+            "entities": [
+                {
+                    "name": "Product",
+                    "fields": [
+                        { "name": "name", "type": "String" }
+                    ]
+                }
+            ]
+        });
+        let err = validate_extracted_spec(&json).unwrap_err();
+        assert!(err.to_string().contains("User"), "should mention missing User entity");
+    }
+
+    #[test]
+    fn test_validate_invalid_type() {
+        let json = serde_json::json!({
+            "entities": [
+                {
+                    "name": "User",
+                    "fields": [
+                        { "name": "email", "type": "VARCHAR" }
+                    ]
+                }
+            ]
+        });
+        let err = validate_extracted_spec(&json).unwrap_err();
+        assert!(err.to_string().contains("invalid field type"), "should reject invalid type");
+    }
+
+    #[test]
+    fn test_validate_bad_fk_target() {
+        let json = serde_json::json!({
+            "entities": [
+                {
+                    "name": "User",
+                    "fields": [
+                        { "name": "email", "type": "String" }
+                    ],
+                    "foreign_keys": [
+                        { "target": "NonExistent" }
+                    ]
+                }
+            ]
+        });
+        let err = validate_extracted_spec(&json).unwrap_err();
+        assert!(err.to_string().contains("not in entities"), "should reject bad FK target");
+    }
+
+    #[test]
+    fn test_json_to_toml() {
+        let json = sample_valid_json();
+        let toml = json_to_toml(&json).unwrap();
+
+        // [app] section
+        assert!(toml.contains("[app]"));
+        assert!(toml.contains("name = \"test-app\""));
+        assert!(toml.contains("description = \"A test application\""));
+
+        // [backend] section
+        assert!(toml.contains("[backend]"));
+        assert!(toml.contains("language = \"rust\""));
+        assert!(toml.contains("framework = \"actix-web\""));
+        assert!(toml.contains("database = \"postgresql\""));
+        assert!(toml.contains("auth_method = \"jwt\""));
+
+        // [frontend] section
+        assert!(toml.contains("[frontend]"));
+        assert!(toml.contains("framework = \"vanilla\""));
+
+        // [deployment] section
+        assert!(toml.contains("[deployment]"));
+        assert!(toml.contains("containerized = true"));
+
+        // [[entities]] sections
+        assert!(toml.contains("[[entities]]"));
+        assert!(toml.contains("name = \"User\""));
+        assert!(toml.contains("name = \"Product\""));
+
+        // Field details
+        assert!(toml.contains("name = \"email\""));
+        assert!(toml.contains("unique = true"));
+        assert!(toml.contains("default = \"user\""));
+
+        // FK
+        assert!(toml.contains("target = \"User\""));
     }
 }
