@@ -508,7 +508,7 @@ fn pluralize_snake(name: &str) -> String {
     if name.is_empty() {
         return name.to_string();
     }
-    if name.ends_with("ss") || name.ends_with("sh") || name.ends_with("ch") || name.ends_with("x") || name.ends_with('s') {
+    if name.ends_with("ss") || name.ends_with("sh") || name.ends_with("ch") || name.ends_with("x") || name.ends_with('s') || name.ends_with('z') {
         return format!("{}es", name);
     }
     if name.ends_with('y') {
