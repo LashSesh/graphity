@@ -899,6 +899,7 @@ pub async fn create_pool() -> Result<PgPool, sqlx::Error> {
 pub fn generate_service_rs(entity: &EntityDef) -> String {
     let n = &entity.name;
     let sn = &entity.snake_name;
+    let pn = pluralize(sn);
     format!(
         r#"use sqlx::PgPool;
 use crate::errors::AppError;
@@ -912,11 +913,11 @@ pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError> {{
 }}
 
 /// List {n}s with pagination.
-pub async fn list_{sn}s(
+pub async fn list_{pn}(
     pool: &PgPool,
     params: &PaginationParams,
 ) -> Result<PaginatedResponse<{n}>, AppError> {{
-    {sn}_queries::list_{sn}s(pool, params).await
+    {sn}_queries::list_{pn}(pool, params).await
 }}
 
 /// Create a new {n}.
@@ -939,7 +940,8 @@ pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
 }}
 "#,
         n = n,
-        sn = sn
+        sn = sn,
+        pn = pn
     )
 }
 
@@ -949,6 +951,7 @@ pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
 pub fn generate_user_service_rs(entity: &EntityDef) -> String {
     let n = &entity.name;
     let sn = &entity.snake_name;
+    let pn = pluralize(sn);
     format!(
         r#"use sqlx::PgPool;
 use crate::errors::AppError;
@@ -967,11 +970,11 @@ pub async fn get_{sn}_by_email(pool: &PgPool, email: &str) -> Result<{n}, AppErr
 }}
 
 /// List {n}s with pagination.
-pub async fn list_{sn}s(
+pub async fn list_{pn}(
     pool: &PgPool,
     params: &PaginationParams,
 ) -> Result<PaginatedResponse<{n}>, AppError> {{
-    {sn}_queries::list_{sn}s(pool, params).await
+    {sn}_queries::list_{pn}(pool, params).await
 }}
 
 /// Create a new {n}.
@@ -994,7 +997,8 @@ pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError> {{
 }}
 "#,
         n = n,
-        sn = sn
+        sn = sn,
+        pn = pn
     )
 }
 
@@ -1018,12 +1022,12 @@ use crate::models::{sn}::{{Create{n}Payload, Update{n}Payload}};
 use crate::pagination::PaginationParams;
 use crate::services::{sn} as {sn}_service;
 
-pub async fn list_{sn}s(
+pub async fn list_{pn}(
     pool: web::Data<PgPool>,
     params: web::Query<PaginationParams>,
     _user: AuthUser,
 ) -> Result<impl Responder, AppError> {{
-    let result = {sn}_service::list_{sn}s(pool.get_ref(), &params).await?;
+    let result = {sn}_service::list_{pn}(pool.get_ref(), &params).await?;
     Ok(HttpResponse::Ok().json(result))
 }}
 
@@ -1068,7 +1072,7 @@ pub async fn delete_{sn}(
 pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
     cfg.service(
         web::scope("/api/{tn}")
-            .route("", web::get().to(list_{sn}s))
+            .route("", web::get().to(list_{pn}))
             .route("", web::post().to(create_{sn}))
             .route("/{{id}}", web::get().to(get_{sn}))
             .route("/{{id}}", web::put().to(update_{sn}))
@@ -1078,7 +1082,8 @@ pub fn {sn}_routes(cfg: &mut web::ServiceConfig) {{
 "#,
         n = n,
         sn = sn,
-        tn = tn
+        tn = tn,
+        pn = tn
     )
 }
 

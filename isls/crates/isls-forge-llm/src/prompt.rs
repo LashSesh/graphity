@@ -550,11 +550,12 @@ fn format_model_norm(entity: &EntityDef) -> String {
 fn format_queries_norm(entity: &EntityDef) -> String {
     let sn = &entity.snake_name;
     let n = &entity.name;
+    let pn = crate::pluralize(sn);
     format!(
         r#"NORM: CRUD queries for {n} (ISLS-NORM-0042)
 Required async functions (all take &PgPool, return Result<_, AppError>):
 - pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError>
-- pub async fn list_{sn}s(pool: &PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{n}>, AppError>
+- pub async fn list_{pn}(pool: &PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{n}>, AppError>
 - pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError>
 - pub async fn update_{sn}(pool: &PgPool, id: i64, payload: Update{n}Payload) -> Result<{n}, AppError>
 - pub async fn delete_{sn}(pool: &PgPool, id: i64) -> Result<(), AppError>
@@ -568,13 +569,15 @@ Instead use: sqlx::query("SELECT COUNT(*)...").fetch_one(pool) and extract the c
 or use sqlx::query_as::<_, (i64,)>("SELECT COUNT(*)...").fetch_one(pool).await?.0
 "#,
         n = n,
-        sn = sn
+        sn = sn,
+        pn = pn
     )
 }
 
 fn format_service_norm(entity: &EntityDef) -> String {
     let sn = &entity.snake_name;
     let n = &entity.name;
+    let pn = crate::pluralize(sn);
     let rules = if entity.business_rules.is_empty() {
         "No special business rules — thin wrapper around database queries.".to_string()
     } else {
@@ -584,7 +587,7 @@ fn format_service_norm(entity: &EntityDef) -> String {
         r#"NORM: Service layer for {n} (ISLS-NORM-0042)
 Thin wrappers calling {sn}_queries functions, adding validation and tracing:
 - pub async fn get_{sn}(pool: &PgPool, id: i64) -> Result<{n}, AppError>
-- pub async fn list_{sn}s(pool: &PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{n}>, AppError>
+- pub async fn list_{pn}(pool: &PgPool, params: &PaginationParams) -> Result<PaginatedResponse<{n}>, AppError>
 - pub async fn create_{sn}(pool: &PgPool, payload: Create{n}Payload) -> Result<{n}, AppError>
   (validate payload.validate() before inserting)
 - pub async fn update_{sn}(pool: &PgPool, id: i64, payload: Update{n}Payload) -> Result<{n}, AppError>
@@ -597,6 +600,7 @@ Log operations: tracing::info!("creating {sn}"); tracing::info!("{sn} {{id}} del
 "#,
         n = n,
         sn = sn,
+        pn = pn,
         rules = rules
     )
 }
@@ -608,7 +612,7 @@ fn format_api_norm(entity: &EntityDef) -> String {
     format!(
         r#"NORM: API handlers for {n} (ISLS-NORM-0042)
 Actix-web handler functions:
-- pub async fn list_{sn}s(pool: web::Data<PgPool>, params: web::Query<PaginationParams>, user: AuthUser) → impl Responder
+- pub async fn list_{tn}(pool: web::Data<PgPool>, params: web::Query<PaginationParams>, user: AuthUser) → impl Responder
 - pub async fn get_{sn}(pool: web::Data<PgPool>, path: web::Path<i64>, user: AuthUser) → impl Responder
 - pub async fn create_{sn}(pool: web::Data<PgPool>, body: web::Json<Create{n}Payload>, user: AuthUser) → impl Responder
 - pub async fn update_{sn}(pool: web::Data<PgPool>, path: web::Path<i64>, body: web::Json<Update{n}Payload>, user: AuthUser) → impl Responder
