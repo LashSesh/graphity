@@ -1214,7 +1214,7 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
             return generate_user_model_rs();
         }
         for entity in spec.entities.iter().filter(|e| e.name != "User") {
-            if path.ends_with(&format!("{}.rs", entity.snake_name)) {
+            if path.ends_with(&format!("/{}.rs", entity.snake_name)) {
                 return generate_model_rs(entity);
             }
         }
@@ -1247,7 +1247,7 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     // Layer 6: entity service files (thin delegation wrappers — deterministic)
     if path.contains("services/") && path.ends_with(".rs") && !path.ends_with("mod.rs") {
         for entity in &spec.entities {
-            if path.ends_with(&format!("{}.rs", entity.snake_name)) {
+            if path.ends_with(&format!("/{}.rs", entity.snake_name)) {
                 return if entity.name == "User" {
                     generate_user_service_rs(entity)
                 } else {
@@ -1266,7 +1266,7 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     // Layer 7: entity API route files (deterministic CRUD handlers)
     if path.contains("api/") && path.ends_with(".rs") && !path.ends_with("mod.rs") && !path.contains("auth_routes") {
         for entity in spec.entities.iter().filter(|e| e.name != "User") {
-            if path.ends_with(&format!("{}.rs", entity.snake_name)) {
+            if path.ends_with(&format!("/{}.rs", entity.snake_name)) {
                 return generate_api_routes_rs(entity);
             }
         }

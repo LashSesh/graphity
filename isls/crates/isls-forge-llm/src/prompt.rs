@@ -604,6 +604,7 @@ Log operations: tracing::info!("creating {sn}"); tracing::info!("{sn} {{id}} del
 fn format_api_norm(entity: &EntityDef) -> String {
     let sn = &entity.snake_name;
     let n = &entity.name;
+    let tn = crate::pluralize(sn);
     format!(
         r#"NORM: API handlers for {n} (ISLS-NORM-0042)
 Actix-web handler functions:
@@ -614,13 +615,14 @@ Actix-web handler functions:
 - pub async fn delete_{sn}(pool: web::Data<PgPool>, path: web::Path<i64>, user: AuthUser) → impl Responder
   (delete requires role "admin")
 
-pub fn {sn}_routes(cfg: &mut web::ServiceConfig) — register all routes under /api/{sn}s
+pub fn {sn}_routes(cfg: &mut web::ServiceConfig) — register all routes under /api/{tn}
 
 Use web::HttpResponse::Ok().json(result) for success.
 Map AppError to proper HTTP response via ResponseError.
 "#,
         n = n,
-        sn = sn
+        sn = sn,
+        tn = tn
     )
 }
 
@@ -645,8 +647,8 @@ fn format_migration_norm(plan: &ForgePlan) -> String {
         }
         lines.push(format!("- {} table:", entity.snake_name));
         lines.push(format!(
-            "  CREATE TABLE IF NOT EXISTS {}s (",
-            entity.snake_name
+            "  CREATE TABLE IF NOT EXISTS {} (",
+            crate::pluralize(&entity.snake_name)
         ));
         for f in &entity.fields {
             let null = if f.nullable { "" } else { " NOT NULL" };
