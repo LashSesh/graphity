@@ -467,7 +467,7 @@ The JSON must follow this exact schema:
       "fields": [
         {
           "name": "snake_case_name",
-          "type": "String|i32|i64|f64|bool",
+          "field_type": "String|i32|i64|f64|bool",
           "nullable": false,
           "unique": false,
           "default": null
@@ -561,7 +561,7 @@ pub fn validate_extracted_spec(json: &serde_json::Value) -> Result<()> {
         // Field types must be valid
         if let Some(fields) = entity["fields"].as_array() {
             for field in fields {
-                let ft = field["type"].as_str().unwrap_or("");
+                let ft = field["field_type"].as_str().unwrap_or("");
                 if !["String", "i32", "i64", "f64", "bool"].contains(&ft) {
                     return Err(ChatError::Validation(
                         format!("invalid field type '{}' in {}", ft, name),
@@ -618,9 +618,9 @@ pub fn json_to_toml(json: &serde_json::Value) -> Result<String> {
                 toml.push_str("fields = [\n");
                 for field in fields {
                     toml.push_str(&format!(
-                        "    {{ name = \"{}\", type = \"{}\"",
+                        "    {{ name = \"{}\", field_type = \"{}\"",
                         field["name"].as_str().unwrap_or("field"),
-                        field["type"].as_str().unwrap_or("String"),
+                        field["field_type"].as_str().unwrap_or("String"),
                     ));
                     if field["nullable"].as_bool().unwrap_or(false) {
                         toml.push_str(", nullable = true");
@@ -731,19 +731,19 @@ mod tests {
                 {
                     "name": "User",
                     "fields": [
-                        { "name": "email", "type": "String", "nullable": false, "unique": true },
-                        { "name": "password_hash", "type": "String", "nullable": false, "unique": false },
-                        { "name": "role", "type": "String", "nullable": false, "unique": false, "default": "user" },
-                        { "name": "is_active", "type": "bool", "nullable": false, "unique": false, "default": "true" }
+                        { "name": "email", "field_type": "String", "nullable": false, "unique": true },
+                        { "name": "password_hash", "field_type": "String", "nullable": false, "unique": false },
+                        { "name": "role", "field_type": "String", "nullable": false, "unique": false, "default": "user" },
+                        { "name": "is_active", "field_type": "bool", "nullable": false, "unique": false, "default": "true" }
                     ],
                     "foreign_keys": []
                 },
                 {
                     "name": "Product",
                     "fields": [
-                        { "name": "name", "type": "String", "nullable": false, "unique": false },
-                        { "name": "price", "type": "i64", "nullable": false, "unique": false },
-                        { "name": "in_stock", "type": "bool", "nullable": false, "unique": false }
+                        { "name": "name", "field_type": "String", "nullable": false, "unique": false },
+                        { "name": "price", "field_type": "i64", "nullable": false, "unique": false },
+                        { "name": "in_stock", "field_type": "bool", "nullable": false, "unique": false }
                     ],
                     "foreign_keys": [
                         { "target": "User", "nullable": false }
@@ -776,7 +776,7 @@ mod tests {
                 {
                     "name": "Product",
                     "fields": [
-                        { "name": "name", "type": "String" }
+                        { "name": "name", "field_type": "String" }
                     ]
                 }
             ]
@@ -792,7 +792,7 @@ mod tests {
                 {
                     "name": "User",
                     "fields": [
-                        { "name": "email", "type": "VARCHAR" }
+                        { "name": "email", "field_type": "VARCHAR" }
                     ]
                 }
             ]
@@ -808,7 +808,7 @@ mod tests {
                 {
                     "name": "User",
                     "fields": [
-                        { "name": "email", "type": "String" }
+                        { "name": "email", "field_type": "String" }
                     ],
                     "foreign_keys": [
                         { "target": "NonExistent" }
