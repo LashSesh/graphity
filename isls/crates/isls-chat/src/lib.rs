@@ -584,15 +584,9 @@ pub fn validate_extracted_spec(json: &serde_json::Value) -> Result<()> {
             }
         }
 
-        // Field names and types must be valid
+        // Field types must be valid
         if let Some(fields) = entity["fields"].as_array() {
             for field in fields {
-                let fname = field["name"].as_str().unwrap_or("");
-                if RUST_KEYWORDS.contains(&fname) {
-                    return Err(ChatError::Validation(
-                        format!("field name '{}' in {} is a Rust keyword", fname, name),
-                    ));
-                }
                 let ft = field["field_type"].as_str().unwrap_or("");
                 if !["String", "i32", "i64", "f64", "bool"].contains(&ft) {
                     return Err(ChatError::Validation(
@@ -668,10 +662,15 @@ pub fn json_to_toml(json: &serde_json::Value) -> Result<String> {
             if let Some(fields) = entity["fields"].as_array() {
                 toml.push_str("fields = [\n");
                 for field in fields {
-                    let fname = field["name"].as_str().unwrap_or("field");
-                    if fk_field_names.contains(&fname.to_string()) {
+                    let raw_fname = field["name"].as_str().unwrap_or("field");
+                    if fk_field_names.contains(&raw_fname.to_string()) {
                         continue; // FK has priority — skip duplicate user field
                     }
+                    let fname = if RUST_KEYWORDS.contains(&raw_fname) {
+                        format!("{}_value", raw_fname)
+                    } else {
+                        raw_fname.to_string()
+                    };
                     toml.push_str(&format!(
                         "    {{ name = \"{}\", field_type = \"{}\"",
                         fname,
@@ -986,20 +985,45 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_keyword_field() {
+    fn test_validate_keyword_field_passes() {
+        // Keyword field names pass validation — renamed in json_to_toml.
         let json = serde_json::json!({
             "entities": [
                 {
                     "name": "User",
                     "fields": [
                         { "name": "email", "field_type": "String" },
-                        { "name": "match", "field_type": "String" }
+                        { "name": "type", "field_type": "String" }
                     ]
                 }
             ]
         });
-        let err = validate_extracted_spec(&json).unwrap_err();
-        assert!(err.to_string().contains("Rust keyword"), "should reject keyword field name");
+        assert!(validate_extracted_spec(&json).is_ok(),
+            "keyword field names should pass validation (renamed in TOML)");
+    }
+
+    #[test]
+    fn test_json_to_toml_keyword_field_rename() {
+        let json = serde_json::json!({
+            "app_name": "gym",
+            "description": "Gym management",
+            "entities": [
+                {
+                    "name": "Membership",
+                    "fields": [
+                        { "name": "type", "field_type": "String" },
+                        { "name": "price", "field_type": "i64" }
+                    ]
+                }
+            ]
+        });
+        let toml = json_to_toml(&json).unwrap();
+        assert!(toml.contains("name = \"type_value\""),
+            "keyword field should be renamed to type_value");
+        assert!(!toml.contains("name = \"type\""),
+            "original keyword field name should not appear");
+        assert!(toml.contains("name = \"price\""),
+            "non-keyword field should be unchanged");
     }
 
     #[test]
