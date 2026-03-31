@@ -1,0 +1,1055 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+% ── Colors ────────────────────────────────────────────────────────────────────
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+% ── Listings ──────────────────────────────────────────────────────────────────
+\lstdefinestyle{rust}{
+  language=C, % closest built-in
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,HashSet,PathBuf,Result,Option},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+\lstdefinestyle{toml}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  commentstyle=\color{isls-gray}\itshape,
+  morecomment=[l]{\#},
+}
+
+% ── Headers ───────────────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS D4 Spec --- Ophan-Orbits}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v1.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+% ── Section styling ───────────────────────────────────────────────────────────
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+  citecolor=isls-green,
+}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Titlepage ─────────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS D4 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} Ophan-Orbits: Auto-Norm Emergence}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}    & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}   & v3.5 (D4) \\
+\textbf{Author:}    & Sebastian Klemm \\
+\textbf{Date:}      & \today \\
+\textbf{Status:}    & Specification \\
+\textbf{Depends:}   & D3 (complete), isls-norms v3.0 \\
+\textbf{Branch:}    & \texttt{claude/implement-isls-d4-spec} \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+License: MIT
+}
+\end{titlepage}
+
+% ── TOC ───────────────────────────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+D4 closes the feedback loop in the ISLS generation pipeline. After D3, ISLS 
+generates applications from natural language, but every generation starts from 
+zero --- the system learns nothing from prior runs. D4 introduces 
+\textbf{auto-norm emergence}: the system observes what it generates, detects 
+recurring cross-layer patterns across domains, and promotes stable patterns to 
+first-class norms that influence future generations.
+
+In Dual Fabric / TriM\"obius terminology: each synthesis run produces an 
+\emph{Ophan orbit} --- a coherent rotation through the full-stack layers 
+(Database $\to$ Model $\to$ Query $\to$ Service $\to$ API $\to$ Frontend 
+$\to$ Test). When multiple orbits across different domains trace the same 
+topology, the shared structure crystallises into a norm. The norm is the 
+\emph{fixpoint attractor} of the orbit family.
+
+\subsection{What D4 Achieves}
+
+\begin{enumerate}[nosep]
+\item \textbf{Observation Pipeline:} Every successful S7 emission feeds 
+      artifact metadata into \texttt{NormRegistry::observe\_and\_learn()}.
+\item \textbf{Complete Norm Synthesis:} Stub implementations in 
+      \texttt{learning.rs} are replaced with operational code that produces 
+      \texttt{NormLayers} with real artifacts.
+\item \textbf{Norm-Guided Generation:} Matched norms inject structural 
+      constraints into the HDAG before LLM calls, reducing token cost and 
+      improving consistency.
+\item \textbf{CLI Observability:} \texttt{isls norms} subcommand for 
+      inspecting the norm catalog, candidates, and auto-discovered norms.
+\end{enumerate}
+
+\subsection{What D4 is NOT}
+
+\begin{itemize}[nosep]
+\item \textbf{Not iterative chat.} D4 is still single-shot generation. 
+      Multi-turn refinement is D4+/D5.
+\item \textbf{Not repository scraping.} External norm sources are D5.
+\item \textbf{Not self-generation.} The system does not generate itself. 
+      That is D6.
+\item \textbf{Not a web UI.} CLI only. Studio integration comes later.
+\end{itemize}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Architecture Overview}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Current State (D3)}
+
+\begin{lstlisting}[style=bash]
+Chat/TOML --> isls-chat --> isls-forge-llm (S0-S7) --> Output
+                                                        |
+                                                     (discarded)
+\end{lstlisting}
+
+The generation pipeline is open-loop. Generated artifacts vanish after 
+emission. The \texttt{isls-norms} crate contains data structures and 
+stubs for self-learning, but:
+
+\begin{itemize}[nosep]
+\item \texttt{build\_norm\_layers()} returns \texttt{NormLayers::default()} 
+      --- empty.
+\item \texttt{infer\_parameters()} returns \texttt{vec![]} --- no parameters.
+\item \texttt{generalize\_name()} uses hardcoded string replacements for 
+      3 words only.
+\item \texttt{observe\_and\_learn()} is never called from the pipeline.
+\item \texttt{ForgePlan::from\_composed\_plan()} exists but is never invoked.
+\end{itemize}
+
+\subsection{Target State (D4)}
+
+\begin{lstlisting}[style=bash]
+Chat/TOML --> isls-chat ---------> isls-forge-llm (S0-S7) --> Output
+                |                       |      ^                 |
+                |   norm-match          |      |                 |
+                +-- NormRegistry <------+------+----- observe ---+
+                        |                      |
+                        +-- ~/.isls/norms.json -+
+\end{lstlisting}
+
+The generation pipeline becomes a closed loop:
+
+\begin{enumerate}[nosep]
+\item \textbf{Pre-generation:} \texttt{isls-chat} matches the user 
+      description against the \texttt{NormRegistry}. Matched norms produce 
+      a \texttt{ComposedPlan} that enriches the \texttt{AppSpec} with 
+      norm-derived fields, validations, and business rules.
+\item \textbf{Generation:} The HDAG pipeline runs as before (S0--S7), 
+      but the \texttt{AppSpec} is now richer due to norm contributions.
+\item \textbf{Post-generation:} After S7 Emit, artifact metadata is 
+      collected from the generated files and fed into 
+      \texttt{observe\_and\_learn()}.
+\item \textbf{Persistence:} Candidates and auto-norms persist to 
+      \texttt{\textasciitilde/.isls/norms.json}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Work Packages}
+% ══════════════════════════════════════════════════════════════════════════════
+
+D4 consists of four work packages executed sequentially. Each depends on 
+the previous.
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W1: Observation Pipeline}
+\label{sec:w1}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+After every successful S7 emission, collect artifact metadata from the 
+generated file tree and feed it into \texttt{NormRegistry::observe\_and\_learn()}.
+
+\subsubsection{New File}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-forge-llm/src/artifact\_collector.rs} 
+  & Walks the generated project directory after S7 Emit, inspects each 
+    generated Rust file, and produces a \texttt{Vec<ObservedArtifact>}. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Artifact Collection Algorithm}
+
+\begin{enumerate}[nosep]
+\item Walk the \texttt{backend/src/} directory recursively.
+\item For each \texttt{.rs} file, determine its \texttt{LayerType} from 
+      the path:
+      \begin{itemize}[nosep]
+      \item \texttt{models/*.rs} $\to$ \texttt{LayerType::Model}
+      \item \texttt{database/*\_queries.rs} $\to$ \texttt{LayerType::Query}
+      \item \texttt{services/*.rs} $\to$ \texttt{LayerType::Service}
+      \item \texttt{api/*.rs} $\to$ \texttt{LayerType::Api}
+      \end{itemize}
+\item For each file, extract:
+      \begin{itemize}[nosep]
+      \item \textbf{artifact\_type:} \texttt{"struct"} for models, 
+            \texttt{"fn"} for queries/services/api.
+      \item \textbf{name:} The struct name or function names found in 
+            the file (regex: \texttt{pub struct (\textbackslash w+)} and 
+            \texttt{pub (async )?fn (\textbackslash w+)}).
+      \item \textbf{signature:} SHA-256 of the file content.
+      \item \textbf{field\_names:} For structs, extract field names 
+            (regex on struct body). For functions, extract parameter names.
+      \end{itemize}
+\item Also inspect:
+      \begin{itemize}[nosep]
+      \item \texttt{migrations/*.sql} $\to$ \texttt{LayerType::Database}, 
+            extract table names from \texttt{CREATE TABLE} statements.
+      \item \texttt{frontend/pages/*.js} $\to$ \texttt{LayerType::Frontend}, 
+            extract page/component names.
+      \item \texttt{api\_tests.rs} $\to$ \texttt{LayerType::Test}, 
+            extract test function names.
+      \end{itemize}
+\item Return \texttt{Vec<ObservedArtifact>}.
+\end{enumerate}
+
+\subsubsection{Pipeline Integration}
+
+In \texttt{staged\_closure.rs}, after the S7 Emit block, add the 
+observation hook:
+
+\begin{lstlisting}[style=rust]
+// S7.1: Observe -- feed artifacts into norm learning
+let collector = ArtifactCollector::new(&self.output_dir);
+let observed = collector.collect()?;
+let domain = &spec.app_name;
+let run_id = format!("{}_{}", domain,
+    chrono::Utc::now().format("%Y%m%d_%H%M%S"));
+let mut registry = NormRegistry::new();
+registry.observe_and_learn(&observed, domain, &run_id);
+// registry.save() is called internally by observe_and_learn
+\end{lstlisting}
+
+\textbf{Constraint:} The observation MUST NOT block or delay S7 Emit. 
+If collection fails, log a warning and continue --- graceful degradation 
+(Rule~10).
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & Add observation hook after S7 Emit. Add \texttt{mod artifact\_collector} 
+    to imports. \\
+\texttt{isls-forge-llm/src/lib.rs}
+  & Add \texttt{pub mod artifact\_collector;} \\
+\texttt{isls-forge-llm/Cargo.toml}
+  & Add dependency: \texttt{chrono = \{version = "0.4", 
+    features = ["clock"]\}}, \texttt{sha2 = "0.10"} 
+    (sha2 may already be present via isls-norms). \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item Run \texttt{isls forge-chat -m "Pet shop with animals, owners, 
+      appointments" --api-key \$KEY --output ./output/petshop}
+\item Verify \texttt{\textasciitilde/.isls/norms.json} exists and contains 
+      at least one candidate entry with \texttt{status: "Observing"}.
+\item Verify the candidate has \texttt{domains: ["petshop"]} and 
+      \texttt{observation\_count: 1}.
+\item Run a second domain (e.g. hotel). Verify the same candidate now has 
+      2 domains if patterns overlap.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W2: Complete Norm Synthesis}
+\label{sec:w2}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Replace the three stub implementations in \texttt{learning.rs} so that 
+promoted candidates produce norms with \emph{real} \texttt{NormLayers} 
+containing artifact templates usable by the composition engine.
+
+\subsubsection{Stubs to Complete}
+
+\paragraph{1. \texttt{build\_norm\_layers()}}
+
+Current: returns \texttt{NormLayers::default()} (all fields empty).
+
+Target: Iterate over \texttt{candidate.common\_artifacts}. For each 
+\texttt{AbstractedArtifact}, create the corresponding layer artifact:
+
+\begin{itemize}[nosep]
+\item \texttt{LayerType::Database} $\to$ \texttt{DatabaseArtifact} with 
+      \texttt{table = name\_template}, columns from \texttt{common\_fields} 
+      mapped to SQL types via a simple type-inference heuristic 
+      (field name contains ``id'' $\to$ \texttt{INTEGER}, 
+      ``name''/``title''/``description'' $\to$ \texttt{TEXT}, 
+      ``price''/``amount''/``quantity'' $\to$ \texttt{NUMERIC}, 
+      ``date''/``time''/``created''/``updated'' $\to$ \texttt{TIMESTAMPTZ}, 
+      ``active''/``is\_'' $\to$ \texttt{BOOLEAN}, 
+      default $\to$ \texttt{TEXT}).
+\item \texttt{LayerType::Model} $\to$ \texttt{ModelArtifact} with 
+      \texttt{struct\_name = name\_template} (PascalCase), fields from 
+      \texttt{common\_fields} with Rust type inference 
+      (same heuristic as above but mapped to Rust types: \texttt{i32}, 
+      \texttt{String}, \texttt{f64}, \texttt{chrono::NaiveDateTime}, 
+      \texttt{bool}).
+\item \texttt{LayerType::Query} $\to$ \texttt{QueryArtifact} with 
+      standard CRUD function names: 
+      \texttt{get\_\{entity\}}, \texttt{list\_\{entities\}}, 
+      \texttt{create\_\{entity\}}, \texttt{update\_\{entity\}}, 
+      \texttt{delete\_\{entity\}} (per Rule~3).
+\item \texttt{LayerType::Service} $\to$ \texttt{ServiceArtifact} with 
+      thin wrapper names matching query functions.
+\item \texttt{LayerType::Api} $\to$ \texttt{ApiArtifact} with scope 
+      \texttt{/api/\{entities\}} and standard CRUD handlers.
+\item \texttt{LayerType::Frontend} $\to$ \texttt{FrontendArtifact} with 
+      a page template name.
+\item \texttt{LayerType::Test} $\to$ \texttt{TestArtifact} with CRUD 
+      test names.
+\end{itemize}
+
+Artifacts with \texttt{confidence < min\_artifact\_presence} (from 
+\texttt{PromotionCriteria}) are excluded.
+
+\paragraph{2. \texttt{infer\_parameters()}}
+
+Current: returns \texttt{vec![]}.
+
+Target: Scan \texttt{common\_fields} across all artifacts. Fields 
+whose \texttt{presence\_rate < 1.0} become optional 
+\texttt{NormParameter}s (type = \texttt{ParamType::Bool}, name = 
+\texttt{"include\_\{field\_name\}"}). Fields with \texttt{presence\_rate 
+== 1.0} are fixed (not parameters).
+
+\paragraph{3. \texttt{generalize\_name()}}
+
+Current: hardcoded \texttt{.replace("product", "\{entity\}")} etc.
+
+Target: Extract the entity-specific word by comparing the artifact name 
+against the \texttt{observed\_on} field of the pattern. Replace any 
+occurrence of the entity name (case-insensitive) with 
+\texttt{"\{entity\}"}. Example: \texttt{"ProductModel"} observed on 
+entity \texttt{"product"} $\to$ \texttt{"\{entity\}Model"}.
+
+The replacement must also handle plurals: if \texttt{observed\_on} is 
+\texttt{"product"}, also replace \texttt{"products"} with 
+\texttt{"\{entities\}"}.
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-norms/src/learning.rs}
+  & Replace \texttt{build\_norm\_layers()}, \texttt{infer\_parameters()}, 
+    \texttt{generalize\_name()} with operational implementations. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W2 Verification}
+
+\begin{enumerate}[nosep]
+\item Unit test: create 5+ \texttt{ObservedArtifact}s from 3 domains 
+      with consistent structure. Feed into a \texttt{NormRegistry} 
+      5 times (meeting \texttt{PromotionCriteria::default()}).
+\item Assert a norm with ID prefix \texttt{ISLS-NORM-AUTO-} was created.
+\item Assert the norm's \texttt{layers.database} is non-empty.
+\item Assert the norm's \texttt{layers.model} is non-empty with correct 
+      \texttt{struct\_name} containing \texttt{"\{entity\}"}.
+\item Assert the norm's \texttt{layers.query} contains 5 CRUD function 
+      templates.
+\item Assert the norm has at least one \texttt{NormParameter} if any 
+      field had \texttt{presence\_rate < 1.0}.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W3: Norm-Guided Generation}
+\label{sec:w3}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+When generating a new application, match the user's description against 
+the \texttt{NormRegistry} (including auto-discovered norms) and use 
+matched norms to enrich the \texttt{AppSpec} before HDAG construction.
+
+\subsubsection{Integration Point: \texttt{isls-chat}}
+
+Currently, \texttt{forge-chat} does:
+
+\begin{lstlisting}[style=bash]
+message --> LLM entity extraction --> JSON --> TOML --> forge-v2
+\end{lstlisting}
+
+After D4:
+
+\begin{lstlisting}[style=bash]
+message --> NormRegistry::match_description(message)
+        --> ActivatedNorms (confidence >= 0.3)
+        --> compose_norms_with_registry(activated, params, registry)
+        --> ComposedPlan
+        --> LLM entity extraction (enriched prompt with norm hints)
+        --> JSON --> TOML (merge ComposedPlan fields into entities)
+        --> forge-v2
+\end{lstlisting}
+
+\subsubsection{Norm Enrichment Algorithm}
+
+\begin{enumerate}[nosep]
+\item Load \texttt{NormRegistry} (includes builtin + auto-discovered).
+\item Call \texttt{registry.match\_description(\&message)} $\to$ 
+      \texttt{Vec<ActivatedNorm>}.
+\item If any norms activated with confidence $\geq 0.5$:
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item Compose: \texttt{compose\_norms\_with\_registry(\&activated, 
+            \&params, \&registry)} $\to$ \texttt{ComposedPlan}.
+      \item For each \texttt{ModelArtifact} in the plan: add suggested 
+            fields to the LLM extraction prompt as hints 
+            (``Common fields for \{entity\_type\}: ...'').
+      \item After LLM extraction: merge any ComposedPlan fields that 
+            the LLM did not already produce (additive only, never 
+            override LLM output).
+      \item Log activated norms: 
+            \texttt{tracing::info!("D4 norm enrichment: \{norm\_ids\}")}.
+      \end{enumerate}
+\item If no norms activated: proceed as D3 (pure LLM extraction).
+\end{enumerate}
+
+\textbf{Critical constraint:} Norm enrichment is \emph{additive only}. 
+It MUST NOT remove or override entities/fields produced by the LLM. 
+The LLM has domain-specific context that norms lack. Norms provide 
+\emph{structural priors}, not \emph{corrections}.
+
+\subsubsection{New File}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-chat/src/norm\_enrichment.rs}
+  & Contains \texttt{enrich\_with\_norms(message, entities) -> entities}. 
+    Loads registry, matches, composes, and merges norm-derived fields 
+    into the entity list. Returns enriched entities. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-chat/src/lib.rs}
+  & Add \texttt{pub mod norm\_enrichment;} \\
+\texttt{isls-chat/src/extract.rs} (or equivalent)
+  & After LLM entity extraction, call 
+    \texttt{norm\_enrichment::enrich\_with\_norms()} before converting 
+    to TOML. \\
+\texttt{isls-chat/Cargo.toml}
+  & Add dependency: \texttt{isls-norms = \{path = "../isls-norms"\}} \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Prompt Enhancement}
+
+When norms are activated, append to the LLM entity-extraction prompt:
+
+\begin{lstlisting}[style=bash]
+## Norm Hints (optional structural guidance)
+The following patterns have been observed across similar applications.
+Consider including these fields if they fit the domain:
+
+- Entities with status tracking commonly include:
+  status (String), created_at (DateTime), updated_at (DateTime)
+- Entities with inventory commonly include:
+  quantity (i32), unit_price (f64), reorder_level (i32)
+
+These are suggestions, not requirements. Extract entities that fit
+the user's description first, then add norm-suggested fields only
+if they are relevant.
+\end{lstlisting}
+
+The exact hint text is generated from \texttt{ComposedPlan.models} 
+at runtime --- not hardcoded.
+
+\subsubsection{W3 Verification}
+
+\begin{enumerate}[nosep]
+\item Generate 3 domains (petshop, hotel, clinic) to accumulate 
+      observations past the promotion threshold.
+\item Generate a 4th domain (e.g. ``library management system'').
+\item Verify that the generated app contains norm-suggested fields 
+      that were NOT in the user's one-sentence description.
+\item Verify the norm enrichment is logged: 
+      \texttt{grep "D4 norm enrichment" <output>}.
+\item Verify compilation still passes (\texttt{cargo build} succeeds).
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W4: CLI Observability}
+\label{sec:w4}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Add an \texttt{isls norms} subcommand for inspecting the norm ecosystem 
+without modifying generation behavior.
+
+\subsubsection{Commands}
+
+\begin{lstlisting}[style=bash]
+isls norms list              # List all norms (builtin + auto)
+isls norms list --auto-only  # Only auto-discovered norms
+isls norms inspect <norm-id> # Show full norm details
+isls norms candidates        # List candidate pool
+isls norms stats             # Summary statistics
+isls norms reset             # Delete ~/.isls/norms.json (with confirm)
+\end{lstlisting}
+
+\paragraph{Output Format (example for \texttt{isls norms list}):}
+
+\begin{lstlisting}[style=bash]
+ISLS Norm Catalog (27 builtin, 2 auto-discovered)
+---
+ISLS-NORM-0042  CRUD-Entity       builtin   Molecule  [Db,Model,Query,Svc,Api]
+ISLS-NORM-0088  JWT-Auth          builtin   Molecule  [Db,Model,Query,Svc,Api]
+...
+ISLS-NORM-AUTO-0001  Auto-StateMachine  auto  Molecule  [Db,Model,Query,Svc]
+    domains: warehouse, ecommerce, projectmgmt
+    observations: 7, consistency: 0.91
+ISLS-NORM-AUTO-0002  Auto-Inventory     auto  Molecule  [Db,Model,Query]
+    domains: warehouse, petshop, restaurant
+    observations: 5, consistency: 0.87
+\end{lstlisting}
+
+\paragraph{Output Format (example for \texttt{isls norms stats}):}
+
+\begin{lstlisting}[style=bash]
+ISLS Norm Statistics
+---
+Builtin norms:       24 (20 molecule, 3 organism, 1 meta)
+Auto-discovered:     2
+Candidates:          5 (3 observing, 2 promoted)
+Total observations:  23 across 6 domains
+Wirings:             8
+Persistence:         ~/.isls/norms.json (4.2 KB)
+\end{lstlisting}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-cli/src/main.rs}
+  & Add \texttt{Command::Norms} variant with subcommands. Parse 
+    \texttt{isls norms <subcmd>} from args. \\
+\texttt{isls-cli/src/cmd\_norms.rs} (new)
+  & Implements \texttt{cmd\_norms\_list()}, \texttt{cmd\_norms\_inspect()}, 
+    \texttt{cmd\_norms\_candidates()}, \texttt{cmd\_norms\_stats()}, 
+    \texttt{cmd\_norms\_reset()}. \\
+\texttt{isls-cli/Cargo.toml}
+  & Add dependency: \texttt{isls-norms = \{path = "../isls-norms"\}} \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W4 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{isls norms list} --- shows builtin norms, compiles, 
+      no panic.
+\item \texttt{isls norms stats} --- shows summary, numbers match 
+      actual registry state.
+\item \texttt{isls norms candidates} --- shows candidate pool after 
+      at least one generation run.
+\item \texttt{isls norms inspect ISLS-NORM-0042} --- shows full 
+      norm details including layers and triggers.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{File Inventory}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{New Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Purpose} \\
+\midrule
+isls-forge-llm & \texttt{src/artifact\_collector.rs} 
+  & Post-emission artifact walker \\
+isls-chat & \texttt{src/norm\_enrichment.rs} 
+  & Pre-generation norm matching + enrichment \\
+isls-cli & \texttt{src/cmd\_norms.rs} 
+  & \texttt{isls norms} subcommand handlers \\
+\bottomrule
+\end{longtable}
+
+\subsection{Modified Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Change} \\
+\midrule
+isls-forge-llm & \texttt{src/staged\_closure.rs} 
+  & Add S7.1 observation hook \\
+isls-forge-llm & \texttt{src/lib.rs} 
+  & Add \texttt{pub mod artifact\_collector} \\
+isls-forge-llm & \texttt{Cargo.toml} 
+  & Add chrono dependency \\
+isls-norms & \texttt{src/learning.rs} 
+  & Complete 3 stub functions \\
+isls-chat & \texttt{src/lib.rs} 
+  & Add \texttt{pub mod norm\_enrichment} \\
+isls-chat & \texttt{src/extract.rs} 
+  & Call enrichment after LLM extraction \\
+isls-chat & \texttt{Cargo.toml} 
+  & Add isls-norms dependency \\
+isls-cli & \texttt{src/main.rs} 
+  & Add Norms command variant \\
+isls-cli & \texttt{Cargo.toml} 
+  & Add isls-norms dependency \\
+\bottomrule
+\end{longtable}
+
+\subsection{Unchanged Files}
+
+All 48 structural file generators, the HDAG builder, the Oracle trait, 
+S6 Coagula, and the full isls-norms type system (\texttt{types.rs}, 
+\texttt{catalog.rs}, \texttt{composition.rs}) remain \textbf{unchanged}. 
+D4 extends the system without modifying the proven generation core.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The 12 Rules --- D4 Compliance}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Status} & \textbf{D4 Impact} \\
+\midrule
+1  & \color{isls-green}\checkmark & Norm enrichment adds fields to EntityDef. 
+     Structural files remain structural. LLM surface unchanged (7 files). \\
+2  & \color{isls-green}\checkmark & No new modules violate re-export rule. \\
+3  & \color{isls-green}\checkmark & \texttt{build\_norm\_layers} generates 
+     CRUD names per Rule~3 convention. \\
+4  & \color{isls-green}\checkmark & No change to auth handling. \\
+5  & \color{isls-green}\checkmark & No change to query signatures. \\
+6  & \color{isls-green}\checkmark & No change to query files. \\
+7  & \color{isls-green}\checkmark & No new crypto or logging dependencies. \\
+8  & \color{isls-green}\checkmark & Norm-enriched fields become part of 
+     EntityDef, so seed INSERT includes them. \\
+9  & \color{isls-green}\checkmark & No Dockerfile change. \\
+10 & \color{isls-green}\checkmark & Artifact collection failure $\to$ warn 
+     + continue. Norm matching failure $\to$ proceed as D3. \\
+11 & \color{isls-green}\checkmark & ProvidedSymbol = structural content. 
+     Unchanged. \\
+12 & \color{isls-green}\checkmark & LLM prompts get norm hints as 
+     additional context --- more type context, not less. \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Data Flow: Complete D4 Cycle}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{User:} \texttt{isls forge-chat -m "Hotel management 
+      with rooms, guests, bookings, and housekeeping" --api-key \$KEY}
+
+\item \textbf{isls-chat (Norm Match):}
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item Load \texttt{NormRegistry} from \texttt{\textasciitilde/.isls/norms.json}.
+      \item \texttt{match\_description("Hotel management...")} $\to$ 
+            activated norms (e.g. ISLS-NORM-0042 CRUD-Entity at 0.75, 
+            ISLS-NORM-AUTO-0001 Auto-StateMachine at 0.50).
+      \item \texttt{compose\_norms\_with\_registry()} $\to$ ComposedPlan 
+            with suggested fields (status, created\_at, updated\_at).
+      \end{enumerate}
+
+\item \textbf{isls-chat (LLM Extraction):}
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item Build extraction prompt with norm hints appended.
+      \item LLM returns JSON entities: Room, Guest, Booking, 
+            HousekeepingTask.
+      \item \texttt{enrich\_with\_norms()} merges norm-suggested fields 
+            (e.g. adds \texttt{status} to HousekeepingTask if not already 
+            present).
+      \end{enumerate}
+
+\item \textbf{isls-chat (TOML):} Convert enriched entities to TOML.
+
+\item \textbf{isls-forge-llm (S0--S7):} Standard HDAG pipeline with 
+      enriched AppSpec. Generated app has norm-informed fields.
+
+\item \textbf{isls-forge-llm (S7.1 Observe):}
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item \texttt{ArtifactCollector} walks generated project.
+      \item Produces \texttt{Vec<ObservedArtifact>} (e.g. 28 artifacts 
+            across 6 layers).
+      \item \texttt{registry.observe\_and\_learn(\&artifacts, "hotel", 
+            \&run\_id)}.
+      \item Cross-layer patterns extracted, matched against candidates.
+      \item Candidates updated (observation\_count++, domains extended).
+      \item If any candidate meets PromotionCriteria $\to$ auto-promoted.
+      \item Persisted to disk.
+      \end{enumerate}
+
+\item \textbf{User verifies:} \texttt{cd output/hotel/backend \&\& 
+      cargo build} --- compiles. Norm-enriched fields visible in 
+      generated models.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Promotion Criteria}
+% ══════════════════════════════════════════════════════════════════════════════
+
+The existing \texttt{PromotionCriteria::default()} values are retained:
+
+\begin{longtable}{lrl}
+\toprule
+\textbf{Criterion} & \textbf{Threshold} & \textbf{Meaning} \\
+\midrule
+\texttt{min\_consistency}        & 0.85  & Jaccard similarity of layer 
+                                            sets across observations \\
+\texttt{min\_domains}            & 3     & Observed in $\geq$3 distinct 
+                                            app domains \\
+\texttt{min\_layers}             & 4     & Pattern spans $\geq$4 
+                                            layers consistently \\
+\texttt{min\_observations}       & 5     & At least 5 total 
+                                            observations \\
+\texttt{min\_artifact\_presence} & 0.80  & Each artifact template 
+                                            present in $\geq$80\% of 
+                                            observations \\
+\bottomrule
+\end{longtable}
+
+These thresholds prevent premature promotion. With 6 verified apps 
+(Warehouse, E-Commerce, Projektmanagement, Restaurant, Library, Gym) 
+already generated, and D4 adding observation, the first auto-norms 
+should emerge after $\sim$2--3 additional generation runs (total 
+$\geq$5 observations across $\geq$3 domains).
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Error Handling}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{Failure Mode} & \textbf{Behavior} \\
+\midrule
+Artifact collection IO error & Log warning, skip observation. 
+  App is still emitted successfully. \\
+\texttt{norms.json} corrupt & Log warning, start with fresh 
+  registry (builtin norms only). \\
+Norm matching returns empty & Proceed as D3 (pure LLM extraction). \\
+Composition conflict & Log warning, fall back to D3 path. \\
+Enrichment produces invalid field types & Validation in 
+  \texttt{json\_to\_toml()} catches it. Log + skip invalid fields. \\
+Auto-norm has empty NormLayers & Skip during enrichment 
+  (confidence filter). \\
+\bottomrule
+\end{longtable}
+
+All error paths converge on: \textbf{generate the app anyway, as D3 
+would.} The norm system is strictly additive --- it can enhance but 
+never block generation.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Test Suite}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Unit Tests (in-crate)}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{Test} & \textbf{Assertion} \\
+\midrule
+\texttt{test\_artifact\_collector\_models} 
+  & Collector extracts struct names + fields from a mock models/ dir. \\
+\texttt{test\_artifact\_collector\_queries} 
+  & Collector extracts function names from mock query files. \\
+\texttt{test\_artifact\_collector\_layers} 
+  & Correct LayerType assignment for each directory. \\
+\texttt{test\_build\_norm\_layers\_database} 
+  & \texttt{build\_norm\_layers} produces non-empty DatabaseArtifact 
+    with correct column types. \\
+\texttt{test\_build\_norm\_layers\_model} 
+  & Produces ModelArtifact with \texttt{\{entity\}} in struct\_name. \\
+\texttt{test\_build\_norm\_layers\_crud} 
+  & QueryArtifact has 5 CRUD functions per Rule~3. \\
+\texttt{test\_infer\_parameters} 
+  & Fields with presence\_rate $<$ 1.0 become NormParameters. \\
+\texttt{test\_generalize\_name\_dynamic} 
+  & Entity-specific words replaced with \texttt{\{entity\}}, 
+    plurals with \texttt{\{entities\}}. \\
+\texttt{test\_full\_promotion\_cycle} 
+  & 5 observations across 3 domains $\to$ candidate promoted $\to$ 
+    auto-norm has non-empty layers. \\
+\texttt{test\_norm\_enrichment\_additive} 
+  & Enrichment adds fields but never removes LLM-produced ones. \\
+\texttt{test\_norm\_enrichment\_fallback} 
+  & If no norms match, entities pass through unchanged. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Integration Tests}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{Test} & \textbf{Assertion} \\
+\midrule
+\texttt{test\_d4\_observation\_e2e} 
+  & Run \texttt{forge-chat} with mock oracle. Verify 
+    \texttt{norms.json} updated. \\
+\texttt{test\_d4\_norms\_cli} 
+  & Run \texttt{isls norms list} and \texttt{isls norms stats}. 
+    Verify output format, no panic. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Acceptance Test (Manual)}
+
+\begin{lstlisting}[style=bash]
+# Step 1: Generate 3+ domains to accumulate observations
+isls forge-chat -m "Pet shop with animals, owners, appointments" \
+    --api-key $KEY --output ./output/petshop
+isls forge-chat -m "Hotel with rooms, guests, bookings" \
+    --api-key $KEY --output ./output/hotel
+isls forge-chat -m "Clinic with patients, doctors, appointments" \
+    --api-key $KEY --output ./output/clinic
+
+# Step 2: Verify candidates exist
+isls norms candidates
+# Expected: >= 1 candidate with status Observing, domains >= 3
+
+# Step 3: Generate 2 more domains to trigger promotion
+isls forge-chat -m "Gym with members, trainers, classes" \
+    --api-key $KEY --output ./output/gym2
+isls forge-chat -m "School with students, teachers, courses" \
+    --api-key $KEY --output ./output/school
+
+# Step 4: Verify auto-norm emergence
+isls norms list --auto-only
+# Expected: >= 1 auto-discovered norm (ISLS-NORM-AUTO-*)
+
+# Step 5: Generate with norm enrichment
+isls forge-chat -m "Spa with treatments, therapists, bookings" \
+    --api-key $KEY --output ./output/spa
+cd output/spa/backend && cargo build && cd ../../..
+# Expected: compiles, generated models contain norm-enriched fields
+
+# Step 6: Verify enrichment was applied
+grep -r "status" output/spa/backend/src/models/
+# Expected: status fields in entities where Auto-StateMachine applied
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{Do not modify} \texttt{structural.rs}, \texttt{hdag.rs}, 
+      \texttt{oracle.rs}, or any of the 48 structural file generators.
+\item \textbf{Do not modify} \texttt{types.rs} or \texttt{catalog.rs} 
+      in \texttt{isls-norms} --- the type system is stable.
+\item \textbf{composition.rs} is read-only --- the composition engine 
+      is complete.
+\item The \texttt{artifact\_collector.rs} MUST use only \texttt{std::fs} 
+      and regex --- no external parsing crates, no tokio.
+\item \texttt{norm\_enrichment.rs} MUST be pure (no IO except loading 
+      the registry). Input: message + entities. Output: enriched entities.
+\item The observation hook MUST NOT delay or block S7 Emit. Wrap in 
+      a catch-all that logs warnings on failure.
+\item All new code MUST compile with \texttt{cargo build} on the 
+      existing workspace without new \texttt{[patch]} or 
+      \texttt{[workspace.dependencies]} changes (except adding 
+      chrono and path dependencies as specified).
+\item Test with \texttt{cargo test -p isls-norms} and 
+      \texttt{cargo test -p isls-forge-llm} --- both must pass.
+\item Branch: \texttt{claude/implement-isls-d4-spec}.
+\item Commit message format: \texttt{D4/W\{n\}: <description>} 
+      (e.g. \texttt{D4/W1: Add artifact collector and observation hook}).
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Dependency Graph}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{verbatim}
+W1 (Observation Pipeline)
+  |
+  v
+W2 (Complete Norm Synthesis)
+  |
+  v
+W3 (Norm-Guided Generation)
+  |
+  v
+W4 (CLI Observability)
+\end{verbatim}
+
+W1 must work before W2 can be tested end-to-end. W2 must produce 
+real norms before W3 can use them. W4 is independent but most useful 
+after W1--W3 populate the registry.
+
+Recommended implementation order: W1 $\to$ W2 $\to$ W4 $\to$ W3. 
+This allows testing the observation + synthesis loop (W1+W2) before 
+wiring norm-guided generation (W3), with W4 providing observability 
+tools during development.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Token Budget Estimate}
+% ══════════════════════════════════════════════════════════════════════════════
+
+D4 adds \textbf{zero additional LLM tokens per generation run} in the 
+default path (no norms matched). When norms are matched, the prompt 
+enhancement adds $\sim$200--500 tokens to the entity extraction call 
+(negligible at \$0.15/run).
+
+The observation step (W1) is pure Rust file IO --- zero tokens.
+
+Total API cost impact: $<$\$0.02/run additional.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Post-D4 Outlook}
+% ══════════════════════════════════════════════════════════════════════════════
+
+With D4 complete, the norm system becomes self-reinforcing:
+
+\begin{itemize}[nosep]
+\item Each generation run is an observation.
+\item Observations accumulate into candidates.
+\item Candidates promote to norms.
+\item Norms enrich future generations.
+\item Enriched generations produce more consistent artifacts.
+\item More consistent artifacts promote faster.
+\end{itemize}
+
+This is the \emph{Ophan orbit} closing into a fixpoint: the system's 
+generative topology converges toward its own attractors.
+
+D5 (Repository Scraping) extends the observation surface beyond 
+self-generated apps to external repositories. D6 (M\"obius-Umst\"ulpung) 
+uses the mature norm catalog to generate ISLS itself.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Verification Sequence (Complete)}
+\label{sec:verification}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \texttt{cargo build} --- entire workspace compiles.
+\item \texttt{cargo test -p isls-norms} --- all unit tests pass 
+      (including new W2 tests).
+\item \texttt{cargo test -p isls-forge-llm} --- all unit tests pass 
+      (including W1 collector tests).
+\item \texttt{cargo test -p isls-chat} --- enrichment tests pass.
+\item \texttt{cargo test -p isls-cli} --- norms CLI tests pass.
+\item \texttt{isls norms list} --- outputs norm catalog without panic.
+\item \texttt{isls norms stats} --- outputs statistics.
+\item \texttt{isls forge-chat -m "..." --api-key \$KEY --output ./test} 
+      --- generates app.
+\item \texttt{cd test/backend \&\& cargo build} --- generated app compiles.
+\item \texttt{\textasciitilde/.isls/norms.json} --- contains candidate entries.
+\item After 5+ runs across 3+ domains: \texttt{isls norms list --auto-only} 
+      shows at least one auto-discovered norm.
+\end{enumerate}
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of D4 Specification.}
+\end{center}
+
+\end{document}
