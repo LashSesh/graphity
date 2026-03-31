@@ -6,6 +6,8 @@
 
 use std::path::Path;
 
+mod cmd_norms;
+
 // ─── Command Enum ────────────────────────────────────────────────────────────
 
 enum Command {
@@ -24,10 +26,26 @@ enum Command {
         api_key: Option<String>,
         model: String,
     },
+    /// D4: Norm catalog inspection and management.
+    Norms { subcmd: NormsSubcmd },
     /// Start the Gateway / Studio web interface.
     Serve { port: u16, api_key: Option<String> },
     /// Print help.
     Help,
+}
+
+/// Subcommands for `isls norms`.
+enum NormsSubcmd {
+    /// List all norms.
+    List { auto_only: bool },
+    /// Inspect a specific norm by ID.
+    Inspect { norm_id: String },
+    /// List candidate pool.
+    Candidates,
+    /// Summary statistics.
+    Stats,
+    /// Reset auto-discovered norms.
+    Reset,
 }
 
 // ─── Argument Parsing ────────────────────────────────────────────────────────
@@ -78,6 +96,31 @@ fn parse_args(args: &[String]) -> Command {
                 .cloned()
                 .unwrap_or_else(|| "gpt-4o".to_string());
             Command::ForgeChat { message, output, api_key, model }
+        }
+        "norms" => {
+            let subcmd = args.get(2).map(|s| s.as_str()).unwrap_or("list");
+            let subcmd = match subcmd {
+                "list" => {
+                    let auto_only = args.contains(&"--auto-only".to_string());
+                    NormsSubcmd::List { auto_only }
+                }
+                "inspect" => {
+                    let norm_id = args.get(3).cloned().unwrap_or_else(|| {
+                        eprintln!("[ERROR] isls norms inspect requires a norm ID");
+                        std::process::exit(1);
+                    });
+                    NormsSubcmd::Inspect { norm_id }
+                }
+                "candidates" => NormsSubcmd::Candidates,
+                "stats" => NormsSubcmd::Stats,
+                "reset" => NormsSubcmd::Reset,
+                _ => {
+                    eprintln!("[ERROR] Unknown norms subcommand: {}", subcmd);
+                    eprintln!("Available: list, inspect, candidates, stats, reset");
+                    std::process::exit(1);
+                }
+            };
+            Command::Norms { subcmd }
         }
         "serve" => {
             let port = args.iter().position(|a| a == "--port")
@@ -304,7 +347,7 @@ fn cmd_forge_chat(
     };
 
     // 3. Parse JSON
-    let json: serde_json::Value = match serde_json::from_str(json_str.trim()) {
+    let mut json: serde_json::Value = match serde_json::from_str(json_str.trim()) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("[ERROR] LLM returned invalid JSON: {}", e);
@@ -322,6 +365,9 @@ fn cmd_forge_chat(
 
     let entity_count = json["entities"].as_array().map_or(0, |e| e.len());
     println!("[Chat] Extracted {} entities", entity_count);
+
+    // 4.1 D4: Norm-guided enrichment (additive only, fallback to D3 on failure)
+    isls_chat::norm_enrichment::enrich_with_norms(message, &mut json);
 
     // 5. Convert to TOML
     let toml_content = match isls_chat::json_to_toml(&json) {
@@ -396,13 +442,14 @@ fn cmd_serve(port: u16, api_key: Option<String>) {
 // ─── help ────────────────────────────────────────────────────────────────────
 
 fn print_help() {
-    println!("ISLS — D3 Chat to App Architecture");
+    println!("ISLS — D4 Auto-Norm Emergence Architecture");
     println!();
     println!("Usage: isls <command> [options]");
     println!();
     println!("Commands:");
     println!("  forge-v2    HDAG code generation pipeline (Staged Closure)");
     println!("  forge-chat  D3: Natural language to compiled application");
+    println!("  norms       D4: Inspect norm catalog, candidates, and auto-discovered norms");
     println!("  serve       Start the Gateway / Studio web interface");
     println!("  help        Print this message");
     println!();
@@ -418,6 +465,13 @@ fn print_help() {
     println!("  --output <path>        Output directory (default: ./output)");
     println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
     println!("  --model <model>        LLM model name (default: gpt-4o)");
+    println!();
+    println!("norms subcommands:");
+    println!("  list [--auto-only]     List all norms (builtin + auto-discovered)");
+    println!("  inspect <norm-id>      Show full norm details");
+    println!("  candidates             List candidate pool");
+    println!("  stats                  Summary statistics");
+    println!("  reset                  Delete ~/.isls/norms.json (with confirm)");
     println!();
     println!("serve options:");
     println!("  --port <port>          Port number (default: 8420)");
@@ -440,6 +494,13 @@ fn main() {
         Command::ForgeChat { message, output, api_key, model } => {
             cmd_forge_chat(&message, &output, api_key, &model);
         }
+        Command::Norms { subcmd } => match subcmd {
+            NormsSubcmd::List { auto_only } => cmd_norms::cmd_norms_list(auto_only),
+            NormsSubcmd::Inspect { norm_id } => cmd_norms::cmd_norms_inspect(&norm_id),
+            NormsSubcmd::Candidates => cmd_norms::cmd_norms_candidates(),
+            NormsSubcmd::Stats => cmd_norms::cmd_norms_stats(),
+            NormsSubcmd::Reset => cmd_norms::cmd_norms_reset(),
+        },
         Command::Serve { port, api_key } => cmd_serve(port, api_key),
         Command::Help => print_help(),
     }
@@ -537,6 +598,51 @@ mod tests {
                 assert_eq!(model, "gpt-4o-mini");
             }
             _ => panic!("expected ForgeChat"),
+        }
+    }
+
+    #[test]
+    fn test_parse_norms_list() {
+        let cmd = parse_args(&args(&["isls", "norms"]));
+        match cmd {
+            Command::Norms { subcmd: NormsSubcmd::List { auto_only } } => {
+                assert!(!auto_only);
+            }
+            _ => panic!("expected Norms List"),
+        }
+    }
+
+    #[test]
+    fn test_parse_norms_list_auto_only() {
+        let cmd = parse_args(&args(&["isls", "norms", "list", "--auto-only"]));
+        match cmd {
+            Command::Norms { subcmd: NormsSubcmd::List { auto_only } } => {
+                assert!(auto_only);
+            }
+            _ => panic!("expected Norms List with auto_only"),
+        }
+    }
+
+    #[test]
+    fn test_parse_norms_stats() {
+        let cmd = parse_args(&args(&["isls", "norms", "stats"]));
+        assert!(matches!(cmd, Command::Norms { subcmd: NormsSubcmd::Stats }));
+    }
+
+    #[test]
+    fn test_parse_norms_candidates() {
+        let cmd = parse_args(&args(&["isls", "norms", "candidates"]));
+        assert!(matches!(cmd, Command::Norms { subcmd: NormsSubcmd::Candidates }));
+    }
+
+    #[test]
+    fn test_parse_norms_inspect() {
+        let cmd = parse_args(&args(&["isls", "norms", "inspect", "ISLS-NORM-0042"]));
+        match cmd {
+            Command::Norms { subcmd: NormsSubcmd::Inspect { norm_id } } => {
+                assert_eq!(norm_id, "ISLS-NORM-0042");
+            }
+            _ => panic!("expected Norms Inspect"),
         }
     }
 }

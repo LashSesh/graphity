@@ -210,6 +210,31 @@ impl StagedClosure {
             "S7 Emit: project complete"
         );
 
+        // S7.1: Observe — feed artifacts into norm learning (D4)
+        // Wrapped in catch-all: observation failure MUST NOT block emission (Rule 10)
+        match (|| -> std::result::Result<(), Box<dyn std::error::Error>> {
+            let collector = crate::artifact_collector::ArtifactCollector::new(&self.output_dir);
+            let observed = collector.collect();
+            let domain = &spec.app_name;
+            let run_id = format!(
+                "{}_{}",
+                domain,
+                chrono::Utc::now().format("%Y%m%d_%H%M%S")
+            );
+            let mut registry = isls_norms::NormRegistry::new();
+            registry.observe_and_learn(&observed, domain, &run_id);
+            Ok(())
+        })() {
+            Ok(()) => {
+                eprintln!("[HDAG S7.1] Observe: artifacts fed to norm learning");
+                tracing::info!("S7.1 Observe: artifacts collected and fed to norm learning");
+            }
+            Err(e) => {
+                eprintln!("[HDAG S7.1] Observe: failed (non-blocking): {}", e);
+                tracing::warn!("S7.1 Observe: failed (non-blocking): {}", e);
+            }
+        }
+
         Ok(self.generated_files.clone())
     }
 
