@@ -101,6 +101,34 @@ impl NormRegistry {
         registry
     }
 
+    /// Create an empty registry without builtins or persistence (for tests).
+    pub fn empty_without_persistence() -> Self {
+        Self {
+            norms: HashMap::new(),
+            wirings: Vec::new(),
+            candidates: HashMap::new(),
+            auto_id_counter: 0,
+            persistence_path: None,
+        }
+    }
+
+    /// Create a new registry pre-loaded with built-in norms but without
+    /// disk persistence (for tests).
+    pub fn new_without_persistence() -> Self {
+        let mut registry = Self {
+            norms: HashMap::new(),
+            wirings: Vec::new(),
+            candidates: HashMap::new(),
+            auto_id_counter: 0,
+            persistence_path: None,
+        };
+        for norm in builtin_norms() {
+            registry.norms.insert(norm.id.clone(), norm);
+        }
+        registry.wirings = builtin_wirings();
+        registry
+    }
+
     fn default_persistence_path() -> Option<PathBuf> {
         dirs_path().map(|d| d.join("norms.json"))
     }

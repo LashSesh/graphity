@@ -15,6 +15,7 @@ isls-forge-llm = { path = "../isls-forge-llm" }
 isls-hypercube = { path = "../isls-hypercube" }
 isls-gateway   = { path = "../isls-gateway" }
 isls-chat      = { path = "../isls-chat" }
+isls-norms     = { path = "../isls-norms" }
 
 serde_json = { workspace = true }
 dotenv = "0.15"

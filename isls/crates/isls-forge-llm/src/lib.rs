@@ -34,6 +34,7 @@
 //! let files = forge.generate().unwrap();
 //! ```
 
+pub mod artifact_collector;
 pub mod forge;
 pub mod hdag;
 pub mod mock;

@@ -22,6 +22,8 @@
 //! assert!(!ops.is_empty());
 //! ```
 
+pub mod norm_enrichment;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
