@@ -562,13 +562,6 @@ pub fn validate_extracted_spec(json: &serde_json::Value) -> Result<()> {
             return Err(ChatError::Validation(format!("entity '{}' not PascalCase", name)));
         }
 
-        // Rust keyword check on entity name
-        if RUST_KEYWORDS.contains(&name.to_lowercase().as_str()) {
-            return Err(ChatError::Validation(
-                format!("entity name '{}' is a Rust keyword", name),
-            ));
-        }
-
         // Must have fields or foreign_keys (or both)
         let field_count = entity["fields"].as_array().map_or(0, |f| f.len());
         let fk_count = entity["foreign_keys"].as_array().map_or(0, |f| f.len());
@@ -647,15 +640,27 @@ pub fn json_to_toml(json: &serde_json::Value) -> Result<String> {
 
     // [[entities]] sections
     if let Some(entities) = json["entities"].as_array() {
+        // Build rename map: keyword entity names get "Record" suffix
+        let rename = |name: &str| -> String {
+            if RUST_KEYWORDS.contains(&to_snake_case(name).as_str()) {
+                format!("{}Record", name)
+            } else {
+                name.to_string()
+            }
+        };
+
         for entity in entities {
             toml.push_str("[[entities]]\n");
-            toml.push_str(&format!("name = \"{}\"\n",
-                entity["name"].as_str().unwrap_or("Unknown")));
+            let raw_name = entity["name"].as_str().unwrap_or("Unknown");
+            toml.push_str(&format!("name = \"{}\"\n", rename(raw_name)));
 
             // Compute FK-generated field names to skip duplicates
             let fk_field_names: Vec<String> = entity["foreign_keys"].as_array()
                 .map(|fks| fks.iter().filter_map(|fk| {
-                    fk["target"].as_str().map(|t| format!("{}_id", to_snake_case(t)))
+                    fk["target"].as_str().map(|t| {
+                        let renamed = rename(t);
+                        format!("{}_id", to_snake_case(&renamed))
+                    })
                 }).collect())
                 .unwrap_or_default();
 
@@ -686,14 +691,15 @@ pub fn json_to_toml(json: &serde_json::Value) -> Result<String> {
                 toml.push_str("]\n");
             }
 
-            // Foreign keys
+            // Foreign keys (with renamed targets)
             if let Some(fks) = entity["foreign_keys"].as_array() {
                 if !fks.is_empty() {
                     toml.push_str("foreign_keys = [\n");
                     for fk in fks {
+                        let target = fk["target"].as_str().unwrap_or("Unknown");
                         toml.push_str(&format!(
                             "    {{ target = \"{}\"",
-                            fk["target"].as_str().unwrap_or("Unknown"),
+                            rename(target),
                         ));
                         if fk["nullable"].as_bool().unwrap_or(false) {
                             toml.push_str(", nullable = true");
@@ -910,7 +916,9 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_keyword_entity() {
+    fn test_validate_keyword_entity_passes() {
+        // Entity names that are Rust keywords (PascalCase) pass validation —
+        // they are auto-renamed in json_to_toml, not rejected here.
         let json = serde_json::json!({
             "entities": [
                 {
@@ -920,15 +928,61 @@ mod tests {
                     ]
                 },
                 {
-                    "name": "Type",
+                    "name": "Return",
                     "fields": [
-                        { "name": "label", "field_type": "String" }
+                        { "name": "reason", "field_type": "String" }
                     ]
                 }
             ]
         });
-        let err = validate_extracted_spec(&json).unwrap_err();
-        assert!(err.to_string().contains("Rust keyword"), "should reject keyword entity name");
+        assert!(validate_extracted_spec(&json).is_ok(),
+            "keyword entity names should pass validation (renamed in TOML)");
+    }
+
+    #[test]
+    fn test_json_to_toml_keyword_entity_rename() {
+        let json = serde_json::json!({
+            "app_name": "library",
+            "description": "Library system",
+            "entities": [
+                {
+                    "name": "User",
+                    "fields": [
+                        { "name": "email", "field_type": "String" }
+                    ]
+                },
+                {
+                    "name": "Return",
+                    "fields": [
+                        { "name": "reason", "field_type": "String" }
+                    ],
+                    "foreign_keys": [
+                        { "target": "User" }
+                    ]
+                },
+                {
+                    "name": "Loan",
+                    "fields": [
+                        { "name": "due_date", "field_type": "String" }
+                    ],
+                    "foreign_keys": [
+                        { "target": "Return" }
+                    ]
+                }
+            ]
+        });
+        let toml = json_to_toml(&json).unwrap();
+        // Return → ReturnRecord (keyword auto-rename)
+        assert!(toml.contains("name = \"ReturnRecord\""),
+            "keyword entity should be renamed to ReturnRecord");
+        assert!(!toml.contains("name = \"Return\""),
+            "original keyword entity name should not appear");
+        // FK targets must also be renamed
+        assert!(toml.contains("target = \"ReturnRecord\""),
+            "FK target should reference renamed entity");
+        // Non-keyword entities unchanged
+        assert!(toml.contains("name = \"User\""));
+        assert!(toml.contains("name = \"Loan\""));
     }
 
     #[test]
