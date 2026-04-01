@@ -9,3 +9,5 @@ full-report.html
 *.swo
 .DS_Store
 Thumbs.db
+logs/*.log
+output/pipeline_*
