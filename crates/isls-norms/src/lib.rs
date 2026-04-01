@@ -339,7 +339,10 @@ fn norm_layer_types(norm: &Norm) -> Vec<LayerType> {
 
 /// Returns the ISLS data directory (`~/.isls`).
 fn dirs_path() -> Option<PathBuf> {
-    std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".isls"))
+    std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .ok()
+        .map(|h| PathBuf::from(h).join(".isls"))
 }
 
 fn builtin_wirings() -> Vec<NormWiring> {

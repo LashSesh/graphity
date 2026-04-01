@@ -173,7 +173,7 @@ pub fn cmd_norms_stats() {
     let wirings = registry.all_wirings().len();
 
     // Check persistence file
-    let persistence_path = std::env::var("HOME").ok().map(std::path::PathBuf::from)
+    let persistence_path = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok().map(std::path::PathBuf::from)
         .map(|h| h.join(".isls/norms.json"))
         .unwrap_or_default();
     let persistence_info = if persistence_path.exists() {
@@ -207,7 +207,7 @@ pub fn cmd_norms_stats() {
 
 /// Delete ~/.isls/norms.json (reset auto-discovered norms).
 pub fn cmd_norms_reset() {
-    let persistence_path = std::env::var("HOME").ok().map(std::path::PathBuf::from)
+    let persistence_path = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok().map(std::path::PathBuf::from)
         .map(|h| h.join(".isls/norms.json"))
         .unwrap_or_default();
 
