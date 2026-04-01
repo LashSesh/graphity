@@ -255,13 +255,6 @@ impl NormRegistry {
         let patterns = extract_cross_layer_patterns(artifacts, domain, run_id);
 
         for pattern in patterns {
-            // Check if it matches an existing norm (reinforce)
-            let matched = self.norms.values().any(|n| {
-                norm_matches_pattern(n, &pattern)
-            });
-            if matched {
-                continue;
-            }
             // Add to or update candidate pool
             let sig = pattern.signature.clone();
             let next_id = format!("ISLS-CAND-{:04}", self.candidates.len() + 1);

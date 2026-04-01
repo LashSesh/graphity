@@ -105,10 +105,50 @@ fn entity_from_name(name: &str) -> String {
 
 fn compute_pattern_signature(artifacts: &[ObservedArtifact]) -> String {
     let mut hasher = Sha256::new();
-    let mut sigs: Vec<&str> = artifacts.iter().map(|a| a.signature.as_str()).collect();
-    sigs.sort();
-    for s in sigs { hasher.update(s.as_bytes()); }
+
+    // Use structural shape (layer + type + generalized name) instead of
+    // content SHA-256.  This way "get_animal" (petshop) and "get_room"
+    // (hotel) produce the same signature and merge in the candidate pool.
+    let mut structural: Vec<String> = artifacts.iter().map(|a| {
+        let generalized = generalize_artifact_name(&a.name);
+        format!("{:?}:{}:{}", a.layer, a.artifact_type, generalized)
+    }).collect();
+    structural.sort();
+
+    for s in &structural {
+        hasher.update(s.as_bytes());
+    }
     format!("{:x}", hasher.finalize())[..16].to_string()
+}
+
+/// Generalize an artifact name by replacing the entity-specific part.
+///
+/// `"get_animal"` → `"get_{entity}"`, `"Animal"` → `"{Entity}"`,
+/// `"list_animals"` → `"list_{entities}"`.
+fn generalize_artifact_name(name: &str) -> String {
+    let lower = name.to_lowercase();
+
+    // Function-style names: prefix_entity → prefix_{entity}
+    for prefix in &["get_", "list_", "create_", "update_", "delete_"] {
+        if lower.starts_with(prefix) {
+            return format!("{}{{entity}}", prefix);
+        }
+    }
+
+    // Struct-style names (PascalCase)
+    if name.chars().next().map_or(false, |c| c.is_uppercase()) {
+        let ll = lower.as_str();
+        if ll.starts_with("create") {
+            return "Create{Entity}".to_string();
+        }
+        if ll.starts_with("update") {
+            return "Update{Entity}".to_string();
+        }
+        return "{Entity}".to_string();
+    }
+
+    // Fallback: use as-is
+    lower
 }
 
 // ─── Norm Candidate ───────────────────────────────────────────────────────────
@@ -156,6 +196,11 @@ impl NormCandidate {
 
     /// Record a new observation of this pattern.
     pub fn observe(&mut self, pattern: CrossLayerPattern) {
+        // Deduplicate: skip if we already have an observation from this run
+        if self.observations.iter().any(|o| o.run_id == pattern.run_id && o.signature == pattern.signature) {
+            return;
+        }
+
         if !self.domains.contains(&pattern.domain) {
             self.domains.push(pattern.domain.clone());
         }
