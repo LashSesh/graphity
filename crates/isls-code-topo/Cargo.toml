@@ -11,3 +11,7 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 isls-reader = { path = "../isls-reader" }
+isls-norms = { path = "../isls-norms" }
+
+[dev-dependencies]
+toml.workspace = true

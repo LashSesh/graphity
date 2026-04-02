@@ -7,6 +7,7 @@
 use std::path::Path;
 
 mod cmd_norms;
+mod cmd_scrape;
 
 // ─── Command Enum ────────────────────────────────────────────────────────────
 
@@ -28,6 +29,15 @@ enum Command {
     },
     /// D4: Norm catalog inspection and management.
     Norms { subcmd: NormsSubcmd },
+    /// D5: Repository scraping — topology to norms.
+    Scrape {
+        path: Option<String>,
+        url: Option<String>,
+        manifest: Option<String>,
+        domain: Option<String>,
+        max_size_mb: u64,
+        timeout_secs: u64,
+    },
     /// Start the Gateway / Studio web interface.
     Serve { port: u16, api_key: Option<String> },
     /// Print help.
@@ -121,6 +131,29 @@ fn parse_args(args: &[String]) -> Command {
                 }
             };
             Command::Norms { subcmd }
+        }
+        "scrape" => {
+            let path = args.iter().position(|a| a == "--path")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let url = args.iter().position(|a| a == "--url")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let manifest = args.iter().position(|a| a == "--manifest")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let domain = args.iter().position(|a| a == "--domain")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let max_size_mb = args.iter().position(|a| a == "--max-size-mb")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(200);
+            let timeout_secs = args.iter().position(|a| a == "--timeout")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(120);
+            Command::Scrape { path, url, manifest, domain, max_size_mb, timeout_secs }
         }
         "serve" => {
             let port = args.iter().position(|a| a == "--port")
@@ -442,7 +475,7 @@ fn cmd_serve(port: u16, api_key: Option<String>) {
 // ─── help ────────────────────────────────────────────────────────────────────
 
 fn print_help() {
-    println!("ISLS — D4 Auto-Norm Emergence Architecture");
+    println!("ISLS — D5 Repository Scraping Architecture");
     println!();
     println!("Usage: isls <command> [options]");
     println!();
@@ -450,6 +483,7 @@ fn print_help() {
     println!("  forge-v2    HDAG code generation pipeline (Staged Closure)");
     println!("  forge-chat  D3: Natural language to compiled application");
     println!("  norms       D4: Inspect norm catalog, candidates, and auto-discovered norms");
+    println!("  scrape      D5: Scrape repositories — extract topology into norms");
     println!("  serve       Start the Gateway / Studio web interface");
     println!("  help        Print this message");
     println!();
@@ -473,6 +507,14 @@ fn print_help() {
     println!("  stats                  Summary statistics");
     println!("  reset                  Delete ~/.isls/norms.json (with confirm)");
     println!();
+    println!("scrape options:");
+    println!("  --path <dir>           Local directory to scrape");
+    println!("  --url <url>            Git repository URL to clone and scrape");
+    println!("  --manifest <file>      TOML manifest with multiple repos");
+    println!("  --domain <name>        Override inferred domain name");
+    println!("  --max-size-mb <mb>     Max clone size in MB (default: 200)");
+    println!("  --timeout <secs>       Clone timeout in seconds (default: 120)");
+    println!();
     println!("serve options:");
     println!("  --port <port>          Port number (default: 8420)");
     println!("  --api-key <key>        API key for LLM generation");
@@ -493,6 +535,11 @@ fn main() {
         }
         Command::ForgeChat { message, output, api_key, model } => {
             cmd_forge_chat(&message, &output, api_key, &model);
+        }
+        Command::Scrape { path, url, manifest, domain, max_size_mb, timeout_secs } => {
+            cmd_scrape::cmd_scrape(cmd_scrape::ScrapeOpts {
+                path, url, manifest, domain, max_size_mb, timeout_secs,
+            });
         }
         Command::Norms { subcmd } => match subcmd {
             NormsSubcmd::List { auto_only } => cmd_norms::cmd_norms_list(auto_only),
