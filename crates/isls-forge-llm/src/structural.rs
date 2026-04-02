@@ -252,7 +252,88 @@ pub fn generate_migration(spec: &AppSpec) -> String {
         sql.push_str(");\n\n");
     }
 
+    // D6: Conditional norm seed — only when a "Norm" entity with "is_builtin" field exists
+    if let Some(seed_sql) = generate_norm_seed(spec) {
+        sql.push_str(&seed_sql);
+    }
+
     sql
+}
+
+/// D6: Generate INSERT statements for the 24 builtin norms.
+///
+/// Activates ONLY when the AppSpec contains an entity named "Norm" that has
+/// an `is_builtin` field. For all other AppSpecs (warehouse, ecommerce, etc.),
+/// returns `None` — the migration is unchanged.
+///
+/// If seed generation fails internally, logs a warning and returns `None`
+/// (Rule 10: seed failure must not block migration).
+fn generate_norm_seed(spec: &AppSpec) -> Option<String> {
+    // Check for "Norm" entity with "is_builtin" field
+    let norm_entity = spec.entities.iter().find(|e| e.name == "Norm")?;
+    let has_is_builtin = norm_entity.fields.iter().any(|f| f.name == "is_builtin");
+    if !has_is_builtin {
+        return None;
+    }
+
+    match generate_norm_seed_inner() {
+        Ok(sql) => Some(sql),
+        Err(e) => {
+            eprintln!("[WARN] Norm seed generation failed (non-blocking): {}", e);
+            tracing::warn!("Norm seed generation failed (non-blocking): {}", e);
+            None
+        }
+    }
+}
+
+fn generate_norm_seed_inner() -> std::result::Result<String, Box<dyn std::error::Error>> {
+    use isls_norms::catalog::builtin_norms;
+    use isls_norms::types::NormLevel;
+
+    let norms = builtin_norms();
+    let mut sql = String::from("-- D6: Seed 24 builtin norms from isls_norms::builtin_norms()\n");
+
+    for norm in &norms {
+        let level_str = match norm.level {
+            NormLevel::Atom => "Atom",
+            NormLevel::Molecule => "Molecule",
+            NormLevel::Organism => "Organism",
+            NormLevel::Ecosystem => "Ecosystem",
+        };
+
+        let trigger_keywords = norm.triggers
+            .first()
+            .map(|t| t.keywords.join(", "))
+            .unwrap_or_default();
+
+        // Count non-empty layer vectors
+        let layer_count = [
+            !norm.layers.database.is_empty(),
+            !norm.layers.model.is_empty(),
+            !norm.layers.query.is_empty(),
+            !norm.layers.service.is_empty(),
+            !norm.layers.api.is_empty(),
+            !norm.layers.frontend.is_empty(),
+            !norm.layers.test.is_empty(),
+            !norm.layers.config.is_empty(),
+        ].iter().filter(|&&x| x).count();
+
+        // Escape single quotes in strings for SQL safety
+        let norm_id = norm.id.replace('\'', "''");
+        let name = norm.name.replace('\'', "''");
+        let version = norm.version.replace('\'', "''");
+        let keywords_escaped = trigger_keywords.replace('\'', "''");
+
+        sql.push_str(&format!(
+            "INSERT INTO norms (norm_id, name, level, version, trigger_keywords, layer_count, domain_count, observation_count, is_builtin)\n\
+             VALUES ('{}', '{}', '{}', '{}', '{}', {}, 0, 0, true)\n\
+             ON CONFLICT DO NOTHING;\n",
+            norm_id, name, level_str, version, keywords_escaped, layer_count
+        ));
+    }
+
+    sql.push('\n');
+    Ok(sql)
 }
 
 // ─── Frontend structural generators ─────────────────────────────────────────
