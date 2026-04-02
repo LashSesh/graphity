@@ -1,0 +1,23 @@
+# ISLS D5 Scrape Manifest — Seed Repos
+# Each [[repo]] entry is scraped sequentially.
+# Usage: isls scrape --manifest examples/scrape_manifest.toml
+
+[[repo]]
+url = "https://github.com/tokio-rs/axum.git"
+domain = "axum"
+
+[[repo]]
+url = "https://github.com/actix/examples.git"
+domain = "actix-examples"
+
+[[repo]]
+url = "https://github.com/SergioBenitez/Rocket.git"
+domain = "rocket"
+
+[[repo]]
+url = "https://github.com/diesel-rs/diesel.git"
+domain = "diesel"
+
+[[repo]]
+url = "https://github.com/launchbadge/sqlx.git"
+domain = "sqlx"

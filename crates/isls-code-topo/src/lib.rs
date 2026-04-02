@@ -11,6 +11,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use isls_reader::CodeObservation;
 
+pub mod bridge;
+
 // ─── CodeTopology ─────────────────────────────────────────────────────────────
 
 /// Topological signature of a code corpus.

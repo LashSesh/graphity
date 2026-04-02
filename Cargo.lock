@@ -731,24 +731,31 @@ dependencies = [
 name = "isls-cli"
 version = "1.0.0"
 dependencies = [
+ "chrono",
  "dotenv",
  "isls-chat",
+ "isls-code-topo",
  "isls-forge-llm",
  "isls-gateway",
  "isls-hypercube",
  "isls-norms",
+ "isls-reader",
+ "serde",
  "serde_json",
  "tokio",
+ "toml",
 ]
 
 [[package]]
 name = "isls-code-topo"
 version = "1.0.0"
 dependencies = [
+ "isls-norms",
  "isls-reader",
  "serde",
  "serde_json",
  "thiserror",
+ "toml",
 ]
 
 [[package]]

@@ -16,8 +16,13 @@ isls-hypercube = { path = "../isls-hypercube" }
 isls-gateway   = { path = "../isls-gateway" }
 isls-chat      = { path = "../isls-chat" }
 isls-norms     = { path = "../isls-norms" }
+isls-reader    = { path = "../isls-reader" }
+isls-code-topo = { path = "../isls-code-topo" }
 
 serde_json = { workspace = true }
+serde      = { workspace = true }
+toml       = { workspace = true }
+chrono     = { workspace = true }
 dotenv = "0.15"
 tokio  = { workspace = true }
 
