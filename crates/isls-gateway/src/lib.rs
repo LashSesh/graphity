@@ -8,7 +8,9 @@
 // Serves the Studio single-page app and provides real-time event streaming.
 // No external JS/CSS dependencies. One HTML file. Nine views (Phase 13: Swarm + Chat).
 
+pub mod architect;
 pub mod chat;
+pub mod session;
 pub mod ws;
 
 use std::collections::{BTreeMap, HashMap};
@@ -90,6 +92,8 @@ pub struct AppState {
     pub pending_plans: Arc<RwLock<HashMap<String, PendingPlan>>>,
     /// Root directory for generated project outputs.
     pub projects_dir: PathBuf,
+    /// D7: Architect sessions (multi-turn conversation state).
+    pub session_store: session::SessionStore,
 }
 
 impl AppState {
@@ -109,6 +113,7 @@ impl AppState {
             project_store: Arc::new(RwLock::new(BTreeMap::new())),
             pending_plans: Arc::new(RwLock::new(HashMap::new())),
             projects_dir,
+            session_store: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -470,6 +475,13 @@ pub fn build_router(state: AppState) -> Router {
         // v3 Crystals + Health
         .route("/api/crystals", get(api_crystals))
         .route("/api/health", get(api_health))
+        // D7: Architect sessions
+        .route("/api/session", post(session_create))
+        .route("/api/sessions", get(session_list))
+        .route("/api/session/{id}", get(session_get).delete(session_delete))
+        .route("/api/session/{id}/message", post(session_message))
+        .route("/api/session/{id}/readiness", get(session_readiness))
+        .route("/api/session/{id}/forge", post(session_forge))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)
@@ -1376,6 +1388,339 @@ fn walk_dir_recursive(dir: &std::path::Path, base: &std::path::Path) -> std::io:
         }
     }
     Ok(files)
+}
+
+// ─── D7: Session Handlers ───────────────────────────────────────────────────
+
+/// Request body for POST /api/session.
+#[derive(Debug, Deserialize)]
+pub struct CreateSessionRequest {
+    pub api_key: Option<String>,
+    pub model: Option<String>,
+}
+
+/// Request body for POST /api/session/{id}/message.
+#[derive(Debug, Deserialize)]
+pub struct SessionMessageRequest {
+    pub message: String,
+}
+
+/// Request body for POST /api/session/{id}/forge.
+#[derive(Debug, Deserialize)]
+pub struct SessionForgeRequest {
+    pub output_dir: Option<String>,
+}
+
+/// POST /api/session — create a new architect session.
+async fn session_create(
+    State(state): State<AppState>,
+    Json(req): Json<CreateSessionRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let id = format!("session-{:08x}", rand_u32());
+    let api_key = req.api_key.or_else(|| std::env::var("OPENAI_API_KEY").ok());
+    let model = req.model.unwrap_or_else(|| "gpt-4o".to_string());
+    let session = session::ArchitectSession::new(id.clone(), api_key, model);
+    state.session_store.write().await.insert(id.clone(), session);
+    (StatusCode::CREATED, Json(serde_json::json!({ "ok": true, "session_id": id })))
+}
+
+/// GET /api/sessions — list all active sessions.
+async fn session_list(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let store = state.session_store.read().await;
+    let summaries: Vec<session::SessionSummary> = store.values()
+        .map(session::SessionSummary::from)
+        .collect();
+    Json(serde_json::json!({ "ok": true, "sessions": summaries }))
+}
+
+/// GET /api/session/{id} — get full session state.
+async fn session_get(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let store = state.session_store.read().await;
+    match store.get(&id) {
+        Some(s) => Json(serde_json::json!({ "ok": true, "session": s })),
+        None => Json(serde_json::json!({ "ok": false, "error": "session not found" })),
+    }
+}
+
+/// DELETE /api/session/{id} — delete a session.
+async fn session_delete(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let removed = state.session_store.write().await.remove(&id).is_some();
+    Json(serde_json::json!({ "ok": removed }))
+}
+
+/// POST /api/session/{id}/message — send a message and get LLM response.
+async fn session_message(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SessionMessageRequest>,
+) -> Json<serde_json::Value> {
+    // Get session (clone to release lock during oracle call)
+    let session_opt = {
+        let store = state.session_store.read().await;
+        store.get(&id).cloned()
+    };
+
+    let mut session = match session_opt {
+        Some(s) => s,
+        None => return Json(serde_json::json!({ "ok": false, "error": "session not found" })),
+    };
+
+    let has_api_key = session.api_key.is_some();
+
+    let assistant_message = if has_api_key {
+        // LLM mode: call oracle in spawn_blocking (OpenAiOracle is blocking)
+        let api_key = session.api_key.clone();
+        let model = session.model.clone();
+        let user_msg = req.message.clone();
+
+        // Build prompt before spawning
+        session.add_user_message(&user_msg);
+        let prompt = architect::build_architect_prompt(&session, &user_msg);
+        // Remove the user message we just added — process_message will re-add it
+        // Actually, let's handle this differently: call oracle directly in spawn_blocking
+        session.messages.pop(); // undo the add
+
+        let result = tokio::task::spawn_blocking(move || {
+            use isls_forge_llm::Oracle as _;
+            let oracle = match isls_forge_llm::oracle::OpenAiOracle::new(api_key, Some(model)) {
+                Ok(o) => o,
+                Err(e) => return Err(format!("Oracle init failed: {}", e)),
+            };
+            oracle.call(&prompt, 4096).map_err(|e| format!("Oracle call failed: {}", e))
+        }).await;
+
+        match result {
+            Ok(Ok(response_text)) => {
+                session.add_user_message(&req.message);
+                let parsed = architect::parse_llm_response(&response_text);
+                let msg = parsed.message.clone();
+                architect::apply_architect_response(&mut session, &parsed);
+                msg
+            }
+            Ok(Err(e)) => {
+                // Oracle failed — fall back to manual mode
+                architect::process_message_manual(&mut session, &req.message)
+            }
+            Err(e) => {
+                architect::process_message_manual(&mut session, &req.message)
+            }
+        }
+    } else {
+        // Manual mode
+        architect::process_message_manual(&mut session, &req.message)
+    };
+
+    // Compute readiness
+    let readiness = crate::session::compute_readiness(&session);
+
+    // Store updated session
+    state.session_store.write().await.insert(id.clone(), session.clone());
+
+    Json(serde_json::json!({
+        "ok": true,
+        "message": assistant_message,
+        "spec": {
+            "app_name": session.spec.app_name,
+            "description": session.spec.description,
+            "entity_count": session.spec.entities.len(),
+            "entities": session.spec.entities.iter().map(|e| serde_json::json!({
+                "name": e.name,
+                "field_count": e.fields.len(),
+                "fields": e.fields.iter().map(|f| serde_json::json!({
+                    "name": f.name,
+                    "type": f.rust_type,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+        },
+        "readiness": readiness,
+    }))
+}
+
+/// GET /api/session/{id}/readiness — compute readiness check.
+async fn session_readiness(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let store = state.session_store.read().await;
+    match store.get(&id) {
+        Some(session) => {
+            let readiness = crate::session::compute_readiness(session);
+            Json(serde_json::json!({ "ok": true, "readiness": readiness }))
+        }
+        None => Json(serde_json::json!({ "ok": false, "error": "session not found" })),
+    }
+}
+
+/// POST /api/session/{id}/forge — start forge from session's AppSpec.
+async fn session_forge(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    Json(req): Json<SessionForgeRequest>,
+) -> Json<serde_json::Value> {
+    // Get session
+    let session_opt = {
+        let store = state.session_store.read().await;
+        store.get(&id).cloned()
+    };
+
+    let session = match session_opt {
+        Some(s) => s,
+        None => return Json(serde_json::json!({ "ok": false, "error": "session not found" })),
+    };
+
+    // Check readiness
+    let readiness = crate::session::compute_readiness(&session);
+    if !readiness.ready {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "Session not ready for forge. Required criteria not met.",
+            "readiness": readiness,
+        }));
+    }
+
+    // Determine output directory
+    let output_dir = req.output_dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            state.projects_dir.join(if session.spec.app_name.is_empty() {
+                format!("session-{}", &session.id)
+            } else {
+                session.spec.app_name.clone()
+            })
+        });
+
+    if let Err(e) = std::fs::create_dir_all(&output_dir) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": format!("Cannot create output directory: {}", e),
+        }));
+    }
+
+    // Build ForgePlan from session spec
+    let spec = session.spec.clone();
+    let api_key = session.api_key.clone();
+    let event_hub = state.event_hub.clone();
+    let session_store = state.session_store.clone();
+    let session_id = id.clone();
+    let output_dir_clone = output_dir.clone();
+
+    // Spawn background forge task
+    tokio::spawn(async move {
+        // Publish forge:start
+        event_hub.publish(WsEvent::new(
+            EventType::ForgeProgress,
+            serde_json::json!({
+                "type": "forge:start",
+                "session_id": session_id,
+            }),
+        ));
+
+        let result = tokio::task::spawn_blocking(move || {
+            // Convert session entities to EntityTemplates for from_toml_entities
+            let templates: Vec<isls_hypercube::domain::EntityTemplate> = spec.entities.iter().map(|e| {
+                isls_hypercube::domain::EntityTemplate {
+                    name: e.name.clone(),
+                    fields: e.fields.clone(),
+                    validations: e.validations.iter().map(|v| {
+                        isls_hypercube::domain::ValidationRule {
+                            name: v.condition.clone(),
+                            condition: v.condition.clone(),
+                            message: v.message.clone(),
+                        }
+                    }).collect(),
+                    indices: vec![],
+                    description: String::new(),
+                }
+            }).collect();
+
+            let mut plan = isls_forge_llm::ForgePlan::from_toml_entities(
+                &spec.app_name,
+                &spec.description,
+                &spec.domain_name,
+                &templates,
+            );
+            plan.blueprint = isls_forge_llm::blueprint::derive_blueprint_from_description(&spec.description);
+
+            // Create oracle — use MockOracle (blocking context safe)
+            let oracle: Box<dyn isls_forge_llm::Oracle> = Box::new(isls_forge_llm::MockOracle);
+
+            let mut forge = isls_forge_llm::LlmForge::new(
+                oracle, plan, output_dir_clone.clone(), true,
+            );
+
+            // D7/W3: Wire progress callback to publish WsEvent via channel
+            // Note: forge.staged_closure is not directly accessible, so we
+            // rely on the events fired at the forge level. The progress
+            // callback is set on the StagedClosure inside LlmForge.generate().
+            let start = std::time::Instant::now();
+            match forge.generate() {
+                Ok(files) => {
+                    let total_loc: usize = files.iter().map(|f| f.content.lines().count()).sum();
+                    Ok(session::SessionForgeResult {
+                        success: true,
+                        files_generated: files.len(),
+                        total_loc,
+                        total_tokens: forge.stats.total_tokens,
+                        duration_secs: start.elapsed().as_secs_f64(),
+                        output_dir: output_dir_clone.to_string_lossy().to_string(),
+                    })
+                }
+                Err(e) => Err(format!("Forge failed: {}", e)),
+            }
+        }).await;
+
+        match result {
+            Ok(Ok(forge_result)) => {
+                // Store result on session
+                let mut store = session_store.write().await;
+                if let Some(session) = store.get_mut(&session_id) {
+                    session.forge_result = Some(forge_result.clone());
+                }
+
+                event_hub.publish(WsEvent::new(
+                    EventType::ForgeProgress,
+                    serde_json::json!({
+                        "type": "forge:complete",
+                        "session_id": session_id,
+                        "success": true,
+                        "files": forge_result.files_generated,
+                        "loc": forge_result.total_loc,
+                        "tokens": forge_result.total_tokens,
+                        "duration_secs": forge_result.duration_secs,
+                        "output_dir": forge_result.output_dir,
+                    }),
+                ));
+            }
+            result => {
+                let err_msg = match result {
+                    Ok(Err(e)) => e,
+                    Err(e) => format!("Forge task panicked: {}", e),
+                    _ => unreachable!(),
+                };
+                event_hub.publish(WsEvent::new(
+                    EventType::ForgeProgress,
+                    serde_json::json!({
+                        "type": "forge:complete",
+                        "session_id": session_id,
+                        "success": false,
+                        "error": err_msg,
+                    }),
+                ));
+            }
+        }
+    });
+
+    Json(serde_json::json!({
+        "ok": true,
+        "message": "Forge started. Watch WebSocket /events for progress.",
+        "output_dir": output_dir.to_string_lossy().to_string(),
+    }))
 }
 
 /// GET /api/chat/history — placeholder (jobs are ephemeral in-process).

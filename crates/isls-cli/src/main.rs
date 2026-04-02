@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+mod cmd_metrics;
 mod cmd_norms;
 mod cmd_scrape;
 
@@ -45,6 +46,8 @@ enum Command {
         api_key: Option<String>,
         model: String,
     },
+    /// D7: Generation metrics inspection.
+    Metrics { compare: bool, last: Option<usize> },
     /// Start the Gateway / Studio web interface.
     Serve { port: u16, api_key: Option<String> },
     /// Print help.
@@ -177,6 +180,13 @@ fn parse_args(args: &[String]) -> Command {
                 .cloned()
                 .unwrap_or_else(|| "gpt-4o".to_string());
             Command::ForgeSelf { output, mock_oracle, api_key, model }
+        }
+        "metrics" => {
+            let compare = args.contains(&"--compare".to_string());
+            let last = args.iter().position(|a| a == "--last")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok());
+            Command::Metrics { compare, last }
         }
         "serve" => {
             let port = args.iter().position(|a| a == "--port")
@@ -552,6 +562,7 @@ fn print_help() {
     println!("  forge-chat  D3: Natural language to compiled application");
     println!("  norms       D4: Inspect norm catalog, candidates, and auto-discovered norms");
     println!("  scrape      D5: Scrape repositories — extract topology into norms");
+    println!("  metrics     D7: Generation metrics (CLI vs Cockpit comparison)");
     println!("  serve       Start the Gateway / Studio web interface");
     println!("  help        Print this message");
     println!();
@@ -589,6 +600,10 @@ fn print_help() {
     println!("  --max-size-mb <mb>     Max clone size in MB (default: 200)");
     println!("  --timeout <secs>       Clone timeout in seconds (default: 120)");
     println!();
+    println!("metrics options:");
+    println!("  --compare              CLI vs Cockpit comparison table");
+    println!("  --last <N>             Show last N generation entries");
+    println!();
     println!("serve options:");
     println!("  --port <port>          Port number (default: 8420)");
     println!("  --api-key <key>        API key for LLM generation");
@@ -625,6 +640,15 @@ fn main() {
             NormsSubcmd::Stats => cmd_norms::cmd_norms_stats(),
             NormsSubcmd::Reset => cmd_norms::cmd_norms_reset(),
         },
+        Command::Metrics { compare, last } => {
+            if compare {
+                cmd_metrics::cmd_metrics_compare();
+            } else if let Some(n) = last {
+                cmd_metrics::cmd_metrics_last(n);
+            } else {
+                cmd_metrics::cmd_metrics_summary();
+            }
+        }
         Command::Serve { port, api_key } => cmd_serve(port, api_key),
         Command::Help => print_help(),
     }

@@ -12,6 +12,7 @@ isls-chat  = { path = "../isls-chat" }
 isls-types = { path = "../isls-types" }
 isls-agent = { path = "../isls-agent" }
 isls-forge-llm = { path = "../isls-forge-llm" }
+isls-hypercube = { path = "../isls-hypercube" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

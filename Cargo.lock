@@ -786,6 +786,7 @@ dependencies = [
  "isls-agent",
  "isls-chat",
  "isls-forge-llm",
+ "isls-hypercube",
  "isls-norms",
  "isls-types",
  "serde",

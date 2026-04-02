@@ -35,6 +35,7 @@
 //! ```
 
 pub mod artifact_collector;
+pub mod metrics;
 pub mod blueprint;
 pub mod forge;
 pub mod hdag;

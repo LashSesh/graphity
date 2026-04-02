@@ -34,6 +34,23 @@ use crate::{
 };
 use crate::forge::{ForgeLlmError, Result};
 
+// ─── Progress Events (D7/W3) ─────────────────────────────────────────────────
+
+/// Progress events emitted during forge execution.
+#[derive(Clone, Debug)]
+pub enum ForgeProgressEvent {
+    /// Forge pipeline started.
+    Start { total_nodes: usize },
+    /// A single HDAG node was processed.
+    Node { index: usize, total: usize, path: String, method: String, tokens: u64 },
+    /// Compile check status.
+    Compile { status: String, errors: Option<usize> },
+    /// S6 Coagula fix cycle.
+    Coagula { cycle: u32, max: u32 },
+    /// Forge pipeline completed.
+    Complete { success: bool, files: usize, loc: usize, tokens: u64, duration_secs: f64 },
+}
+
 // ─── StagedClosure ────────────────────────────────────────────────────────────
 
 /// PCR Staged Closure executor for ISLS v3.4.
@@ -52,6 +69,8 @@ pub struct StagedClosure {
     pub generated_files: Vec<GeneratedFile>,
     /// Accumulated statistics.
     pub stats: ForgeStats,
+    /// D7/W3: Optional progress callback fired after each node.
+    pub progress_callback: Option<Box<dyn Fn(ForgeProgressEvent) + Send>>,
 }
 
 impl StagedClosure {
@@ -63,6 +82,14 @@ impl StagedClosure {
             type_context: TypeContext::default(),
             generated_files: Vec::new(),
             stats: ForgeStats::default(),
+            progress_callback: None,
+        }
+    }
+
+    /// Fire a progress event if a callback is registered.
+    fn fire_progress(&self, event: ForgeProgressEvent) {
+        if let Some(ref cb) = self.progress_callback {
+            cb(event);
         }
     }
 
@@ -102,6 +129,9 @@ impl StagedClosure {
         let order = hdag.topological_sort();
         let total = order.len();
 
+        // D7/W3: fire start event
+        self.fire_progress(ForgeProgressEvent::Start { total_nodes: total });
+
         for (i, node_idx) in order.iter().enumerate() {
             let node = hdag.nodes[*node_idx].clone();
             tracing::info!(
@@ -125,6 +155,10 @@ impl StagedClosure {
                         tokens_used: 0,
                     });
                     self.stats.files_generated += 1;
+                    self.fire_progress(ForgeProgressEvent::Node {
+                        index: i + 1, total, path: node.path.clone(),
+                        method: "structural".into(), tokens: 0,
+                    });
                 }
                 NodeType::Llm => {
                     eprintln!("[HDAG S4]   llm         [{}/{}] {}", i + 1, total, node.path);
@@ -151,15 +185,20 @@ impl StagedClosure {
                         self.type_context.add_file(&node.path, &code);
                     }
 
+                    let node_tokens = tokens_in + tokens_out;
                     self.generated_files.push(GeneratedFile {
                         path: node.path.clone(),
                         content: code,
                         generation_method: "llm".into(),
                         attempts: 1,
-                        tokens_used: tokens_in + tokens_out,
+                        tokens_used: node_tokens,
                     });
                     self.stats.files_generated += 1;
-                    self.stats.total_tokens += tokens_in + tokens_out;
+                    self.stats.total_tokens += node_tokens;
+                    self.fire_progress(ForgeProgressEvent::Node {
+                        index: i + 1, total, path: node.path.clone(),
+                        method: "llm".into(), tokens: node_tokens,
+                    });
                 }
             }
         }
@@ -175,21 +214,27 @@ impl StagedClosure {
         tracing::info!("S5 Gate: running cargo check on complete project");
         self.stats.compile_checks += 1;
 
+        self.fire_progress(ForgeProgressEvent::Compile { status: "running".into(), errors: None });
         match self.cargo_check() {
             Ok(()) => {
                 eprintln!("[HDAG S5] Gate: passed — proceeding to S7 Emit");
                 tracing::info!("S5 Gate: passed — proceeding to S7 Emit");
+                self.fire_progress(ForgeProgressEvent::Compile { status: "passed".into(), errors: None });
             }
             Err(errors) => {
+                let error_count = errors.lines().count();
                 // S6: Coagula — anomaly path (MUST be logged)
                 eprintln!(
                     "[HDAG S6] Coagula triggered — anomaly path ({} error lines)",
-                    errors.lines().count()
+                    error_count
                 );
                 tracing::warn!(
-                    error_lines = errors.lines().count(),
+                    error_lines = error_count,
                     "S6 Coagula triggered — anomaly path"
                 );
+                self.fire_progress(ForgeProgressEvent::Compile {
+                    status: "failed".into(), errors: Some(error_count),
+                });
                 self.stats.compile_failures += 1;
                 self.coagula(errors, &hdag, oracle)?;
             }
@@ -209,6 +254,16 @@ impl StagedClosure {
             secs = self.stats.total_time_secs,
             "S7 Emit: project complete"
         );
+
+        // D7/W3: fire complete event
+        let total_loc: usize = self.generated_files.iter().map(|f| f.content.lines().count()).sum();
+        self.fire_progress(ForgeProgressEvent::Complete {
+            success: true,
+            files: self.stats.files_generated,
+            loc: total_loc,
+            tokens: self.stats.total_tokens,
+            duration_secs: self.stats.total_time_secs,
+        });
 
         // S7.1: Observe — feed artifacts into norm learning (D4)
         // Wrapped in catch-all: observation failure MUST NOT block emission (Rule 10)
@@ -259,6 +314,7 @@ impl StagedClosure {
         for cycle in 1u32..=3 {
             eprintln!("[HDAG S6] Coagula: cycle {}/3", cycle);
             tracing::warn!(cycle, "S6 Coagula: cycle {}/3", cycle);
+            self.fire_progress(ForgeProgressEvent::Coagula { cycle, max: 3 });
 
             let parsed = parse_errors_by_file(&current_errors);
             let errors_by_file = if !parsed.is_empty() {
