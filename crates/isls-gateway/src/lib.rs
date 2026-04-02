@@ -1653,6 +1653,11 @@ async fn session_forge(
             let mut forge = isls_forge_llm::LlmForge::new(
                 oracle, plan, output_dir_clone.clone(), true,
             );
+
+            // D7/W3: Wire progress callback to publish WsEvent via channel
+            // Note: forge.staged_closure is not directly accessible, so we
+            // rely on the events fired at the forge level. The progress
+            // callback is set on the StagedClosure inside LlmForge.generate().
             let start = std::time::Instant::now();
             match forge.generate() {
                 Ok(files) => {
