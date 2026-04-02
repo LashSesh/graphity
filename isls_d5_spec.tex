@@ -1,0 +1,1014 @@
+\documentclass[11pt,a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+% ── Colors ────────────────────────────────────────────────────────────────────
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+% ── Listings ──────────────────────────────────────────────────────────────────
+\lstdefinestyle{rust}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,HashSet,PathBuf,Result,Option},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+\lstdefinestyle{toml}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  commentstyle=\color{isls-gray}\itshape,
+  morecomment=[l]{\#},
+}
+
+% ── Headers ───────────────────────────────────────────────────────────────────
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS D5 Spec --- Repository Scraping}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v1.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+% ── Section styling ───────────────────────────────────────────────────────────
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+  citecolor=isls-green,
+}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Titlepage ─────────────────────────────────────────────────────────────────
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS D5 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} Repository Scraping: Repos $\to$ Topologie $\to$ Normen}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}    & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}   & v3.6 (D5) \\
+\textbf{Author:}    & Sebastian Klemm \\
+\textbf{Date:}      & \today \\
+\textbf{Status:}    & Specification \\
+\textbf{Depends:}   & D4 (complete), isls-reader v3.0, isls-code-topo v3.0 \\
+\textbf{Branch:}    & \texttt{claude/implement-isls-d5-spec} \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+License: MIT
+}
+\end{titlepage}
+
+% ── TOC ───────────────────────────────────────────────────────────────────────
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+D4 closed the feedback loop: ISLS observes its own generations and promotes
+recurring patterns to norms. But the observation surface is limited to
+self-generated apps --- the system only learns from itself.
+
+D5 \textbf{extends the observation surface to the wild}. The system reads
+external repositories, extracts their architectural topology using Barbara
+(isls-reader) and isls-code-topo, converts the topology into
+\texttt{ObservedArtifact}s, and feeds them into the same
+\texttt{observe\_and\_learn()} pipeline that D4 established.
+
+In biological terms: D4 was endogenous learning (observing own metabolism).
+D5 is exogenous feeding --- the mycelium extends hyphae into foreign
+substrates, digests the structural topology, and incorporates the nutrients
+into its own norm catalog.
+
+\subsection{The Legal Boundary}
+
+D5 extracts \textbf{topology}, not code:
+
+\begin{itemize}[nosep]
+\item Function signatures: ``there is a public async function named
+      \texttt{get\_product} with 2 parameters'' --- not the function body.
+\item Struct names and field names: ``there is a struct \texttt{Product}
+      with fields \texttt{name}, \texttt{price}, \texttt{quantity}'' ---
+      not the implementations.
+\item Layer organization: ``the project has models/, services/, api/
+      directories'' --- not the file contents.
+\item Import graph: ``file A imports module B'' --- not what module B does.
+\end{itemize}
+
+Architectural patterns are not copyrightable. ISLS never stores, copies,
+or reproduces source code from scraped repositories. The
+\texttt{ObservedArtifact} contains a SHA-256 content hash for deduplication
+--- not the content itself.
+
+\subsection{What D5 Achieves}
+
+\begin{enumerate}[nosep]
+\item \textbf{Topology-to-Observation Bridge:} Converts
+      \texttt{CodeObservation} (Barbara output) into
+      \texttt{ObservedArtifact} (norm learning input).
+\item \textbf{Local Scraping:} \texttt{isls scrape --path ./some-repo}
+      reads a local directory.
+\item \textbf{Git Scraping:} \texttt{isls scrape --url https://github.com/...}
+      shallow-clones and scrapes.
+\item \textbf{Manifest Scraping:} \texttt{isls scrape --manifest repos.toml}
+      batch-processes a list of repositories.
+\item \textbf{Scrape Report:} Summary of extracted topology, entities
+      found, artifacts generated, candidates updated.
+\end{enumerate}
+
+\subsection{What D5 is NOT}
+
+\begin{itemize}[nosep]
+\item \textbf{Not code generation.} D5 only observes --- it does not
+      generate applications.
+\item \textbf{Not code copying.} No source code is stored or reproduced.
+\item \textbf{Not LLM-dependent.} D5 uses zero LLM tokens. Pure structural
+      analysis.
+\item \textbf{Not a package manager.} D5 does not install dependencies or
+      build scraped projects.
+\item \textbf{Not self-generation.} That is D6.
+\end{itemize}
+
+\subsection{Token Budget}
+
+D5 costs \textbf{zero API tokens}. All analysis is structural (regex
+parsing via Barbara, topology computation, pattern extraction). This
+makes D5 unlimited in scale --- the only constraint is disk space for
+temporary clones and CPU time for parsing.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Architecture Overview}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Existing Infrastructure}
+
+Two crates already exist but are underutilized:
+
+\paragraph{isls-reader (Barbara)} Multi-language source code parser.
+Produces \texttt{CodeObservation} containing functions, structs, imports,
+SQL tables, LOC, and SHA-256 per file. Supports Rust, JavaScript/TypeScript,
+Python, SQL, HTML, CSS, TOML, Dockerfile.
+
+Key APIs:
+\begin{itemize}[nosep]
+\item \texttt{parse\_file(path)} --- single file $\to$ \texttt{CodeObservation}
+\item \texttt{parse\_directory(dir)} --- recursive $\to$ \texttt{WorkspaceAnalysis}
+\item \texttt{Language::from\_path()} --- auto-detection from extension
+\end{itemize}
+
+\paragraph{isls-code-topo} Computes topological signatures from
+\texttt{CodeObservation} sets. Produces \texttt{CodeTopology} containing
+function signatures, struct names, layer detection, import graph, and
+connectivity measure. Also provides \texttt{topology\_similarity()} for
+comparing two topologies (Jaccard-based, hardened weights from Barbara).
+
+\subsection{The Missing Bridge}
+
+Currently there is no path from:
+\begin{center}
+\texttt{CodeObservation} (Barbara) $\to$ \texttt{ObservedArtifact} (norm learning)
+\end{center}
+
+This bridge is the core of D5. Once it exists, any codebase that Barbara
+can read becomes food for the norm system.
+
+\subsection{Target Data Flow}
+
+\begin{lstlisting}[style=bash]
+Repository (local or git URL)
+    |
+    v
+isls-reader::parse_directory()  -->  Vec<CodeObservation>
+    |
+    v
+isls-code-topo::compute_code_topology()  -->  CodeTopology
+    |                                           (for reporting)
+    v
+topo_bridge::observations_from_code()  -->  Vec<ObservedArtifact>
+    |
+    v
+NormRegistry::observe_and_learn()  -->  Candidates updated
+    |
+    v
+~/.isls/norms.json persisted
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Work Packages}
+% ══════════════════════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W1: Topology-to-Observation Bridge}
+\label{sec:w1}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Create a module that converts Barbara's \texttt{CodeObservation}s into
+\texttt{ObservedArtifact}s compatible with D4's \texttt{observe\_and\_learn()}.
+
+\subsubsection{New File}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-code-topo/src/bridge.rs}
+  & Converts \texttt{Vec<CodeObservation>} into
+    \texttt{Vec<ObservedArtifact>}. Pure function, no IO. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Conversion Algorithm}
+
+For each \texttt{CodeObservation}:
+
+\begin{enumerate}[nosep]
+\item \textbf{Determine LayerType} from file path using the existing
+      \texttt{detect\_layer()} logic in isls-code-topo, extended:
+      \begin{itemize}[nosep]
+      \item \texttt{models/}, \texttt{model/}, \texttt{entities/}
+            $\to$ \texttt{LayerType::Model}
+      \item \texttt{database/}, \texttt{db/}, \texttt{queries/},
+            \texttt{repository/}, \texttt{repositories/}
+            $\to$ \texttt{LayerType::Query}
+      \item \texttt{services/}, \texttt{service/}, \texttt{domain/}
+            $\to$ \texttt{LayerType::Service}
+      \item \texttt{api/}, \texttt{routes/}, \texttt{handlers/},
+            \texttt{controllers/}, \texttt{endpoints/}
+            $\to$ \texttt{LayerType::Api}
+      \item \texttt{frontend/}, \texttt{pages/}, \texttt{components/},
+            \texttt{views/}, \texttt{templates/}
+            $\to$ \texttt{LayerType::Frontend}
+      \item \texttt{tests/}, \texttt{test/}, \texttt{\_test.},
+            \texttt{\_tests.}, \texttt{spec/}
+            $\to$ \texttt{LayerType::Test}
+      \item \texttt{migrations/}, \texttt{schema.sql}, \texttt{*.sql}
+            in root $\to$ \texttt{LayerType::Database}
+      \item \texttt{config/}, \texttt{settings/},
+            \texttt{*.toml}/\texttt{*.yaml} in root
+            $\to$ \texttt{LayerType::Config}
+      \item Everything else $\to$ skip (no observation generated)
+      \end{itemize}
+
+\item \textbf{Extract ObservedArtifacts} from the observation:
+      \begin{itemize}[nosep]
+      \item For each \texttt{StructDef}: one \texttt{ObservedArtifact}
+            with \texttt{artifact\_type = "struct"},
+            \texttt{name = struct\_name},
+            \texttt{field\_names = struct.fields},
+            \texttt{signature = file SHA-256}.
+      \item For each \texttt{FunctionDef}: one \texttt{ObservedArtifact}
+            with \texttt{artifact\_type = "fn"},
+            \texttt{name = function\_name},
+            \texttt{field\_names = function.params},
+            \texttt{signature = file SHA-256}.
+      \item For each \texttt{SqlTable}: one \texttt{ObservedArtifact}
+            with \texttt{layer = Database},
+            \texttt{artifact\_type = "table"},
+            \texttt{name = table\_name},
+            \texttt{field\_names = table.columns}.
+      \end{itemize}
+\end{enumerate}
+
+\subsubsection{Domain Name Inference}
+
+The ``domain'' passed to \texttt{observe\_and\_learn()} is inferred from
+the repository:
+
+\begin{itemize}[nosep]
+\item Local path: last directory component
+      (e.g. \texttt{./repos/petshop-api} $\to$ \texttt{"petshop-api"})
+\item Git URL: repository name from URL
+      (e.g. \texttt{https://github.com/user/petshop-api.git}
+      $\to$ \texttt{"petshop-api"})
+\end{itemize}
+
+\subsubsection{Public API}
+
+\begin{lstlisting}[style=rust]
+/// Convert Barbara CodeObservations into ObservedArtifacts
+/// for the norm learning pipeline.
+///
+/// Skips files that cannot be mapped to a known LayerType.
+/// Returns (artifacts, skipped_count).
+pub fn observations_from_code(
+    code_obs: &[CodeObservation],
+) -> (Vec<ObservedArtifact>, usize)
+\end{lstlisting}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-code-topo/src/lib.rs}
+  & Add \texttt{pub mod bridge;} \\
+\texttt{isls-code-topo/Cargo.toml}
+  & Add dependency: \texttt{isls-norms = \{path = "../isls-norms"\}}
+    (for \texttt{ObservedArtifact} and \texttt{LayerType}) \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item Unit test: parse a mock Rust project (3 files: model, query,
+      service) via \texttt{parse\_string()}, convert with bridge.
+\item Assert correct LayerType assignment for each artifact.
+\item Assert struct fields appear in \texttt{field\_names}.
+\item Assert function params appear in \texttt{field\_names}.
+\item Assert files in unmapped directories produce no artifacts
+      (skipped\_count $> 0$).
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W2: Local Scraping}
+\label{sec:w2}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Add the \texttt{isls scrape} CLI command for scraping local directories.
+
+\subsubsection{Command}
+
+\begin{lstlisting}[style=bash]
+isls scrape --path ./path/to/repo
+isls scrape --path ./path/to/repo --domain "custom-domain-name"
+\end{lstlisting}
+
+\subsubsection{Pipeline}
+
+\begin{enumerate}[nosep]
+\item Validate path exists and is a directory.
+\item Call \texttt{isls\_reader::parse\_directory(path)} $\to$
+      \texttt{WorkspaceAnalysis}.
+\item Call \texttt{bridge::observations\_from\_code(\&analysis.files)}
+      $\to$ \texttt{Vec<ObservedArtifact>}.
+\item Compute \texttt{CodeTopology} for the report.
+\item Infer domain name from path (or use \texttt{--domain} override).
+\item Generate run\_id: \texttt{scrape\_\{domain\}\_\{timestamp\}}.
+\item Load \texttt{NormRegistry}, call
+      \texttt{observe\_and\_learn(\&artifacts, domain, run\_id)}.
+\item Print scrape report.
+\end{enumerate}
+
+\subsubsection{Scrape Report Format}
+
+\begin{lstlisting}[style=bash]
+ISLS Scrape Report
+---
+Source:         ./repos/petshop-api
+Domain:         petshop-api
+Languages:      rust (1842 LOC), sql (156 LOC)
+Files parsed:   23
+Artifacts:      47 (12 struct, 28 fn, 7 table)
+Skipped:        6 (unmapped directories)
+Layers:         Model(8), Query(12), Service(8), Api(11), Database(7), Test(1)
+---
+Topology:
+  Nodes: 47, Edges: 31, Connectivity: 0.014
+  Structs: Product, Order, Category, User, ...
+  Functions: get_product/2, list_products/1, create_product/3, ...
+---
+Norm System:
+  Candidates updated: 3
+  New candidates: 1
+  Promoted: 0
+\end{lstlisting}
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-cli/src/cmd\_scrape.rs}
+  & Implements \texttt{cmd\_scrape()} --- local and git scraping,
+    manifest batch processing, report generation. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-cli/src/main.rs}
+  & Add \texttt{Command::Scrape} variant. Parse \texttt{isls scrape}
+    with \texttt{--path}, \texttt{--url}, \texttt{--manifest},
+    \texttt{--domain} options. \\
+\texttt{isls-cli/Cargo.toml}
+  & Add dependencies: \texttt{isls-reader}, \texttt{isls-code-topo} \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W2 Verification}
+
+\begin{enumerate}[nosep]
+\item Scrape one of the previously generated ISLS output directories:
+      \texttt{isls scrape --path ./output/pipeline\_*/petshop}
+\item Verify report shows correct language, file count, artifact count.
+\item Verify \texttt{isls norms candidates} shows updated observation
+      counts (the petshop domain now has observations from both
+      D4 generation AND D5 scraping).
+\item Scrape the ISLS source itself:
+      \texttt{isls scrape --path ./isls --domain "isls-self"}
+\item Verify report shows Rust as primary language with correct
+      struct/function counts.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W3: Git Clone Scraping}
+\label{sec:w3}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Support scraping repositories directly from Git URLs. The clone is
+temporary, shallow, and automatically cleaned up.
+
+\subsubsection{Command}
+
+\begin{lstlisting}[style=bash]
+isls scrape --url https://github.com/user/repo.git
+isls scrape --url https://github.com/user/repo.git --domain "custom-name"
+\end{lstlisting}
+
+\subsubsection{Clone Strategy}
+
+\begin{enumerate}[nosep]
+\item Create temp directory:
+      \texttt{std::env::temp\_dir().join("isls-scrape-\{hash\}")}.
+\item Execute: \texttt{git clone --depth 1 --single-branch <url> <temp>}.
+\item Verify clone succeeded (check exit code).
+\item Proceed with local scraping pipeline (W2) on temp directory.
+\item Delete temp directory after scraping (cleanup in all paths,
+      including errors --- use RAII/drop guard).
+\end{enumerate}
+
+\subsubsection{Constraints for i3 ThinkPad}
+
+\begin{itemize}[nosep]
+\item \textbf{Shallow clone only} (\texttt{--depth 1}). No history.
+\item \textbf{Size limit:} If the cloned directory exceeds 200 MB,
+      abort with a warning (not an error --- the repo is just too big
+      for this machine). Configurable via \texttt{--max-size-mb}.
+\item \textbf{Timeout:} Clone must complete within 120 seconds.
+      Configurable via \texttt{--timeout}.
+\item \textbf{Cleanup guarantee:} Temp directory MUST be deleted on all
+      paths (success, error, panic). Use a guard struct with \texttt{Drop}.
+\end{itemize}
+
+\subsubsection{Git Availability Check}
+
+Before cloning, verify that \texttt{git} is available:
+\texttt{std::process::Command::new("git").arg("--version").status()}.
+If not found, print a clear error message and exit.
+
+\subsubsection{W3 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{isls scrape --url https://github.com/LashSesh/graphity.git
+      --domain "graphity"}
+\item Verify clone succeeds, scrape report shows multi-language analysis.
+\item Verify temp directory is cleaned up (does not exist after command
+      completes).
+\item Test with a non-existent URL: verify graceful error message.
+\item Test with \texttt{--max-size-mb 1}: verify abort on large repos.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W4: Manifest Batch Scraping}
+\label{sec:w4}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Support batch scraping from a TOML manifest file listing multiple
+repositories.
+
+\subsubsection{Command}
+
+\begin{lstlisting}[style=bash]
+isls scrape --manifest repos.toml
+\end{lstlisting}
+
+\subsubsection{Manifest Format}
+
+\begin{lstlisting}[style=toml]
+# repos.toml — ISLS Scrape Manifest
+# Each [[repo]] entry is scraped sequentially.
+
+[[repo]]
+url = "https://github.com/user/project-a.git"
+domain = "project-a"
+
+[[repo]]
+url = "https://github.com/user/project-b.git"
+# domain auto-inferred from URL
+
+[[repo]]
+path = "./local-repos/project-c"
+domain = "project-c"
+
+[[repo]]
+url = "https://github.com/user/large-project.git"
+max_size_mb = 500   # override default 200 MB limit
+\end{lstlisting}
+
+\subsubsection{Batch Pipeline}
+
+\begin{enumerate}[nosep]
+\item Parse manifest TOML.
+\item For each \texttt{[[repo]]} entry:
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item Display progress: \texttt{[3/12] Scraping project-a...}
+      \item Execute local scrape (if \texttt{path}) or git scrape
+            (if \texttt{url}).
+      \item On failure: log warning, continue to next repo.
+      \item Accumulate per-repo results.
+      \end{enumerate}
+\item After all repos: print batch summary report.
+\item Call \texttt{isls norms stats} equivalent at end.
+\end{enumerate}
+
+\subsubsection{Batch Report Format}
+
+\begin{lstlisting}[style=bash]
+ISLS Batch Scrape Report
+---
+Manifest:  repos.toml (12 repos)
+
+  [PASS] project-a    rust    1842 LOC   47 artifacts
+  [PASS] project-b    python  3201 LOC   89 artifacts
+  [FAIL] project-c    clone timeout
+  [PASS] project-d    js+ts   5603 LOC   134 artifacts
+  ...
+
+Summary:
+  Scraped:     11/12
+  Total LOC:   42,871
+  Total artifacts: 891
+  Languages:   rust(5), python(3), javascript(2), typescript(1)
+
+Norm System:
+  Candidates before: 5
+  Candidates after:  14
+  New auto-norms:    3
+\end{lstlisting}
+
+\subsubsection{Shipped Manifest}
+
+Include a default manifest in the repository:
+
+\begin{lstlisting}[style=bash]
+isls/examples/scrape_manifest.toml
+\end{lstlisting}
+
+Content: 5--10 well-known open-source full-stack Rust projects
+(e.g. Actix-Web examples, Axum examples, Rocket examples). These
+serve as seed data for the norm catalog.
+
+\subsubsection{W4 Verification}
+
+\begin{enumerate}[nosep]
+\item Create a test manifest with 3 entries (2 local paths from
+      D4 output + 1 git URL).
+\item \texttt{isls scrape --manifest test\_manifest.toml}
+\item Verify batch report shows 2--3 PASS entries.
+\item Verify norm candidates accumulated across all repos.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{File Inventory}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{New Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Purpose} \\
+\midrule
+isls-code-topo & \texttt{src/bridge.rs}
+  & Topology-to-Observation converter \\
+isls-cli & \texttt{src/cmd\_scrape.rs}
+  & Scrape command: local, git, manifest \\
+isls & \texttt{examples/scrape\_manifest.toml}
+  & Default scrape manifest (seed repos) \\
+\bottomrule
+\end{longtable}
+
+\subsection{Modified Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Change} \\
+\midrule
+isls-code-topo & \texttt{src/lib.rs}
+  & Add \texttt{pub mod bridge;} \\
+isls-code-topo & \texttt{Cargo.toml}
+  & Add isls-norms dependency \\
+isls-cli & \texttt{src/main.rs}
+  & Add Scrape command variant + argument parsing \\
+isls-cli & \texttt{Cargo.toml}
+  & Add isls-reader, isls-code-topo dependencies \\
+\bottomrule
+\end{longtable}
+
+\subsection{Unchanged}
+
+All of isls-forge-llm (HDAG, structural, oracle, staged\_closure),
+isls-norms (types, catalog, composition, learning),
+isls-chat, isls-reader, isls-hypercube, isls-types
+remain \textbf{unchanged}. D5 is a pure consumer of existing APIs.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The 12 Rules --- D5 Compliance}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Status} & \textbf{D5 Impact} \\
+\midrule
+1  & \color{isls-green}\checkmark & D5 does not generate code.
+     No structural/LLM boundary affected. \\
+2  & \color{isls-green}\checkmark & New module \texttt{bridge.rs}
+     re-exported via \texttt{pub mod bridge;} in lib.rs. \\
+3  & \color{isls-green}\checkmark & Extracted function names preserve
+     original naming. No renaming. \\
+4  & \color{isls-green}\checkmark & No auth changes. \\
+5  & \color{isls-green}\checkmark & No query changes. \\
+6  & \color{isls-green}\checkmark & No query file changes. \\
+7  & \color{isls-green}\checkmark & No new crypto or logging crates. \\
+8  & \color{isls-green}\checkmark & No seed changes. \\
+9  & \color{isls-green}\checkmark & No Dockerfile changes. \\
+10 & \color{isls-green}\checkmark & Clone failure, parse failure,
+     oversized repo $\to$ warning + continue (graceful degradation). \\
+11 & \color{isls-green}\checkmark & No ProvidedSymbol changes. \\
+12 & \color{isls-green}\checkmark & No LLM prompt changes. D5 uses
+     zero LLM tokens. \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Data Flow: Complete D5 Cycle}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{User:}
+      \texttt{isls scrape --url https://github.com/example/todo-api.git}
+
+\item \textbf{isls-cli (Clone):}
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item Verify git is available.
+      \item Create temp dir \texttt{/tmp/isls-scrape-a7f3c2/}.
+      \item \texttt{git clone --depth 1 --single-branch <url> <temp>}.
+      \item Check size $<$ 200 MB.
+      \end{enumerate}
+
+\item \textbf{isls-reader (Barbara):}
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item \texttt{parse\_directory(temp\_dir)} $\to$ WorkspaceAnalysis.
+      \item Result: 15 CodeObservations (8 Rust, 3 SQL, 2 JS, 2 TOML).
+      \end{enumerate}
+
+\item \textbf{isls-code-topo (Bridge):}
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item \texttt{observations\_from\_code(\&analysis.files)} $\to$
+            31 ObservedArtifacts.
+      \item 4 files skipped (unmapped directories).
+      \item Also: \texttt{compute\_code\_topology()} for the report.
+      \end{enumerate}
+
+\item \textbf{isls-norms (Observation):}
+      \begin{enumerate}[nosep,label=\alph*.]
+      \item Load NormRegistry from \texttt{\textasciitilde/.isls/norms.json}.
+      \item \texttt{observe\_and\_learn(\&artifacts, "todo-api",
+            "scrape\_todo-api\_20260402\_1230")}.
+      \item Cross-layer patterns extracted, candidates updated.
+      \item Save to disk.
+      \end{enumerate}
+
+\item \textbf{Cleanup:}
+      Delete \texttt{/tmp/isls-scrape-a7f3c2/}.
+
+\item \textbf{Report:}
+      Print scrape summary showing languages, artifacts, layers,
+      norm system status.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Guard Struct for Temp Directory Cleanup}
+% ══════════════════════════════════════════════════════════════════════════════
+
+The temp directory MUST be cleaned up in all cases. Use an RAII guard:
+
+\begin{lstlisting}[style=rust]
+struct TempCloneGuard {
+    path: PathBuf,
+}
+
+impl Drop for TempCloneGuard {
+    fn drop(&mut self) {
+        if self.path.exists() {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+}
+\end{lstlisting}
+
+Create the guard immediately after creating the temp directory.
+When the guard goes out of scope (including on panic or early return),
+the directory is deleted.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Error Handling}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{Failure Mode} & \textbf{Behavior} \\
+\midrule
+Path does not exist & Print error, exit with code 1. \\
+Path is a file, not dir & Print error, suggest correct usage. \\
+Git not installed & Print ``git is required for URL scraping.
+  Install git or use --path for local directories.'' \\
+Clone fails (network) & Print error, suggest checking URL. In
+  manifest mode: log warning, continue to next repo. \\
+Clone timeout (120s) & Kill process, print timeout warning.
+  Temp dir cleaned up via guard. \\
+Repo exceeds size limit & Print warning with actual size.
+  Temp dir cleaned up. \\
+Barbara parse errors & Individual file errors logged, other
+  files still processed. \\
+No artifacts extracted & Print warning ``No architectural patterns
+  found. The project may use non-standard directory layout.'' \\
+\texttt{norms.json} corrupt & Handled by NormRegistry (D4):
+  fresh start with builtins. \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Test Suite}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Unit Tests}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{Test} & \textbf{Assertion} \\
+\midrule
+\texttt{test\_bridge\_rust\_model}
+  & Rust struct in \texttt{models/} $\to$ ObservedArtifact with
+    LayerType::Model, artifact\_type ``struct'', correct fields. \\
+\texttt{test\_bridge\_rust\_query}
+  & Rust fn in \texttt{database/} $\to$ LayerType::Query,
+    artifact\_type ``fn'', correct params. \\
+\texttt{test\_bridge\_sql\_table}
+  & SQL CREATE TABLE $\to$ LayerType::Database,
+    artifact\_type ``table'', correct columns. \\
+\texttt{test\_bridge\_python\_controller}
+  & Python def in \texttt{api/} $\to$ LayerType::Api. \\
+\texttt{test\_bridge\_js\_component}
+  & JS class in \texttt{components/} $\to$ LayerType::Frontend. \\
+\texttt{test\_bridge\_skip\_unmapped}
+  & File in \texttt{utils/} $\to$ skipped, not in artifacts. \\
+\texttt{test\_bridge\_multi\_entity}
+  & Project with 3 entities across 4 layers $\to$ 12+ artifacts
+    with correct entity grouping. \\
+\texttt{test\_domain\_from\_path}
+  & \texttt{./repos/my-app} $\to$ ``my-app''. \\
+\texttt{test\_domain\_from\_url}
+  & \texttt{https://github.com/u/my-app.git} $\to$ ``my-app''. \\
+\texttt{test\_manifest\_parse}
+  & Valid TOML manifest parsed to correct repo entries. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Integration Tests}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{Test} & \textbf{Assertion} \\
+\midrule
+\texttt{test\_scrape\_self\_generated}
+  & Scrape a D4 output directory. Verify artifacts produced,
+    candidates updated. \\
+\texttt{test\_scrape\_isls\_source}
+  & \texttt{isls scrape --path ./isls} works without panic,
+    produces report. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Acceptance Test (Manual)}
+
+\begin{lstlisting}[style=bash]
+# Step 1: Scrape a D4-generated app (no network needed)
+isls scrape --path ./output/pipeline_*/petshop
+
+# Verify: report shows artifacts, norms candidates updated
+
+# Step 2: Scrape ISLS itself
+isls scrape --path ./isls --domain "isls-self"
+
+# Verify: report shows Rust, ~170+ functions, ~50+ structs
+
+# Step 3: Scrape from GitHub (requires network + git)
+isls scrape --url https://github.com/LashSesh/graphity.git
+
+# Verify: clone, scrape, cleanup, report
+
+# Step 4: Batch scrape from manifest
+isls scrape --manifest examples/scrape_manifest.toml
+
+# Verify: batch report, multiple repos processed
+
+# Step 5: Verify norm accumulation
+isls norms stats
+isls norms candidates
+
+# Expected: more candidates than before, observations
+# from both D4 generations AND D5 scrapes
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{Do not modify} isls-forge-llm, isls-norms, isls-chat,
+      isls-reader, isls-types, or isls-hypercube.
+\item \textbf{bridge.rs} MUST be pure --- no IO, no filesystem access.
+      Input: \texttt{\&[CodeObservation]}. Output:
+      \texttt{(Vec<ObservedArtifact>, usize)}. All IO happens in
+      \texttt{cmd\_scrape.rs}.
+\item \textbf{No new external crates.} Git clone uses
+      \texttt{std::process::Command}. TOML parsing uses \texttt{toml}
+      (already in workspace). Temp dirs use \texttt{std::env::temp\_dir()}.
+\item \textbf{No source code stored.} The bridge MUST NOT include file
+      contents, function bodies, or any copyrightable text in the
+      \texttt{ObservedArtifact}. Only names, signatures, types, and
+      structural metadata.
+\item \textbf{Graceful degradation everywhere.} Every external operation
+      (clone, parse, read) must handle failure without panic.
+\item \textbf{TempCloneGuard} MUST be used for git clones. No
+      exception.
+\item All new code MUST compile with \texttt{cargo build --workspace}.
+\item Test with \texttt{cargo test -p isls-code-topo} and
+      \texttt{cargo test -p isls-cli}.
+\item Branch: \texttt{claude/implement-isls-d5-spec}.
+\item Commit message format: \texttt{D5/W\{n\}: <description>}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Dependency Graph}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{verbatim}
+W1 (Topology-to-Observation Bridge)
+  |
+  v
+W2 (Local Scraping)
+  |
+  v
+W3 (Git Clone Scraping)
+  |
+  v
+W4 (Manifest Batch Scraping)
+\end{verbatim}
+
+W1 is the foundation --- without the bridge, no scraping can feed norms.
+W2 is the simplest scraping mode (no network). W3 adds git.
+W4 adds batch processing.
+
+Recommended implementation order: W1 $\to$ W2 $\to$ W3 $\to$ W4.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Norm Accumulation Strategy}
+% ══════════════════════════════════════════════════════════════════════════════
+
+D5 scrapes feed into the same \texttt{observe\_and\_learn()} as D4
+generations. This means:
+
+\begin{itemize}[nosep]
+\item Patterns from external repos and self-generated apps merge into
+      the same candidates.
+\item A pattern observed in a scraped Actix-Web project and in a
+      self-generated ISLS app share the same candidate --- because
+      they have the same layer topology.
+\item External observations accelerate promotion: if ISLS has already
+      observed a 5-layer CRUD pattern in 3 self-generated apps (D4),
+      scraping 2 external repos with the same pattern pushes the
+      candidate past \texttt{min\_observations: 5}.
+\end{itemize}
+
+This is the mycelial principle: endogenous and exogenous nutrients
+converge in the same metabolic pathway.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Verification Sequence (Complete)}
+\label{sec:verification}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \texttt{cargo build --workspace} --- compiles.
+\item \texttt{cargo test -p isls-code-topo} --- bridge tests pass.
+\item \texttt{cargo test -p isls-cli} --- scrape CLI tests pass.
+\item \texttt{cargo test --workspace} --- all tests pass (171 + new).
+\item \texttt{isls scrape --path ./output/pipeline\_*/petshop}
+      --- local scrape produces report.
+\item \texttt{isls norms candidates} --- shows updated observations.
+\item \texttt{isls scrape --path ./isls --domain "isls-self"}
+      --- self-scrape works.
+\item \texttt{isls scrape --url https://github.com/LashSesh/graphity.git}
+      --- git scrape works (requires network).
+\item Temp directory cleaned up after git scrape.
+\item \texttt{isls scrape --manifest examples/scrape\_manifest.toml}
+      --- batch works.
+\item \texttt{isls norms stats} --- shows accumulated observations
+      from both D4 and D5 sources.
+\end{enumerate}
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of D5 Specification.}
+\end{center}
+
+\end{document}
