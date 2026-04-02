@@ -226,7 +226,11 @@ impl NormRegistry {
         if let Some(cands) = payload["candidates"].as_array() {
             for v in cands {
                 if let Ok(cand) = serde_json::from_value::<NormCandidate>(v.clone()) {
-                    self.candidates.insert(cand.id.clone(), cand);
+                    // Key must be the pattern signature (same key used in observe_and_learn)
+                    let key = cand.observations.first()
+                        .map(|o| o.signature.clone())
+                        .unwrap_or_else(|| cand.id.clone());
+                    self.candidates.insert(key, cand);
                 }
             }
         }
