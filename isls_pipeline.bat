@@ -1,9 +1,10 @@
 @echo off
 :: ═══════════════════════════════════════════════════════════════════════════
-:: isls_pipeline.bat -- ISLS D4 One-Click Acceptance Pipeline
+:: isls_pipeline.bat -- ISLS D6 Full Acceptance Pipeline
 ::
 :: Doppelklick genuegt. Baut, testet, generiert 6 Apps via LLM,
-:: verifiziert Kompilierung, prueft Norm-Emergenz.
+:: verifiziert Kompilierung, prueft Norm-Emergenz, scrapet Projekte,
+:: generiert ISLS Studio via forge-self, prueft Infra-Norms.
 :: ═══════════════════════════════════════════════════════════════════════════
 chcp 65001 >nul 2>nul
 setlocal EnableDelayedExpansion
@@ -65,12 +66,24 @@ set "ENTITIES_3=?"
 set "ENTITIES_4=?"
 set "ENTITIES_5=?"
 
+:: D5 Scrape results
+set "SCRAPE_PETSHOP=SKIP"
+set "SCRAPE_PETSHOP_ARTIFACTS=?"
+set "SCRAPE_SELF=SKIP"
+set "SCRAPE_SELF_ARTIFACTS=?"
+
+:: D6 Moebius results
+set "STUDIO_GEN=SKIP"
+set "STUDIO_COMPILE=SKIP"
+set "STUDIO_SEED=SKIP"
+set "INFRA_NORMS=0"
+
 :: ═══════════════════════════════════════════════════════════════════════════
 :: Header
 :: ═══════════════════════════════════════════════════════════════════════════
 echo.
 echo !BLD!!CYN!======================================================!RST!
-echo !BLD!!CYN!  ISLS D4 -- One-Click Acceptance Pipeline!RST!
+echo !BLD!!CYN!  ISLS D6 -- Full Acceptance Pipeline!RST!
 echo !BLD!!CYN!  !TS_DISPLAY!!RST!
 echo !BLD!!CYN!======================================================!RST!
 echo.
@@ -78,7 +91,7 @@ echo.
 :: ═══════════════════════════════════════════════════════════════════════════
 :: Section 1: API-Key
 :: ═══════════════════════════════════════════════════════════════════════════
-echo !BLD![Step 1/6] API-Key!RST!
+echo !BLD![Step 1/8] API-Key!RST!
 echo.
 
 if defined OPENAI_API_KEY (
@@ -105,7 +118,7 @@ echo.
 :: ═══════════════════════════════════════════════════════════════════════════
 :: Section 2: Workspace Build
 :: ═══════════════════════════════════════════════════════════════════════════
-echo !BLD![Step 2/6] Workspace Build!RST!
+echo !BLD![Step 2/8] Workspace Build!RST!
 echo   cargo build --workspace --release ...
 echo.
 
@@ -130,7 +143,7 @@ echo.
 :: ═══════════════════════════════════════════════════════════════════════════
 :: Section 3: Workspace Tests
 :: ═══════════════════════════════════════════════════════════════════════════
-echo !BLD![Step 3/6] Workspace Tests!RST!
+echo !BLD![Step 3/8] Workspace Tests!RST!
 echo   cargo test --workspace ...
 echo.
 
@@ -155,7 +168,7 @@ echo.
 :: ═══════════════════════════════════════════════════════════════════════════
 :: Section 4: D4 Acceptance -- 6 Domains generieren
 :: ═══════════════════════════════════════════════════════════════════════════
-echo !BLD![Step 4/6] D4 Acceptance Pipeline -- 6 Domains!RST!
+echo !BLD![Step 4/8] D4 Acceptance Pipeline -- 6 Domains!RST!
 echo.
 
 :: Jede Domain via Subroutine (vermeidet tiefe Verschachtelung)
@@ -168,9 +181,127 @@ call :RUN_DOMAIN 5 "spa" "Spa and wellness center with treatments, therapists, b
 echo.
 
 :: ═══════════════════════════════════════════════════════════════════════════
-:: Section 5: Norm-Check
+:: Section 5: D5 -- Scrape Validation
 :: ═══════════════════════════════════════════════════════════════════════════
-echo !BLD![Step 5/6] Norm System Check!RST!
+echo !BLD![Step 5/8] D5 Scrape Validation!RST!
+echo.
+
+:: --- Scrape petshop (generated project) ---
+echo   !CYN![1/2]!RST! Scraping petshop output ...
+set "_SCRAPE_LOG_1=!LOG_DIR!\scrape_petshop_!TS!.log"
+cd /d "!ROOT!"
+if exist "!OUT_DIR!\petshop" (
+    "!ISLS_BIN!" scrape --path "!OUT_DIR!\petshop" > "!_SCRAPE_LOG_1!" 2>&1
+    if errorlevel 1 (
+        echo          !RED!FAIL!RST!
+        set "SCRAPE_PETSHOP=FAIL"
+        set "HAS_ERRORS=1"
+        call :LOG_ERROR "scrape-petshop" "isls scrape --path petshop" "!ROOT!" "!_SCRAPE_LOG_1!"
+    ) else (
+        set "SCRAPE_PETSHOP=PASS"
+        set "SCRAPE_PETSHOP_ARTIFACTS=0"
+        for /f "usebackq delims=" %%L in ("!_SCRAPE_LOG_1!") do (
+            echo %%L | findstr /c:"artifact" >nul 2>nul
+            if not errorlevel 1 set "SCRAPE_PETSHOP_ARTIFACTS=%%L"
+        )
+        echo          !GRN!PASS!RST!
+    )
+) else (
+    echo          !YLW!SKIP - petshop not generated!RST!
+)
+
+:: --- Scrape ISLS source code ---
+echo   !CYN![2/2]!RST! Scraping ISLS source ...
+set "_SCRAPE_LOG_2=!LOG_DIR!\scrape_self_!TS!.log"
+cd /d "!ROOT!"
+"!ISLS_BIN!" scrape --path "!ROOT!" --domain "isls-self" > "!_SCRAPE_LOG_2!" 2>&1
+if errorlevel 1 (
+    echo          !RED!FAIL!RST!
+    set "SCRAPE_SELF=FAIL"
+    set "HAS_ERRORS=1"
+    call :LOG_ERROR "scrape-self" "isls scrape --path . --domain isls-self" "!ROOT!" "!_SCRAPE_LOG_2!"
+) else (
+    set "SCRAPE_SELF=PASS"
+    set "SCRAPE_SELF_ARTIFACTS=0"
+    for /f "usebackq delims=" %%L in ("!_SCRAPE_LOG_2!") do (
+        echo %%L | findstr /c:"artifact" >nul 2>nul
+        if not errorlevel 1 set "SCRAPE_SELF_ARTIFACTS=%%L"
+    )
+    echo          !GRN!PASS!RST!
+)
+echo.
+
+:: ═══════════════════════════════════════════════════════════════════════════
+:: Section 6: D6 -- Moebius (forge-self)
+:: ═══════════════════════════════════════════════════════════════════════════
+echo !BLD![Step 6/8] D6 Moebius -- forge-self!RST!
+echo.
+
+:: --- Generate ISLS Studio ---
+echo   !CYN![1/3]!RST! Generating ISLS Studio ...
+set "_STUDIO_LOG=!LOG_DIR!\forge_self_!TS!.log"
+cd /d "!ROOT!"
+"!ISLS_BIN!" forge-self --api-key !OPENAI_API_KEY! --output "!OUT_DIR!\isls-studio" > "!_STUDIO_LOG!" 2>&1
+if errorlevel 1 (
+    echo          !RED!Generation FAILED!RST!
+    set "STUDIO_GEN=FAIL"
+    set "HAS_ERRORS=1"
+    call :LOG_ERROR "isls-studio" "isls forge-self" "!ROOT!" "!_STUDIO_LOG!"
+    goto :SKIP_STUDIO_COMPILE
+)
+set "STUDIO_GEN=PASS"
+echo          !GRN!PASS!RST!
+
+:: --- Compile generated Studio ---
+echo   !CYN![2/3]!RST! Compiling ISLS Studio backend ...
+set "_STUDIO_COMPILE_LOG=!LOG_DIR!\compile_studio_!TS!.log"
+if not exist "!OUT_DIR!\isls-studio\backend" (
+    echo          !RED!No backend dir generated!RST!
+    set "STUDIO_COMPILE=FAIL"
+    set "HAS_ERRORS=1"
+    >> "!ERR_LOG!" echo === FEHLER: isls-studio -- kein backend Verzeichnis ===
+    >> "!ERR_LOG!" echo Zeitpunkt: !TS_DISPLAY!
+    >> "!ERR_LOG!" echo --- Ende ---
+    >> "!ERR_LOG!" echo.
+    goto :SKIP_STUDIO_COMPILE
+)
+cd /d "!OUT_DIR!\isls-studio\backend"
+cargo build > "!_STUDIO_COMPILE_LOG!" 2>&1
+if errorlevel 1 (
+    echo          !RED!Compile FAILED!RST!
+    set "STUDIO_COMPILE=FAIL"
+    set "HAS_ERRORS=1"
+    call :LOG_ERROR "isls-studio" "cargo build" "!OUT_DIR!\isls-studio\backend" "!_STUDIO_COMPILE_LOG!"
+) else (
+    echo          !GRN!PASS!RST!
+    set "STUDIO_COMPILE=PASS"
+)
+cd /d "!ROOT!"
+
+:SKIP_STUDIO_COMPILE
+
+:: --- Check norm seed in migration ---
+echo   !CYN![3/3]!RST! Checking norm seed in migration ...
+set "_MIGRATION=!OUT_DIR!\isls-studio\backend\migrations\001_initial.sql"
+if exist "!_MIGRATION!" (
+    findstr /c:"INSERT INTO norms" "!_MIGRATION!" >nul 2>nul
+    if not errorlevel 1 (
+        echo          !GRN!Norm seed found!RST!
+        set "STUDIO_SEED=PASS"
+    ) else (
+        echo          !YLW!No norm seed in migration!RST!
+        set "STUDIO_SEED=FAIL"
+    )
+) else (
+    echo          !YLW!Migration file not found!RST!
+    set "STUDIO_SEED=SKIP"
+)
+echo.
+
+:: ═══════════════════════════════════════════════════════════════════════════
+:: Section 7: Norm-Check
+:: ═══════════════════════════════════════════════════════════════════════════
+echo !BLD![Step 7/8] Norm System Check!RST!
 echo.
 
 cd /d "!ROOT!"
@@ -206,6 +337,21 @@ if !AUTO_NORMS! GTR 0 (
     echo   !YLW!Keine Auto-Norms - erwartet bei wenigen Runs.!RST!
 )
 
+:: Count infrastructure norms (D6)
+echo.
+echo   --- infrastructure norms (D6) ---
+set "INFRA_NORMS=0"
+"!ISLS_BIN!" norms list > "!LOG_DIR!\norms_all_!TS!.log" 2>&1
+for /f "usebackq delims=" %%L in ("!LOG_DIR!\norms_all_!TS!.log") do (
+    echo %%L | findstr /c:"ISLS-NORM-INFRA-" >nul 2>nul
+    if not errorlevel 1 set /a "INFRA_NORMS+=1"
+)
+if !INFRA_NORMS! GTR 0 (
+    echo   !GRN!!INFRA_NORMS! Infrastructure Norm^(s^) detected!RST!
+) else (
+    echo   !YLW!No Infrastructure Norms found.!RST!
+)
+
 :: Count candidates
 set "CANDIDATES=0"
 "!ISLS_BIN!" norms candidates > "!LOG_DIR!\norms_cand_!TS!.log" 2>&1
@@ -218,12 +364,12 @@ echo.
 :: ═══════════════════════════════════════════════════════════════════════════
 :: Section 6: Report
 :: ═══════════════════════════════════════════════════════════════════════════
-echo !BLD![Step 6/6] Report!RST!
+echo !BLD![Step 8/8] Report!RST!
 echo.
 
 call :REPORT_LINE ""
 call :REPORT_LINE "======================================================"
-call :REPORT_LINE " ISLS Pipeline Report -- !TS_DISPLAY!"
+call :REPORT_LINE " ISLS D6 Pipeline Report -- !TS_DISPLAY!"
 call :REPORT_LINE "======================================================"
 call :REPORT_LINE ""
 call :REPORT_LINE " Workspace Build:    !BUILD_OK!"
@@ -244,7 +390,47 @@ call :REPORT_DOMAIN 4 "school"
 call :REPORT_DOMAIN 5 "spa"
 
 call :REPORT_LINE ""
+call :REPORT_LINE " Scraping (D5):"
+if "!SCRAPE_PETSHOP!"=="PASS" (
+    call :REPORT_LINE "   [PASS] petshop scrape"
+) else if "!SCRAPE_PETSHOP!"=="FAIL" (
+    call :REPORT_LINE "   [FAIL] petshop scrape    -- see logs"
+) else (
+    call :REPORT_LINE "   [SKIP] petshop scrape"
+)
+if "!SCRAPE_SELF!"=="PASS" (
+    call :REPORT_LINE "   [PASS] isls-self scrape"
+) else if "!SCRAPE_SELF!"=="FAIL" (
+    call :REPORT_LINE "   [FAIL] isls-self scrape  -- see logs"
+) else (
+    call :REPORT_LINE "   [SKIP] isls-self scrape"
+)
+call :REPORT_LINE ""
+call :REPORT_LINE " Moebius (D6 forge-self):"
+if "!STUDIO_GEN!"=="PASS" (
+    call :REPORT_LINE "   [PASS] isls-studio generated"
+) else if "!STUDIO_GEN!"=="FAIL" (
+    call :REPORT_LINE "   [FAIL] isls-studio generation -- see logs"
+) else (
+    call :REPORT_LINE "   [SKIP] isls-studio generation"
+)
+if "!STUDIO_COMPILE!"=="PASS" (
+    call :REPORT_LINE "   [PASS] isls-studio compiled"
+) else if "!STUDIO_COMPILE!"=="FAIL" (
+    call :REPORT_LINE "   [FAIL] isls-studio compile   -- see logs"
+) else (
+    call :REPORT_LINE "   [SKIP] isls-studio compile"
+)
+if "!STUDIO_SEED!"=="PASS" (
+    call :REPORT_LINE "   [PASS] norm seed in migration"
+) else if "!STUDIO_SEED!"=="FAIL" (
+    call :REPORT_LINE "   [FAIL] norm seed missing"
+) else (
+    call :REPORT_LINE "   [SKIP] norm seed check"
+)
+call :REPORT_LINE ""
 call :REPORT_LINE " Norm System:"
+call :REPORT_LINE "   Infra-Norms:      !INFRA_NORMS!"
 call :REPORT_LINE "   Candidates:       !CANDIDATES!"
 call :REPORT_LINE "   Auto-Norms:       !AUTO_NORMS!"
 call :REPORT_LINE "   norms.json:       !NORMS_SIZE!"
