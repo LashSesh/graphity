@@ -493,6 +493,7 @@ select { cursor: pointer; width: auto; }
         <button class="nav-btn active" data-view="chat" title="Chat (Ctrl+0)" style="font-size:10px">CH</button>
         <button class="nav-btn" data-view="norms" title="Norm Explorer" style="font-size:10px">NR</button>
         <button class="nav-btn" data-view="projects" title="Projects" style="font-size:10px">PJ</button>
+        <button class="nav-btn" data-view="architect" title="Architect (D7)" style="font-size:10px;color:var(--success)">AR</button>
         <div class="sidebar-bottom">
             <div class="status-pill" id="statusPill"></div><br>
             <span id="sidebarUptime">0m</span><br>
@@ -1013,6 +1014,65 @@ select { cursor: pointer; width: auto; }
             </div>
         </div>
 
+        <!-- ═══ View: Architect (D7) ══════════════════════════════════ -->
+        <div class="view" id="view-architect">
+            <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;height:100%">
+                <!-- Chat Panel -->
+                <div style="display:flex;flex-direction:column;height:100%;min-height:0">
+                    <div id="archChat" style="flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px">
+                        <div style="color:var(--text-dim);padding:16px;text-align:center">
+                            Describe the application you want to build. The architect will extract entities, fields, and relationships.
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;padding:8px 0 0 0">
+                        <textarea id="archInput" rows="2" placeholder="Describe your application..."
+                            style="flex:1;padding:8px 12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:var(--font-ui);resize:none"
+                            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();archSendMessage()}"></textarea>
+                        <button class="btn" onclick="archSendMessage()" id="archSendBtn" style="align-self:flex-end">Send</button>
+                    </div>
+                </div>
+                <!-- Readiness Panel -->
+                <div style="display:flex;flex-direction:column;gap:12px;overflow-y:auto">
+                    <div class="card" style="text-align:center">
+                        <div id="archReadinessScore" style="font-size:48px;font-weight:900;color:var(--text-dim)">0%</div>
+                        <div style="font-size:11px;color:var(--text-dim)">READINESS</div>
+                    </div>
+                    <div class="card" id="archCriteria">
+                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--text-dim)">CRITERIA</h4>
+                        <div id="archCriteriaList" style="font-size:12px;display:flex;flex-direction:column;gap:4px">
+                            <div style="color:var(--text-dim)">Send a message to start</div>
+                        </div>
+                    </div>
+                    <div class="card" id="archEntities">
+                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--text-dim)">ENTITIES</h4>
+                        <div id="archEntityList" style="font-size:12px;display:flex;flex-direction:column;gap:4px">
+                            <div style="color:var(--text-dim)">No entities yet</div>
+                        </div>
+                    </div>
+                    <div id="archSuggestions" class="card" style="display:none">
+                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--warning)">SUGGESTIONS</h4>
+                        <div id="archSuggestionList" style="font-size:12px;display:flex;flex-direction:column;gap:4px"></div>
+                    </div>
+                    <button id="archForgeBtn" class="btn" onclick="archStartForge()"
+                        style="width:100%;padding:12px;font-size:14px;font-weight:700;background:var(--bg-tertiary);color:var(--text-dim);border:2px solid var(--border);cursor:not-allowed"
+                        disabled>FORGE</button>
+                    <!-- Forge Progress (shown during forge) -->
+                    <div id="archProgress" style="display:none" class="card">
+                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--accent)">FORGE PROGRESS</h4>
+                        <div id="archProgressBar" style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;margin-bottom:8px">
+                            <div id="archProgressFill" style="height:100%;width:0%;background:var(--accent);transition:width 0.3s"></div>
+                        </div>
+                        <div id="archProgressStatus" style="font-size:11px;color:var(--text-dim)">Starting...</div>
+                    </div>
+                    <!-- Forge Result -->
+                    <div id="archResult" style="display:none" class="card">
+                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--success)">FORGE RESULT</h4>
+                        <div id="archResultInfo" style="font-size:12px"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </main>
 
     <!-- Status Bar -->
@@ -1074,6 +1134,7 @@ const viewTitles = {
     chat: ['ISLS Agent', 'Beschreibe was du bauen möchtest'],
     norms: ['Norm Explorer', 'Built-in, auto-discovered, and candidate norms'],
     projects: ['Projects', 'Manage generated projects and their output files'],
+    architect: ['Architect', 'D7 — Multi-turn conversation to AppSpec'],
 };
 
 // ─── Navigation ──────────────────────────────────────────────────────────
@@ -2313,6 +2374,183 @@ function init() {
         if (currentView === 'navigator') navigatorRefresh();
         if (currentView === 'agent') agentRefresh();
     }, 10000);
+}
+
+// ─── D7: Architect Mode ─────────────────────────────────────────────────
+let archSessionId = null;
+let archForging = false;
+
+async function archCreateSession() {
+    try {
+        const r = await fetch('/api/session', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ api_key: null }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+            archSessionId = d.session_id;
+        }
+    } catch(e) { console.error('session create failed', e); }
+}
+
+async function archSendMessage() {
+    const input = document.getElementById('archInput');
+    const msg = input.value.trim();
+    if (!msg || archForging) return;
+
+    if (!archSessionId) await archCreateSession();
+    if (!archSessionId) return;
+
+    // Show user message
+    const chat = document.getElementById('archChat');
+    chat.innerHTML += `<div style="align-self:flex-end;background:var(--accent);color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:75%;font-size:13px">${escHtml(msg)}</div>`;
+    input.value = '';
+    input.disabled = true;
+    document.getElementById('archSendBtn').disabled = true;
+    chat.scrollTop = chat.scrollHeight;
+
+    try {
+        const r = await fetch(`/api/session/${archSessionId}/message`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ message: msg }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+            // Show assistant message
+            chat.innerHTML += `<div style="align-self:flex-start;background:var(--bg-tertiary);color:var(--text-primary);padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:75%;font-size:13px">${escHtml(d.message)}</div>`;
+            chat.scrollTop = chat.scrollHeight;
+            // Update readiness
+            if (d.readiness) archUpdateReadiness(d.readiness);
+            // Update entities
+            if (d.spec) archUpdateEntities(d.spec);
+        }
+    } catch(e) {
+        chat.innerHTML += `<div style="color:var(--error);font-size:12px;padding:4px 8px">Error: ${e.message}</div>`;
+    }
+    input.disabled = false;
+    document.getElementById('archSendBtn').disabled = false;
+    input.focus();
+}
+
+function archUpdateReadiness(r) {
+    const scoreEl = document.getElementById('archReadinessScore');
+    scoreEl.textContent = r.score + '%';
+    scoreEl.style.color = r.ready ? 'var(--success)' : (r.score > 30 ? 'var(--warning)' : 'var(--text-dim)');
+
+    // Criteria list
+    const list = document.getElementById('archCriteriaList');
+    list.innerHTML = '';
+    if (r.criteria) {
+        for (const [key, val] of Object.entries(r.criteria)) {
+            const icon = val.met ? '<span style="color:var(--success)">&#10003;</span>' : '<span style="color:var(--error)">&#10007;</span>';
+            const detail = val.detail ? ` <span style="color:var(--text-dim)">(${escHtml(val.detail)})</span>` : '';
+            const score = val.score !== undefined && val.score !== null ? ` <span style="color:var(--text-dim)">+${val.score}%</span>` : '';
+            list.innerHTML += `<div>${icon} ${escHtml(key)}${detail}${score}</div>`;
+        }
+    }
+
+    // Suggestions
+    const sugDiv = document.getElementById('archSuggestions');
+    const sugList = document.getElementById('archSuggestionList');
+    if (r.suggestions && r.suggestions.length > 0) {
+        sugDiv.style.display = '';
+        sugList.innerHTML = r.suggestions.map(s => `<div style="color:var(--warning)">&#9888; ${escHtml(s)}</div>`).join('');
+    } else {
+        sugDiv.style.display = 'none';
+    }
+
+    // Forge button
+    const btn = document.getElementById('archForgeBtn');
+    if (r.ready) {
+        btn.disabled = false;
+        btn.style.background = 'var(--success)';
+        btn.style.color = '#fff';
+        btn.style.borderColor = 'var(--success)';
+        btn.style.cursor = 'pointer';
+    } else {
+        btn.disabled = true;
+        btn.style.background = 'var(--bg-tertiary)';
+        btn.style.color = 'var(--text-dim)';
+        btn.style.borderColor = 'var(--border)';
+        btn.style.cursor = 'not-allowed';
+    }
+}
+
+function archUpdateEntities(spec) {
+    const list = document.getElementById('archEntityList');
+    if (!spec.entities || spec.entities.length === 0) {
+        list.innerHTML = '<div style="color:var(--text-dim)">No entities yet</div>';
+        return;
+    }
+    list.innerHTML = spec.entities.map(e => {
+        const fields = e.fields ? e.fields.map(f => `${f.name}: ${f.type}`).join(', ') : '';
+        return `<div style="padding:4px 6px;background:var(--bg-primary);border-radius:4px"><strong>${escHtml(e.name)}</strong> <span style="color:var(--text-dim);font-size:11px">${e.field_count || 0} fields</span><div style="color:var(--text-dim);font-size:10px;margin-top:2px">${escHtml(fields)}</div></div>`;
+    }).join('');
+}
+
+async function archStartForge() {
+    if (!archSessionId || archForging) return;
+    archForging = true;
+    document.getElementById('archForgeBtn').disabled = true;
+    document.getElementById('archProgress').style.display = '';
+    document.getElementById('archResult').style.display = 'none';
+    document.getElementById('archProgressStatus').textContent = 'Starting forge...';
+    document.getElementById('archProgressFill').style.width = '10%';
+
+    try {
+        const r = await fetch(`/api/session/${archSessionId}/forge`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({}),
+        });
+        const d = await r.json();
+        if (d.ok) {
+            document.getElementById('archProgressStatus').textContent = 'Forge running... Watch for WebSocket events.';
+            document.getElementById('archProgressFill').style.width = '50%';
+            // Poll session until forge_result appears
+            archPollResult();
+        } else {
+            document.getElementById('archProgressStatus').textContent = 'Error: ' + (d.error || 'unknown');
+            archForging = false;
+        }
+    } catch(e) {
+        document.getElementById('archProgressStatus').textContent = 'Error: ' + e.message;
+        archForging = false;
+    }
+}
+
+async function archPollResult() {
+    for (let i = 0; i < 120; i++) { // max 2 minutes
+        await new Promise(r => setTimeout(r, 1000));
+        try {
+            const r = await fetch(`/api/session/${archSessionId}`);
+            const d = await r.json();
+            if (d.ok && d.session && d.session.forge_result) {
+                const fr = d.session.forge_result;
+                document.getElementById('archProgressFill').style.width = '100%';
+                document.getElementById('archProgressStatus').textContent = fr.success ? 'Complete!' : 'Failed';
+                document.getElementById('archResult').style.display = '';
+                document.getElementById('archResultInfo').innerHTML = `
+                    <div>Files: <strong>${fr.files_generated}</strong></div>
+                    <div>LOC: <strong>${fr.total_loc}</strong></div>
+                    <div>Tokens: <strong>${fr.total_tokens}</strong></div>
+                    <div>Duration: <strong>${fr.duration_secs.toFixed(1)}s</strong></div>
+                    <div>Output: <code style="font-size:11px">${escHtml(fr.output_dir)}</code></div>
+                `;
+                archForging = false;
+                return;
+            }
+        } catch(e) { /* retry */ }
+    }
+    document.getElementById('archProgressStatus').textContent = 'Timed out waiting for result';
+    archForging = false;
+}
+
+function escHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 init();
