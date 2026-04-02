@@ -110,6 +110,13 @@ impl CodegenHdag {
     /// When called with `default_web_blueprint()`, produces the same nodes
     /// and edges as the pre-D6 `build_legacy()`.
     pub fn build(spec: &AppSpec, bp: &InfraBlueprint) -> Self {
+        // Safety: if blueprint is completely empty (no output shape at all),
+        // fall back to the default web-app blueprint to prevent generating
+        // a broken project with missing nodes.
+        if !bp.has_binary && !bp.has_library && !bp.has_http_server && !bp.has_cli {
+            return Self::build(spec, &crate::blueprint::default_web_blueprint());
+        }
+
         let mut nodes: Vec<HdagNode> = Vec::new();
         let mut edges: Vec<HdagEdge> = Vec::new();
 
