@@ -300,6 +300,10 @@ fn cmd_forge_v2(
         (plan, domain_name)
     };
 
+    // D6: Derive InfraBlueprint from description via infrastructure norm matching
+    let mut plan = plan;
+    plan.blueprint = isls_forge_llm::blueprint::derive_blueprint_from_description(&plan.spec.description);
+
     // 5. Create oracle
     let oracle: Box<dyn isls_forge_llm::oracle::Oracle> = if use_mock {
         Box::new(MockOracle)
