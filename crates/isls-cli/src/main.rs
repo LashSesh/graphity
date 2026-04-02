@@ -38,6 +38,13 @@ enum Command {
         max_size_mb: u64,
         timeout_secs: u64,
     },
+    /// D6: Generate ISLS Studio — the generator generating itself.
+    ForgeSelf {
+        output: String,
+        mock_oracle: bool,
+        api_key: Option<String>,
+        model: String,
+    },
     /// Start the Gateway / Studio web interface.
     Serve { port: u16, api_key: Option<String> },
     /// Print help.
@@ -154,6 +161,22 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(120);
             Command::Scrape { path, url, manifest, domain, max_size_mb, timeout_secs }
+        }
+        "forge-self" => {
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "./output/isls-studio".to_string());
+            let mock_oracle = args.contains(&"--mock-oracle".to_string());
+            let api_key = args.iter().position(|a| a == "--api-key")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            let model = args.iter().position(|a| a == "--model")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "gpt-4o".to_string());
+            Command::ForgeSelf { output, mock_oracle, api_key, model }
         }
         "serve" => {
             let port = args.iter().position(|a| a == "--port")
@@ -443,6 +466,46 @@ fn cmd_forge_chat(
     );
 }
 
+// ─── forge-self: D6 Möbius ───────────────────────────────────────────────────
+
+fn cmd_forge_self(
+    output: &str,
+    mock_oracle: bool,
+    api_key: Option<String>,
+    model: &str,
+) {
+    println!("╔══════════════════════════════════════════════════════╗");
+    println!("║  D6 Möbius — Generating ISLS Studio                   ║");
+    println!("║  The generator generating itself.                     ║");
+    println!("╚══════════════════════════════════════════════════════╝");
+    println!();
+
+    let requirements = "examples/isls_studio.toml";
+    cmd_forge_v2(requirements, output, mock_oracle, api_key.clone(), model);
+
+    // D6: Self-observation — feed generated artifacts into D4 norm learning
+    let output_dir = Path::new(output);
+    match (|| -> std::result::Result<(), Box<dyn std::error::Error>> {
+        let collector = isls_forge_llm::artifact_collector::ArtifactCollector::new(output_dir);
+        let observed = collector.collect();
+        let domain = "isls-studio";
+        let run_id = format!(
+            "{}_{}",
+            domain,
+            chrono::Utc::now().format("%Y%m%d_%H%M%S")
+        );
+        let mut registry = isls_norms::NormRegistry::new();
+        registry.observe_and_learn(&observed, domain, &run_id);
+        println!("[D6] Self-observation: {} artifacts fed to norm learning (domain: {})", observed.len(), domain);
+        Ok(())
+    })() {
+        Ok(()) => {}
+        Err(e) => {
+            eprintln!("[D6] Self-observation failed (non-blocking): {}", e);
+        }
+    }
+}
+
 // ─── serve: Gateway / Studio ─────────────────────────────────────────────────
 
 fn cmd_serve(port: u16, api_key: Option<String>) {
@@ -481,6 +544,7 @@ fn print_help() {
     println!();
     println!("Commands:");
     println!("  forge-v2    HDAG code generation pipeline (Staged Closure)");
+    println!("  forge-self  D6: Generate ISLS Studio — the generator generating itself");
     println!("  forge-chat  D3: Natural language to compiled application");
     println!("  norms       D4: Inspect norm catalog, candidates, and auto-discovered norms");
     println!("  scrape      D5: Scrape repositories — extract topology into norms");
@@ -491,6 +555,12 @@ fn print_help() {
     println!("  --requirements <path>  TOML requirements file (default: examples/warehouse.toml)");
     println!("  --output <path>        Output directory (default: ./output-v2)");
     println!("  --mock-oracle          Use mock oracle (no LLM calls, compilable output)");
+    println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
+    println!("  --model <model>        LLM model name (default: gpt-4o)");
+    println!();
+    println!("forge-self options:");
+    println!("  --output <path>        Output directory (default: ./output/isls-studio)");
+    println!("  --mock-oracle          Use mock oracle (no LLM calls)");
     println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
     println!("  --model <model>        LLM model name (default: gpt-4o)");
     println!();
@@ -535,6 +605,9 @@ fn main() {
         }
         Command::ForgeChat { message, output, api_key, model } => {
             cmd_forge_chat(&message, &output, api_key, &model);
+        }
+        Command::ForgeSelf { output, mock_oracle, api_key, model } => {
+            cmd_forge_self(&output, mock_oracle, api_key, &model);
         }
         Command::Scrape { path, url, manifest, domain, max_size_mb, timeout_secs } => {
             cmd_scrape::cmd_scrape(cmd_scrape::ScrapeOpts {
@@ -645,6 +718,31 @@ mod tests {
                 assert_eq!(model, "gpt-4o-mini");
             }
             _ => panic!("expected ForgeChat"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_self_defaults() {
+        let cmd = parse_args(&args(&["isls", "forge-self"]));
+        match cmd {
+            Command::ForgeSelf { output, mock_oracle, model, .. } => {
+                assert_eq!(output, "./output/isls-studio");
+                assert!(!mock_oracle);
+                assert_eq!(model, "gpt-4o");
+            }
+            _ => panic!("expected ForgeSelf"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_self_mock() {
+        let cmd = parse_args(&args(&["isls", "forge-self", "--mock-oracle", "--output", "/tmp/studio"]));
+        match cmd {
+            Command::ForgeSelf { output, mock_oracle, .. } => {
+                assert!(mock_oracle);
+                assert_eq!(output, "/tmp/studio");
+            }
+            _ => panic!("expected ForgeSelf"),
         }
     }
 

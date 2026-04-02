@@ -1,0 +1,201 @@
+# ISLS Studio — Self-generated management interface for the norm-driven code generator
+# Usage: isls forge-self --mock-oracle
+#   or:  isls forge-v2 --requirements examples/isls_studio.toml --mock-oracle --output ./output/isls-studio
+
+[app]
+name = "isls-studio"
+description = "ISLS Studio — management interface for norms, generations, scrape jobs, and norm wiring"
+
+[app.modules]
+norms       = "Norm catalog display, builtin and auto-discovered norms"
+candidates  = "Norm candidate pool with consistency and observation tracking"
+generations = "Forge generation run records with compile status and token counts"
+scraping    = "Repository scrape job records with artifact and language summaries"
+wiring      = "Norm-to-norm wiring with service and rule additions"
+auth        = "JWT authentication, role-based access (admin, operator)"
+
+[backend]
+language  = "rust"
+framework = "actix-web"
+database  = "postgresql"
+auth_method = "jwt"
+
+[frontend]
+type    = "spa"
+framework = "vanilla"
+styling = "minimal"
+
+[deployment]
+containerized = true
+compose = true
+
+[constraints]
+max_crates     = 1
+test_coverage  = "integration"
+evidence_chain = true
+
+# ─── D2: Explicit entity definitions ─────────────────────────────────────────
+
+[[entities]]
+name = "User"
+[[entities.fields]]
+name = "email"
+field_type = "String"
+unique = true
+[[entities.fields]]
+name = "password_hash"
+field_type = "String"
+[[entities.fields]]
+name = "role"
+field_type = "String"
+default = "'user'"
+[[entities.fields]]
+name = "is_active"
+field_type = "bool"
+default = "true"
+
+# ── Entity: Norm ──────────────────────────────────────────────────────────────
+
+[[entities]]
+name = "Norm"
+[[entities.fields]]
+name = "norm_id"
+field_type = "String"
+[[entities.fields]]
+name = "name"
+field_type = "String"
+[[entities.fields]]
+name = "level"
+field_type = "String"
+[[entities.fields]]
+name = "version"
+field_type = "String"
+[[entities.fields]]
+name = "trigger_keywords"
+field_type = "String"
+[[entities.fields]]
+name = "layer_count"
+field_type = "i32"
+[[entities.fields]]
+name = "domain_count"
+field_type = "i32"
+[[entities.fields]]
+name = "observation_count"
+field_type = "i32"
+[[entities.fields]]
+name = "is_builtin"
+field_type = "bool"
+[[entities.fields]]
+name = "description"
+field_type = "String"
+nullable = true
+
+# ── Entity: NormCandidate ─────────────────────────────────────────────────────
+
+[[entities]]
+name = "NormCandidate"
+[[entities.fields]]
+name = "candidate_id"
+field_type = "String"
+[[entities.fields]]
+name = "status"
+field_type = "String"
+[[entities.fields]]
+name = "consistency"
+field_type = "f64"
+[[entities.fields]]
+name = "observation_count"
+field_type = "i32"
+[[entities.fields]]
+name = "domain_names"
+field_type = "String"
+[[entities.fields]]
+name = "layer_count"
+field_type = "i32"
+[[entities.fields]]
+name = "signature"
+field_type = "String"
+
+# ── Entity: Generation ────────────────────────────────────────────────────────
+
+[[entities]]
+name = "Generation"
+[[entities.fields]]
+name = "description"
+field_type = "String"
+[[entities.fields]]
+name = "domain"
+field_type = "String"
+[[entities.fields]]
+name = "status"
+field_type = "String"
+[[entities.fields]]
+name = "entity_count"
+field_type = "i32"
+[[entities.fields]]
+name = "file_count"
+field_type = "i32"
+[[entities.fields]]
+name = "token_count"
+field_type = "i32"
+[[entities.fields]]
+name = "compile_ok"
+field_type = "bool"
+[[entities.fields]]
+name = "duration_secs"
+field_type = "f64"
+[[entities.fields]]
+name = "output_path"
+field_type = "String"
+nullable = true
+
+# ── Entity: ScrapeJob ─────────────────────────────────────────────────────────
+
+[[entities]]
+name = "ScrapeJob"
+[[entities.fields]]
+name = "source_type"
+field_type = "String"
+[[entities.fields]]
+name = "source_path"
+field_type = "String"
+[[entities.fields]]
+name = "domain"
+field_type = "String"
+[[entities.fields]]
+name = "status"
+field_type = "String"
+[[entities.fields]]
+name = "file_count"
+field_type = "i32"
+[[entities.fields]]
+name = "artifact_count"
+field_type = "i32"
+[[entities.fields]]
+name = "language_summary"
+field_type = "String"
+nullable = true
+
+# ── Entity: NormWiring ────────────────────────────────────────────────────────
+
+[[entities]]
+name = "NormWiring"
+[[entities.fields]]
+name = "norm_a_id"
+field_type = "String"
+[[entities.fields]]
+name = "norm_b_id"
+field_type = "String"
+[[entities.fields]]
+name = "description"
+field_type = "String"
+[[entities.fields]]
+name = "add_services"
+field_type = "String"
+nullable = true
+[[entities.fields]]
+name = "add_rules"
+field_type = "String"
+nullable = true
+[[entities.foreign_keys]]
+target = "Norm"
