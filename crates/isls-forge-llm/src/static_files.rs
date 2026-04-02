@@ -8,53 +8,72 @@
 //! (Cargo.toml, Dockerfile, docker-compose.yml, .env.example, .gitignore).
 
 use crate::AppSpec;
+use crate::blueprint::InfraBlueprint;
 
 // ─── Cargo.toml ───────────────────────────────────────────────────────────────
 
-/// Generate a `backend/Cargo.toml` for the given application spec.
-pub fn generate_cargo_toml(spec: &AppSpec) -> String {
+/// Generate a `backend/Cargo.toml` for the given application spec and blueprint.
+pub fn generate_cargo_toml(spec: &AppSpec, bp: &InfraBlueprint) -> String {
     let name = &spec.app_name;
+    let mut deps = String::new();
+
+    // Always-included dependencies
+    deps.push_str("tokio           = { version = \"1\", features = [\"full\"] }\n");
+    deps.push_str("serde           = { version = \"1\", features = [\"derive\"] }\n");
+    deps.push_str("serde_json      = \"1\"\n");
+    deps.push_str("chrono          = { version = \"0.4\", features = [\"serde\"] }\n");
+    deps.push_str("tracing         = \"0.1\"\n");
+    deps.push_str("tracing-subscriber = { version = \"0.3\", features = [\"env-filter\"] }\n");
+    deps.push_str("dotenvy         = \"0.15\"\n");
+    deps.push_str("thiserror       = \"1\"\n");
+
+    if bp.has_http_server {
+        deps.push_str("actix-web       = \"4\"\n");
+        deps.push_str("actix-cors      = \"0.7\"\n");
+        deps.push_str("validator       = { version = \"0.18\", features = [\"derive\"] }\n");
+        deps.push_str("futures         = \"0.3\"\n");
+    }
+
+    if bp.has_database {
+        deps.push_str("sqlx            = { version = \"0.7\", features = [\"runtime-tokio-rustls\", \"postgres\", \"chrono\", \"uuid\"] }\n");
+        deps.push_str("uuid            = { version = \"1\", features = [\"v4\", \"serde\"] }\n");
+    }
+
+    if bp.has_auth {
+        deps.push_str("jsonwebtoken    = \"9\"\n");
+        deps.push_str("bcrypt          = \"0.15\"\n");
+    }
+
+    if bp.has_cli {
+        deps.push_str("clap            = { version = \"4\", features = [\"derive\"] }\n");
+    }
+
+    let mut sections = String::new();
+    if bp.has_binary {
+        sections.push_str(&format!("[[bin]]\nname = \"{name}\"\npath = \"src/main.rs\"\n\n"));
+    }
+    if bp.has_library {
+        sections.push_str("[lib]\npath = \"src/lib.rs\"\n\n");
+    }
+
+    let mut dev_deps = String::new();
+    if bp.has_http_server {
+        dev_deps.push_str("\n[dev-dependencies]\nactix-rt = \"2\"\n");
+    }
+
     format!(
-        r#"[package]
-name = "{name}"
-version = "0.1.0"
-edition = "2021"
-
-[[bin]]
-name = "{name}"
-path = "src/main.rs"
-
-[dependencies]
-actix-web       = "4"
-actix-cors      = "0.7"
-sqlx            = {{ version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "uuid"] }}
-tokio           = {{ version = "1", features = ["full"] }}
-serde           = {{ version = "1", features = ["derive"] }}
-serde_json      = "1"
-jsonwebtoken    = "9"
-bcrypt          = "0.15"
-chrono          = {{ version = "0.4", features = ["serde"] }}
-uuid            = {{ version = "1", features = ["v4", "serde"] }}
-tracing         = "0.1"
-tracing-subscriber = {{ version = "0.3", features = ["env-filter"] }}
-dotenvy         = "0.15"
-thiserror       = "1"
-validator       = {{ version = "0.18", features = ["derive"] }}
-futures         = "0.3"
-
-[dev-dependencies]
-actix-rt = "2"
-
-[workspace]
-"#,
-        name = name
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n{sections}[dependencies]\n{deps}{dev_deps}\n[workspace]\n",
+        name = name,
+        sections = sections,
+        deps = deps,
+        dev_deps = dev_deps,
     )
 }
 
 // ─── docker-compose.yml ───────────────────────────────────────────────────────
 
 /// Generate a `docker-compose.yml` for the application.
-pub fn generate_docker_compose(spec: &AppSpec) -> String {
+pub fn generate_docker_compose(spec: &AppSpec, _bp: &InfraBlueprint) -> String {
     let _name = &spec.app_name;
     let name_snake = spec.app_name_snake();
     format!(
@@ -118,7 +137,7 @@ volumes:
 // ─── Dockerfile ───────────────────────────────────────────────────────────────
 
 /// Generate a multi-stage Dockerfile for the Rust backend.
-pub fn generate_dockerfile(spec: &AppSpec) -> String {
+pub fn generate_dockerfile(spec: &AppSpec, _bp: &InfraBlueprint) -> String {
     let name = &spec.app_name;
     format!(
         r#"# ── Build stage ──────────────────────────────────────────────────────────────
@@ -154,7 +173,7 @@ CMD ["./server"]
 // ─── .env.example ─────────────────────────────────────────────────────────────
 
 /// Generate a `.env.example` file for the application.
-pub fn generate_env_example(spec: &AppSpec) -> String {
+pub fn generate_env_example(spec: &AppSpec, _bp: &InfraBlueprint) -> String {
     let name_snake = spec.app_name_snake();
     format!(
         r#"# Copy this file to .env and fill in your values.

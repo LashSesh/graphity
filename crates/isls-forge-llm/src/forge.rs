@@ -159,17 +159,18 @@ impl LlmForge {
 
     fn generate_static_files(&mut self) -> Result<()> {
         let spec = &self.plan.spec;
+        let bp = &self.plan.blueprint;
 
         self.write_file(
             "backend/Cargo.toml",
-            &static_files::generate_cargo_toml(spec),
+            &static_files::generate_cargo_toml(spec, bp),
         )?;
         self.write_file(
             "docker-compose.yml",
-            &static_files::generate_docker_compose(spec),
+            &static_files::generate_docker_compose(spec, bp),
         )?;
-        self.write_file("backend/Dockerfile", &static_files::generate_dockerfile(spec))?;
-        self.write_file(".env.example", &static_files::generate_env_example(spec))?;
+        self.write_file("backend/Dockerfile", &static_files::generate_dockerfile(spec, bp))?;
+        self.write_file(".env.example", &static_files::generate_env_example(spec, bp))?;
         self.write_file(".gitignore", static_files::GITIGNORE_TEMPLATE)?;
         self.write_file("frontend/nginx.conf", static_files::NGINX_CONF)?;
 
