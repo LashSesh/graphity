@@ -3,7 +3,8 @@
 //
 //! Built-in norm catalog for ISLS v3.0.
 //!
-//! Contains 21 molecule norms (0042–0240) and 3 organism norms (0500–0502).
+//! Contains 7 infrastructure atom norms (INFRA-*), 21 molecule norms (0042–0240),
+//! and 3 organism norms (0500–0502).
 
 use crate::types::{
     ApiArtifact, ConfigArtifact, DatabaseArtifact, FrontendArtifact, FrontendComponent,
@@ -15,6 +16,14 @@ use crate::types::{
 /// Return all built-in norms.
 pub fn builtin_norms() -> Vec<Norm> {
     vec![
+        // ── Infrastructure Atoms (D6) ──────────────────��──────────────────────
+        norm_infra_web(),
+        norm_infra_db(),
+        norm_infra_auth(),
+        norm_infra_frontend(),
+        norm_infra_docker(),
+        norm_infra_cli(),
+        norm_infra_lib(),
         // ── Molecules ──────────────────────────────────────────────────────────
         norm_crud_entity(),
         norm_crud_soft_delete(),
@@ -421,4 +430,91 @@ fn norm_project_tracker() -> Norm {
             ..Default::default()
         },
     )
+}
+
+// ── D6: Infrastructure Atom Norms ───────────────────────────────────────────
+// Infrastructure norms have empty NormLayers — they influence the
+// InfraBlueprint, not entity-level artifacts.
+
+fn norm_infra_web() -> Norm {
+    mk_norm(
+        "ISLS-NORM-INFRA-WEB", "Web-Server", NormLevel::Atom,
+        vec!["web", "server", "api", "rest", "http", "endpoint", "backend",
+             "app", "application", "service", "microservice"],
+        vec!["web-server", "http-server", "rest-api"],
+        vec![],
+        NormLayers::default(),
+    )
+}
+
+fn norm_infra_db() -> Norm {
+    mk_norm(
+        "ISLS-NORM-INFRA-DB", "Database", NormLevel::Atom,
+        vec!["database", "db", "postgres", "sql", "storage", "persist",
+             "table", "query", "migration", "data"],
+        vec!["persistence", "data-storage"],
+        vec![],
+        NormLayers::default(),
+    )
+}
+
+fn norm_infra_auth() -> Norm {
+    mk_norm(
+        "ISLS-NORM-INFRA-AUTH", "Authentication", NormLevel::Atom,
+        vec!["auth", "login", "register", "jwt", "token", "user",
+             "password", "session", "security"],
+        vec!["authentication", "authorization"],
+        vec![],
+        NormLayers::default(),
+    )
+}
+
+fn norm_infra_frontend() -> Norm {
+    mk_norm(
+        "ISLS-NORM-INFRA-FRONTEND", "Frontend", NormLevel::Atom,
+        vec!["frontend", "ui", "page", "dashboard", "interface", "browser",
+             "web ui", "html", "css", "javascript"],
+        vec!["web-frontend", "user-interface"],
+        vec![],
+        NormLayers::default(),
+    )
+}
+
+fn norm_infra_docker() -> Norm {
+    mk_norm(
+        "ISLS-NORM-INFRA-DOCKER", "Docker", NormLevel::Atom,
+        vec!["docker", "container", "deploy", "compose", "production",
+             "deployment"],
+        vec!["containerization", "deployment"],
+        vec![],
+        NormLayers::default(),
+    )
+}
+
+fn norm_infra_cli() -> Norm {
+    mk_norm(
+        "ISLS-NORM-INFRA-CLI", "CLI-Tool", NormLevel::Atom,
+        vec!["cli", "command", "terminal", "tool", "script", "batch",
+             "utility", "convert", "process", "parse"],
+        vec!["command-line", "cli-tool"],
+        vec![],
+        NormLayers::default(),
+    )
+}
+
+fn norm_infra_lib() -> Norm {
+    let mut norm = mk_norm(
+        "ISLS-NORM-INFRA-LIB", "Library", NormLevel::Atom,
+        vec!["library", "crate", "lib", "sdk", "module", "package"],
+        vec!["library", "reusable-module"],
+        vec![],
+        NormLayers::default(),
+    );
+    // Exclude web-server keywords to prevent co-activation
+    if let Some(trigger) = norm.triggers.first_mut() {
+        trigger.excludes = vec![
+            "server".into(), "web".into(), "app".into(), "deploy".into(),
+        ];
+    }
+    norm
 }
