@@ -104,19 +104,20 @@ fn entity_from_name(name: &str) -> String {
 }
 
 fn compute_pattern_signature(artifacts: &[ObservedArtifact]) -> String {
+    use std::collections::BTreeSet;
     let mut hasher = Sha256::new();
 
-    // Use structural shape (layer + type + generalized name) instead of
-    // content SHA-256.  This way "get_animal" (petshop) and "get_room"
-    // (hotel) produce the same signature and merge in the candidate pool.
-    let mut structural: Vec<String> = artifacts.iter().map(|a| {
-        let generalized = generalize_artifact_name(&a.name);
-        format!("{:?}:{}:{}", a.layer, a.artifact_type, generalized)
+    // Signature = sorted set of (layer, artifact_type) pairs.
+    // This captures the TOPOLOGY: which layers are present and what
+    // kinds of artifacts they contain (struct vs fn).
+    // It does NOT depend on entity names, function counts, or content.
+    // BTreeSet auto-deduplicates and sorts, so 5x "Query:fn" becomes 1x.
+    let layer_types: BTreeSet<String> = artifacts.iter().map(|a| {
+        format!("{:?}:{}", a.layer, a.artifact_type)
     }).collect();
-    structural.sort();
 
-    for s in &structural {
-        hasher.update(s.as_bytes());
+    for lt in &layer_types {
+        hasher.update(lt.as_bytes());
     }
     format!("{:x}", hasher.finalize())[..16].to_string()
 }
