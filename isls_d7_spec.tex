@@ -1,0 +1,982 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+\lstdefinestyle{rust}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,HashSet,PathBuf,Result,Option},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+\lstdefinestyle{json}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS D7 Spec --- Generationsspirale}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v1.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+  citecolor=isls-green,
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS D7 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} Generationsspirale: Das Cockpit}\\[0.3cm]
+{\large\color{isls-gray} Architekt-Modus + Drucker-Modus + Messbare Verbesserung}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}    & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}   & v4.1 (D7) \\
+\textbf{Author:}    & Sebastian Klemm \\
+\textbf{Date:}      & \today \\
+\textbf{Status:}    & Specification \\
+\textbf{Depends:}   & D6 (complete), isls-gateway, isls-chat \\
+\textbf{Branch:}    & \texttt{claude/implement-isls-d7-spec} \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+License: MIT
+}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+D1--D6 built the engine. D7 builds the cockpit.
+
+Until now, ISLS is operated through the CLI: \texttt{isls forge-chat 
+-m "..."} --- single-shot, one sentence, one app. This is powerful 
+for demos and testing, but inadequate for real work. Real projects 
+need iteration: ``Add a rating system.'' ``Make the booking entity 
+track cancellations.'' ``Actually, remove the frontend --- this should 
+be a headless API.''
+
+D7 transforms the existing \texttt{isls-gateway} into a two-mode 
+cockpit:
+
+\begin{description}[nosep]
+\item[Architekt-Modus] Multi-turn conversation. You describe, the 
+  system suggests entities and norms, you refine. A readiness 
+  indicator shows what is defined and what is missing. The 
+  conversation accumulates into an \texttt{AppSpec} incrementally.
+\item[Drucker-Modus] One button: ``Forge.'' The accumulated 
+  AppSpec flows through the HDAG pipeline (S0--S7). Real-time 
+  progress via WebSocket. Result page with file browser.
+\end{description}
+
+The \emph{Generationsspirale} is the measurement: apps generated 
+through the Cockpit (multi-turn, norm-enriched) vs. apps generated 
+through the CLI (single-shot). D7 logs metrics for both paths so 
+the comparison emerges naturally.
+
+\subsection{What Exists Already}
+
+The \texttt{isls-gateway} crate contains substantial infrastructure:
+
+\begin{itemize}[nosep]
+\item Axum HTTP server with 30+ routes.
+\item Embedded Studio HTML (single-page app, dark theme, 9 views).
+\item \texttt{POST /api/chat}: norm-aware intent extraction, plan 
+      composition, pending plan storage.
+\item \texttt{POST /api/projects/forge}: takes a plan ID, runs the 
+      full forge pipeline, returns results.
+\item WebSocket event hub (\texttt{/events}) with subscribe/publish.
+\item In-memory project store, norm registry integration.
+\item \texttt{POST /agent/chat}: background job runner for code 
+      modifications.
+\end{itemize}
+
+D7 does not rewrite this. D7 extends it with: (1) multi-turn 
+conversation state, (2) readiness check, (3) forge progress 
+streaming, (4) Studio HTML upgrade.
+
+\subsection{What D7 Achieves}
+
+\begin{enumerate}[nosep]
+\item \textbf{Conversation Sessions:} Multi-turn chat that 
+      accumulates entities, relationships, and constraints.
+\item \textbf{Readiness Check:} API that evaluates the current 
+      session state and returns a completeness assessment.
+\item \textbf{Live Forge:} Forge execution with WebSocket progress 
+      events (node-by-node, compile status, final result).
+\item \textbf{Studio Upgrade:} Chat view, readiness indicator, 
+      forge button, progress view, result file browser.
+\item \textbf{Generation Metrics:} Each generation logs token 
+      count, compile success, entity count, duration --- enabling 
+      CLI vs. Cockpit comparison.
+\end{enumerate}
+
+\subsection{What D7 is NOT}
+
+\begin{itemize}[nosep]
+\item \textbf{Not a rewrite of isls-gateway.} Existing routes 
+      and handlers remain. New endpoints are added alongside.
+\item \textbf{Not a full IDE.} No code editor, no file tree 
+      editing, no git integration. The Studio shows results, 
+      it doesn't edit them.
+\item \textbf{Not multi-user.} Single operator. No accounts 
+      beyond what the generated app provides.
+\item \textbf{Not persistent storage.} Sessions and projects 
+      are in-memory for now. Persistence is D8.
+\end{itemize}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The Two Modes}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Architekt-Modus: Conversation $\to$ AppSpec}
+
+The architect conversation is a sequence of messages that 
+incrementally builds an \texttt{AppSpec}:
+
+\begin{lstlisting}[style=bash]
+USER: "I need a system to manage my crypto trading journal.
+       Trades, portfolios, and performance metrics."
+
+ISLS: Found 3 entities: Trade, Portfolio, PerformanceMetric.
+      Activated norms: CRUD-Entity, JWT-Auth, Dashboard-KPI.
+      Infrastructure: Web-Server + Database + Auth + Frontend.
+      
+      Missing: Trade has no fields defined yet. What should
+      a Trade look like?
+
+USER: "Each trade has: pair (like BTC/USDT), side (buy/sell), 
+       entry price, exit price, quantity, timestamp, notes."
+
+ISLS: Updated Trade with 7 fields. Added FK: Trade -> Portfolio.
+      Readiness: 72% (PerformanceMetric has no fields yet).
+
+USER: "Performance metrics are computed — average win rate, 
+       total PnL, Sharpe ratio. Actually, make this a 
+       headless API, no frontend."
+
+ISLS: Updated PerformanceMetric (3 computed fields).
+      Removed Frontend infrastructure.
+      Readiness: 95% — ready to forge.
+      
+      [FORGE] button active.
+\end{lstlisting}
+
+Each user message is sent via \texttt{POST /api/session/\{id\}/message}.
+The backend:
+\begin{enumerate}[nosep]
+\item Sends the conversation history + current AppSpec to the LLM.
+\item LLM returns a structured JSON with entity updates, new 
+      entities, removed entities, infrastructure changes.
+\item Backend merges the updates into the session's AppSpec.
+\item Returns the updated state + readiness assessment.
+\end{enumerate}
+
+\subsection{Drucker-Modus: AppSpec $\to$ Compiled Application}
+
+When the readiness check passes (or the user forces it), the 
+``Forge'' button triggers:
+
+\begin{enumerate}[nosep]
+\item Convert session AppSpec to TOML (using existing 
+      \texttt{json\_to\_toml()}).
+\item Write TOML to temp file.
+\item Call \texttt{forge-v2} pipeline with the TOML.
+\item Stream progress events via WebSocket:
+      \begin{itemize}[nosep]
+      \item \texttt{forge:node} --- for each HDAG node processed.
+      \item \texttt{forge:compile} --- cargo check started/passed/failed.
+      \item \texttt{forge:coagula} --- S6 fix cycle (if triggered).
+      \item \texttt{forge:complete} --- final result with stats.
+      \end{itemize}
+\item Store result in project store.
+\item Display result page with file browser.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Work Packages}
+% ══════════════════════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W1: Conversation Sessions}
+\label{sec:w1}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Add session-based multi-turn conversation state to the gateway.
+
+\subsubsection{Data Structures}
+
+\begin{lstlisting}[style=rust]
+/// A conversation session accumulating toward an AppSpec.
+pub struct ArchitectSession {
+    pub id: String,
+    pub created_at: String,
+    /// Full conversation history.
+    pub messages: Vec<SessionMessage>,
+    /// The evolving AppSpec (starts empty, grows per turn).
+    pub spec: AppSpec,
+    /// Activated infrastructure norms.
+    pub infra_norms: Vec<String>,
+    /// Blueprint derived from infra norms.
+    pub blueprint: InfraBlueprint,
+    /// API key for LLM calls (provided at session creation).
+    pub api_key: Option<String>,
+    /// LLM model name.
+    pub model: String,
+    /// Generation result (after forge).
+    pub forge_result: Option<ForgeResult>,
+}
+
+pub struct SessionMessage {
+    pub role: String,    // "user" or "assistant"
+    pub content: String,
+    pub timestamp: String,
+    /// Structured updates extracted from this message.
+    pub updates: Option<SpecUpdate>,
+}
+
+pub struct SpecUpdate {
+    pub entities_added: Vec<String>,
+    pub entities_modified: Vec<String>,
+    pub entities_removed: Vec<String>,
+    pub infra_changes: Vec<String>,
+}
+\end{lstlisting}
+
+\subsubsection{New Endpoints}
+
+\begin{longtable}{llp{6cm}}
+\toprule
+\textbf{Method} & \textbf{Path} & \textbf{Purpose} \\
+\midrule
+POST & \texttt{/api/session} 
+  & Create new session. Body: \texttt{\{api\_key, model?\}}. 
+    Returns session ID. \\
+GET & \texttt{/api/session/\{id\}} 
+  & Get session state: messages, current AppSpec, readiness. \\
+POST & \texttt{/api/session/\{id\}/message} 
+  & Send user message. Triggers LLM call. Returns assistant 
+    response + updated AppSpec + readiness. \\
+DELETE & \texttt{/api/session/\{id\}} 
+  & Delete session. \\
+GET & \texttt{/api/sessions} 
+  & List all active sessions. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{LLM Conversation Protocol}
+
+When \texttt{/api/session/\{id\}/message} is called:
+
+\begin{enumerate}[nosep]
+\item Build LLM prompt:
+      \begin{itemize}[nosep]
+      \item System message: ``You are an architecture assistant for 
+            ISLS. Extract entities, fields, relationships, and 
+            infrastructure requirements from the conversation. 
+            Return a JSON object with updates.''
+      \item Conversation history (all previous messages).
+      \item Current AppSpec as context.
+      \item User's new message.
+      \end{itemize}
+\item Call Oracle (OpenAI API) with the prompt.
+\item Parse response: the LLM returns both a human-readable 
+      message AND a structured JSON block (fenced with 
+      \texttt{```json ... ```}).
+\item Apply the structured updates to the session's AppSpec.
+\item Recompute readiness.
+\item Return the assistant message + updated state.
+\end{enumerate}
+
+The LLM prompt instructs the model to return a specific JSON schema:
+
+\begin{lstlisting}[style=json]
+{
+  "message": "Human-readable response to the user.",
+  "updates": {
+    "entities_add": [
+      { "name": "Trade", "fields": [
+        { "name": "pair", "field_type": "String" },
+        { "name": "entry_price", "field_type": "f64" }
+      ], "foreign_keys": [] }
+    ],
+    "entities_modify": [
+      { "name": "Portfolio", "add_fields": [
+        { "name": "total_value", "field_type": "f64" }
+      ], "remove_fields": [] }
+    ],
+    "entities_remove": [],
+    "infra": {
+      "remove_frontend": true,
+      "add_cli": false
+    }
+  }
+}
+\end{lstlisting}
+
+\subsubsection{Fallback: No LLM Available}
+
+If no API key is provided or the call fails, the session still 
+works in manual mode: the user can directly add/modify entities 
+via \texttt{POST /api/session/\{id\}/entity}. The architect 
+conversation degrades gracefully to a structured form.
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-gateway/src/session.rs}
+  & \texttt{ArchitectSession}, \texttt{SessionMessage}, 
+    \texttt{SpecUpdate}, session management logic. \\
+\texttt{isls-gateway/src/architect.rs}
+  & LLM conversation protocol: prompt building, response 
+    parsing, AppSpec merging. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-gateway/src/lib.rs}
+  & Add session routes, session store to AppState, 
+    \texttt{pub mod session; pub mod architect;} \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item Create session: \texttt{POST /api/session} $\to$ 201 with 
+      session ID.
+\item Send message: \texttt{POST /api/session/\{id\}/message} 
+      with ``Build me a pet shop app'' $\to$ response with 
+      entities and readiness.
+\item Send follow-up: ``Add a vaccination record for each pet'' 
+      $\to$ entity modified, readiness updated.
+\item Get state: \texttt{GET /api/session/\{id\}} shows full 
+      conversation + accumulated AppSpec.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W2: Readiness Check}
+\label{sec:w2}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Evaluate the current session state and report what is complete, 
+what is missing, and whether the AppSpec is ready for forge.
+
+\subsubsection{Readiness Criteria}
+
+\begin{longtable}{lp{8cm}l}
+\toprule
+\textbf{Criterion} & \textbf{Description} & \textbf{Weight} \\
+\midrule
+\texttt{has\_entities}
+  & At least 1 non-User entity exists.
+  & Required \\
+\texttt{entities\_have\_fields}
+  & Every entity has $\geq$1 field.
+  & Required \\
+\texttt{has\_app\_name}
+  & AppSpec has a non-empty app\_name.
+  & Required \\
+\texttt{fk\_targets\_valid}
+  & All FK targets reference existing entities.
+  & Required \\
+\texttt{has\_description}
+  & AppSpec has a non-empty description.
+  & +10\% \\
+\texttt{entities\_have\_types}
+  & All fields have valid types (String, i32, i64, f64, bool).
+  & +15\% \\
+\texttt{has\_relationships}
+  & At least 1 FK exists.
+  & +10\% \\
+\texttt{multi\_entity}
+  & $\geq$3 entities (richer domain).
+  & +15\% \\
+\bottomrule
+\end{longtable}
+
+``Required'' criteria must all pass for the forge button to activate.
+Percentage criteria contribute to the readiness score (0--100\%).
+
+\subsubsection{API}
+
+\begin{lstlisting}[style=json]
+GET /api/session/{id}/readiness
+
+Response:
+{
+  "ready": true,
+  "score": 85,
+  "criteria": {
+    "has_entities": { "met": true, "detail": "3 entities" },
+    "entities_have_fields": { "met": true },
+    "has_app_name": { "met": true, "detail": "crypto-journal" },
+    "fk_targets_valid": { "met": true },
+    "has_description": { "met": true, "score": 10 },
+    "entities_have_types": { "met": false, 
+      "detail": "PerformanceMetric.sharpe_ratio has no type",
+      "score": 0 },
+    "has_relationships": { "met": true, "score": 10 },
+    "multi_entity": { "met": true, "score": 15 }
+  },
+  "suggestions": [
+    "Add type to PerformanceMetric.sharpe_ratio (String/i32/f64/bool)"
+  ]
+}
+\end{lstlisting}
+
+The readiness check is also computed automatically after each 
+\texttt{/api/session/\{id\}/message} response and included in the 
+response body.
+
+\subsubsection{W2 Verification}
+
+\begin{enumerate}[nosep]
+\item Empty session: readiness = 0, \texttt{ready = false}.
+\item Session with 1 entity + fields: readiness $>$0, 
+      \texttt{ready = true} (required criteria met).
+\item Session with incomplete fields: \texttt{suggestions} 
+      lists the missing items.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W3: Live Forge Integration}
+\label{sec:w3}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Connect the session's accumulated AppSpec to the forge pipeline 
+with real-time WebSocket progress streaming.
+
+\subsubsection{Endpoint}
+
+\begin{lstlisting}[style=bash]
+POST /api/session/{id}/forge
+Body: { "output_dir": "./output/my-project" }  (optional)
+\end{lstlisting}
+
+\subsubsection{Pipeline}
+
+\begin{enumerate}[nosep]
+\item Validate readiness (required criteria must pass).
+\item Convert AppSpec to TOML string via \texttt{json\_to\_toml()}.
+\item Write TOML to temporary file.
+\item Derive InfraBlueprint from session's infra norms.
+\item Build ForgePlan (spec + norm\_ids + blueprint).
+\item Spawn background task running \texttt{StagedClosure::execute()}.
+\item During execution, publish WebSocket events:
+\end{enumerate}
+
+\subsubsection{WebSocket Event Types}
+
+\begin{lstlisting}[style=json]
+{ "type": "forge:start", "session_id": "...", 
+  "total_nodes": 50 }
+
+{ "type": "forge:node", "index": 21, "total": 50,
+  "path": "backend/src/database/norm_queries.rs",
+  "method": "llm", "tokens": 2340 }
+
+{ "type": "forge:compile", "status": "running" }
+{ "type": "forge:compile", "status": "passed" }
+{ "type": "forge:compile", "status": "failed", 
+  "errors": 12 }
+
+{ "type": "forge:coagula", "cycle": 1, "max": 3 }
+
+{ "type": "forge:complete", "success": true,
+  "files": 50, "loc": 2535, "tokens": 17263,
+  "duration_secs": 232.9, "output_dir": "..." }
+\end{lstlisting}
+
+\subsubsection{Implementation}
+
+The forge runs in a \texttt{tokio::spawn} background task.
+The challenge: \texttt{StagedClosure} is synchronous 
+(blocking \texttt{cargo check}). Solution: wrap the forge 
+execution in \texttt{tokio::task::spawn\_blocking()} and use 
+a channel (\texttt{tokio::sync::mpsc}) to send progress events 
+back to the async context, which publishes them to the WebSocket 
+hub.
+
+The \texttt{StagedClosure} needs minor modification: a callback 
+hook after each node is processed (currently it only prints to 
+stderr). Add an optional \texttt{progress\_callback: Option<Box<dyn 
+Fn(ForgeProgress) + Send>>} to \texttt{StagedClosure} that fires 
+after each node.
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-gateway/src/lib.rs}
+  & Add \texttt{POST /api/session/\{id\}/forge} route. \\
+\texttt{isls-gateway/src/session.rs}
+  & Add \texttt{forge\_session()} that converts session state 
+    to ForgePlan and runs pipeline. \\
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & Add optional \texttt{progress\_callback} field. Fire 
+    callback after each node in S4 Solve. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W3 Verification}
+
+\begin{enumerate}[nosep]
+\item Create session, send messages until ready.
+\item \texttt{POST /api/session/\{id\}/forge} --- starts 
+      background forge.
+\item WebSocket client receives \texttt{forge:start}, 
+      \texttt{forge:node} (50x), \texttt{forge:compile}, 
+      \texttt{forge:complete} events.
+\item Session's \texttt{forge\_result} is populated.
+\item Output directory contains compiled application.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W4: Generation Metrics}
+\label{sec:w4}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Log metrics for every generation (CLI and Cockpit) to enable 
+the Gen~2 vs.\ Gen~1 comparison.
+
+\subsubsection{Metrics Structure}
+
+\begin{lstlisting}[style=rust]
+pub struct GenerationMetrics {
+    pub id: String,
+    pub timestamp: String,
+    pub source: GenerationSource, // Cli | Cockpit
+    pub description: String,
+    pub entity_count: usize,
+    pub file_count: usize,
+    pub structural_files: usize,
+    pub llm_files: usize,
+    pub total_tokens: u64,
+    pub compile_success: bool,
+    pub coagula_cycles: u32,
+    pub duration_secs: f64,
+    pub norms_activated: Vec<String>,
+    pub conversation_turns: usize, // 1 for CLI, N for Cockpit
+}
+
+pub enum GenerationSource {
+    Cli,      // forge-chat, forge-v2
+    Cockpit,  // /api/session/{id}/forge
+}
+\end{lstlisting}
+
+\subsubsection{Storage}
+
+Metrics are appended to \texttt{\textasciitilde/.isls/metrics.jsonl} 
+(one JSON object per line, append-only). Both CLI 
+(\texttt{staged\_closure.rs}) and gateway (\texttt{session.rs}) 
+write to the same file.
+
+\subsubsection{CLI Inspection}
+
+\begin{lstlisting}[style=bash]
+isls metrics                    # Summary
+isls metrics --compare          # CLI vs Cockpit comparison
+isls metrics --last 10          # Last 10 generations
+\end{lstlisting}
+
+\subsubsection{The Spiral Measurement}
+
+After enough generations through both paths, \texttt{isls metrics 
+--compare} shows:
+
+\begin{lstlisting}[style=bash]
+ISLS Generation Metrics — CLI vs Cockpit
+---
+                    CLI (Gen 1)    Cockpit (Gen 2)
+Generations:        12             5
+Avg entities:       5.3            7.8
+Avg tokens:         12,400         15,100
+Compile success:    83%            100%
+Avg coagula:        0.42           0.00
+Avg duration:       180s           240s
+Conversation turns: 1.0            4.2
+\end{lstlisting}
+
+If Cockpit apps compile more reliably and have richer entity 
+models (due to multi-turn refinement), Gen~2 $>$ Gen~1 is proven.
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-forge-llm/src/metrics.rs}
+  & \texttt{GenerationMetrics} struct, \texttt{append\_metrics()},
+    \texttt{load\_metrics()}, comparison logic. \\
+\texttt{isls-cli/src/cmd\_metrics.rs}
+  & \texttt{isls metrics} subcommand handlers. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W4 Verification}
+
+\begin{enumerate}[nosep]
+\item Run \texttt{isls forge-chat} --- verify 
+      \texttt{\textasciitilde/.isls/metrics.jsonl} has an entry 
+      with \texttt{source: "cli"}.
+\item Run a Cockpit forge --- verify entry with 
+      \texttt{source: "cockpit"}.
+\item \texttt{isls metrics} --- shows summary.
+\item \texttt{isls metrics --compare} --- shows comparison table 
+      (even with 1 entry per source).
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W5: Studio Frontend}
+\label{sec:w5}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Upgrade the embedded Studio HTML with a chat interface, readiness 
+indicator, forge button, progress view, and result browser.
+
+\subsubsection{Approach}
+
+The Studio is a single embedded HTML file 
+(\texttt{static/studio.html}). It uses vanilla JS with no build 
+step. The existing Studio has 9 views. D7 adds/modifies 3:
+
+\begin{enumerate}[nosep]
+\item \textbf{Architect View (new):} Chat interface on the left. 
+      Readiness panel on the right. Entity list below readiness. 
+      Forge button at bottom (disabled until ready, green when 
+      ready).
+\item \textbf{Forge Progress View (new):} Progress bar showing 
+      nodes processed. Log stream (one line per node). Compile 
+      status indicator. Pulsing animation during LLM calls.
+\item \textbf{Result View (modify existing Project view):} File 
+      tree of generated project. Click to view file content. 
+      Stats summary (files, LOC, tokens, duration).
+\end{enumerate}
+
+\subsubsection{Chat UI}
+
+\begin{itemize}[nosep]
+\item Message input at bottom (textarea + send button).
+\item Messages displayed as chat bubbles (user = right/blue, 
+      assistant = left/gray).
+\item Entity cards appear inline when the assistant reports 
+      new/modified entities.
+\item Typing indicator during LLM call.
+\item Send button disabled while waiting for response.
+\end{itemize}
+
+\subsubsection{Readiness Panel}
+
+\begin{itemize}[nosep]
+\item Circular progress indicator (0--100\%).
+\item Checklist of criteria (green check / red X / gray pending).
+\item Suggestions shown as yellow hints.
+\item ``FORGE'' button at bottom: gray when not ready, 
+      pulsing green when ready.
+\end{itemize}
+
+\subsubsection{Progress View}
+
+\begin{itemize}[nosep]
+\item Triggered automatically when forge starts.
+\item Progress bar: \texttt{21/50 nodes [=========>          ] 42\%}
+\item Each node appears as a log line with icon:
+      \begin{itemize}[nosep]
+      \item Wrench icon for structural nodes.
+      \item Brain icon for LLM nodes.
+      \item Checkmark for completed.
+      \end{itemize}
+\item Compile status: spinning $\to$ green check / red X.
+\item Auto-transitions to Result View on completion.
+\end{itemize}
+
+\subsubsection{W5 Verification}
+
+\begin{enumerate}[nosep]
+\item Open \texttt{http://localhost:8420/studio} in browser.
+\item Navigate to Architect view.
+\item Type a description, see entity cards appear.
+\item See readiness indicator update.
+\item Click Forge when ready.
+\item See progress view with node-by-node updates.
+\item See result view with file browser.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{File Inventory}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{New Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Purpose} \\
+\midrule
+isls-gateway & \texttt{src/session.rs}
+  & Session state, management, readiness check \\
+isls-gateway & \texttt{src/architect.rs}
+  & LLM conversation protocol, AppSpec merging \\
+isls-forge-llm & \texttt{src/metrics.rs}
+  & Generation metrics logging \& comparison \\
+isls-cli & \texttt{src/cmd\_metrics.rs}
+  & \texttt{isls metrics} CLI subcommand \\
+\bottomrule
+\end{longtable}
+
+\subsection{Modified Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Change} \\
+\midrule
+isls-gateway & \texttt{src/lib.rs}
+  & Session routes, session store in AppState \\
+isls-gateway & \texttt{src/static/studio.html}
+  & Architect view, progress view, result view \\
+isls-forge-llm & \texttt{src/staged\_closure.rs}
+  & Progress callback hook \\
+isls-forge-llm & \texttt{src/lib.rs}
+  & \texttt{pub mod metrics;} \\
+isls-cli & \texttt{src/main.rs}
+  & Metrics command, metrics logging in forge paths \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The 12 Rules --- D7 Compliance}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Status} & \textbf{D7 Impact} \\
+\midrule
+1  & \color{isls-green}\checkmark & LLM surface unchanged.
+     The architect LLM call is for conversation, not code gen. \\
+2  & \color{isls-green}\checkmark & No module changes in 
+     forge-llm (except metrics + callback). \\
+3  & \color{isls-green}\checkmark & Entity naming convention 
+     enforced by architect protocol (PascalCase). \\
+4--9  & \color{isls-green}\checkmark & No changes to generation 
+     pipeline. Rules apply to generated output, which is unchanged. \\
+10 & \color{isls-green}\checkmark & LLM failure in architect 
+     mode $\to$ manual fallback. Forge failure $\to$ error event 
+     via WebSocket. \\
+11 & \color{isls-green}\checkmark & ProvidedSymbol unchanged. \\
+12 & \color{isls-green}\checkmark & Forge prompts unchanged. \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{Do not rewrite} \texttt{isls-gateway/src/lib.rs} or 
+      \texttt{studio.html} from scratch. Add to them incrementally.
+\item \textbf{Do not modify} the forge pipeline (hdag.rs, 
+      structural.rs, static\_files.rs, blueprint.rs) except for 
+      adding the progress callback to staged\_closure.rs.
+\item \textbf{Do not modify} isls-norms, isls-reader, isls-code-topo, 
+      isls-hypercube, isls-types.
+\item \textbf{Session state is in-memory} (HashMap in AppState). 
+      No database, no file persistence for sessions.
+\item \textbf{Metrics persistence} uses 
+      \texttt{\textasciitilde/.isls/metrics.jsonl} (append-only).
+      Use the same \texttt{dirs\_path()} with USERPROFILE fallback 
+      from D4.
+\item The Oracle calls in architect mode use the existing 
+      \texttt{OpenAiOracle} from isls-forge-llm. No new HTTP 
+      client.
+\item The Studio HTML remains a single embedded file. No external 
+      JS frameworks, no build step.
+\item All new code MUST compile with \texttt{cargo build --workspace}.
+\item \texttt{cargo test --workspace} --- all existing tests pass 
+      (192+), plus new tests.
+\item Branch: \texttt{claude/implement-isls-d7-spec}.
+\item Commit format: \texttt{D7/W\{n\}: <description>}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Dependency Graph}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{verbatim}
+W1 (Conversation Sessions)
+  |
+  v
+W2 (Readiness Check)
+  |
+  v
+W3 (Live Forge Integration)
+  |
+  v
+W4 (Generation Metrics)   [parallel-safe with W3]
+  |
+  v
+W5 (Studio Frontend)
+\end{verbatim}
+
+W1 $\to$ W2 $\to$ W3 is the critical path. W4 can run in parallel 
+with W3 (it modifies different files). W5 depends on all previous 
+WPs because it renders their outputs.
+
+Recommended: W1 $\to$ W2 $\to$ W4 $\to$ W3 $\to$ W5.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Acceptance Criteria}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Pass} & \textbf{Criterion} \\
+\midrule
+1 & & \texttt{cargo build --workspace} compiles. \\
+2 & & \texttt{cargo test --workspace} passes (192+). \\
+3 & & Create session + 3 messages + get readiness via REST. \\
+4 & & Forge from session produces compiled application. \\
+5 & & WebSocket receives forge progress events. \\
+6 & & \texttt{isls metrics} shows generation entries. \\
+7 & & Studio Architect view renders in browser. \\
+8 & & Studio Forge progress view shows node-by-node updates. \\
+9 & & All 6 D4 pipeline apps still compile (backward compat). \\
+\bottomrule
+\end{longtable}
+
+D7 is passed when criteria 1--4 and 6 are fulfilled.
+Criteria 5, 7, 8 depend on browser/WebSocket testing.
+Criterion 9 is tested by the pipeline bat.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Verification Sequence}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \texttt{cargo build --workspace}
+\item \texttt{cargo test --workspace}
+\item \texttt{isls serve --port 8420 --api-key \$KEY}
+\item \texttt{curl -X POST http://localhost:8420/api/session 
+      -d '\{"api\_key":"..."\}'} $\to$ session ID
+\item \texttt{curl -X POST http://localhost:8420/api/session/\{id\}/message 
+      -d '\{"message":"Pet shop app"\}'} $\to$ entities + readiness
+\item Repeat with refinement messages.
+\item \texttt{curl http://localhost:8420/api/session/\{id\}/readiness}
+      $\to$ score + criteria
+\item \texttt{curl -X POST http://localhost:8420/api/session/\{id\}/forge}
+      $\to$ starts forge
+\item Verify output directory contains compiled app.
+\item \texttt{isls metrics} $\to$ shows entry with source ``cockpit''.
+\item Open \texttt{http://localhost:8420/studio} $\to$ Architect 
+      view works.
+\item Run pipeline bat $\to$ all 6 D4 apps still compile.
+\end{enumerate}
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of D7 Specification.\\[0.3em]
+Der Architekt entwirft. Der Drucker materialisiert.\\
+Die Spirale misst ob Gen~2 besser ist als Gen~1.}
+\end{center}
+
+\end{document}
