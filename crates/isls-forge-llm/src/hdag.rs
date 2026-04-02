@@ -10,6 +10,7 @@
 use std::collections::BTreeSet;
 
 use crate::{AppSpec, EntityDef};
+use crate::blueprint::InfraBlueprint;
 use crate::provided;
 
 // ─── Symbol types ─────────────────────────────────────────────────────────────
@@ -103,11 +104,12 @@ pub struct CodegenHdag {
 }
 
 impl CodegenHdag {
-    /// Build the Codegen-HDAG deterministically from the given [`AppSpec`].
+    /// Build the Codegen-HDAG deterministically from an [`AppSpec`] and
+    /// [`InfraBlueprint`]. Node creation is conditional on blueprint flags.
     ///
-    /// Creates nodes for every file in the generated project (both Structural
-    /// and LLM) and wires typed edges with [`ProvidedSymbol`] sets.
-    pub fn build(spec: &AppSpec) -> Self {
+    /// When called with `default_web_blueprint()`, produces the same nodes
+    /// and edges as the pre-D6 `build_legacy()`.
+    pub fn build(spec: &AppSpec, bp: &InfraBlueprint) -> Self {
         let mut nodes: Vec<HdagNode> = Vec::new();
         let mut edges: Vec<HdagEdge> = Vec::new();
 
@@ -128,69 +130,85 @@ impl CodegenHdag {
             idx
         };
 
-        // ── Layer 0: Structural / static files ───────────────────────────────
-        // These are all written deterministically — no LLM token cost.
-
+        // ── Layer 0: Structural / static files (conditional on blueprint) ────
         let _cargo_toml    = add_node("backend/Cargo.toml",          NodeType::Structural, 0, None, false, "Workspace Cargo.toml");
-        let _dockerfile    = add_node("backend/Dockerfile",          NodeType::Structural, 0, None, false, "Multi-stage Dockerfile");
-        let _compose       = add_node("docker-compose.yml",          NodeType::Structural, 0, None, false, "Docker Compose orchestration");
-        let _env_example   = add_node(".env.example",                NodeType::Structural, 0, None, false, "Environment template");
+        if bp.has_docker {
+            add_node("backend/Dockerfile",          NodeType::Structural, 0, None, false, "Multi-stage Dockerfile");
+            add_node("docker-compose.yml",          NodeType::Structural, 0, None, false, "Docker Compose orchestration");
+            add_node(".env.example",                NodeType::Structural, 0, None, false, "Environment template");
+        }
         let _gitignore     = add_node(".gitignore",                  NodeType::Structural, 0, None, false, "Git ignore rules");
-        let _nginx         = add_node("frontend/nginx.conf",         NodeType::Structural, 0, None, false, "Nginx reverse proxy config");
-        let _migration     = add_node("backend/migrations/001_initial.sql", NodeType::Structural, 0, None, false, "Initial database migration");
+        if bp.has_frontend {
+            add_node("frontend/nginx.conf",         NodeType::Structural, 0, None, false, "Nginx reverse proxy config");
+        }
+        if bp.has_database {
+            add_node("backend/migrations/001_initial.sql", NodeType::Structural, 0, None, false, "Initial database migration");
+        }
         let _main_rs       = add_node("backend/src/main.rs",         NodeType::Structural, 0, None, true,  "Application entry point");
         let _models_mod    = add_node("backend/src/models/mod.rs",   NodeType::Structural, 0, None, true,  "Models module declarations");
-        let _db_mod        = add_node("backend/src/database/mod.rs", NodeType::Structural, 0, None, true,  "Database module declarations");
-        let _svc_mod       = add_node("backend/src/services/mod.rs", NodeType::Structural, 0, None, true,  "Services module declarations");
-        let _api_mod       = add_node("backend/src/api/mod.rs",      NodeType::Structural, 0, None, true,  "API module declarations + configure_routes");
+        if bp.has_database {
+            add_node("backend/src/database/mod.rs", NodeType::Structural, 0, None, true,  "Database module declarations");
+        }
+        if bp.has_http_server || bp.has_cli {
+            add_node("backend/src/services/mod.rs", NodeType::Structural, 0, None, true,  "Services module declarations");
+        }
+        if bp.has_http_server {
+            add_node("backend/src/api/mod.rs",      NodeType::Structural, 0, None, true,  "API module declarations + configure_routes");
+        }
 
-        // ── Layer 0: Frontend (structural) ───────────────────────────────────
-        let _fe_index  = add_node("frontend/index.html",             NodeType::Structural, 8, None, false, "SPA shell");
-        let _fe_style  = add_node("frontend/style.css",              NodeType::Structural, 8, None, false, "Application styles");
-        let _fe_client = add_node("frontend/src/api/client.js",      NodeType::Structural, 8, None, false, "Fetch-based API client");
-        for entity in spec.entities.iter().filter(|e| e.name != "User") {
-            add_node(
-                &format!("frontend/src/pages/{}.js", entity.snake_name),
-                NodeType::Structural, 8, Some(entity.name.clone()), false,
-                &format!("{} CRUD page", entity.name),
-            );
+        // ── Layer 0: Frontend (conditional on blueprint) ─────────────────────
+        if bp.has_frontend {
+            add_node("frontend/index.html",             NodeType::Structural, 8, None, false, "SPA shell");
+            add_node("frontend/style.css",              NodeType::Structural, 8, None, false, "Application styles");
+            add_node("frontend/src/api/client.js",      NodeType::Structural, 8, None, false, "Fetch-based API client");
+            for entity in spec.entities.iter().filter(|e| e.name != "User") {
+                add_node(
+                    &format!("frontend/src/pages/{}.js", entity.snake_name),
+                    NodeType::Structural, 8, Some(entity.name.clone()), false,
+                    &format!("{} CRUD page", entity.name),
+                );
+            }
         }
 
         // ── Layer 9: Tests (structural / mock) ───────────────────────────────
         let _tests = add_node("backend/tests/api_tests.rs", NodeType::Structural, 9, None, true, "Integration test placeholders");
 
-        // ── Layer 1: Foundation structural nodes (deterministic — no LLM, no token cost) ──
-        // These files have known, fixed shapes that MUST match the ProvidedSymbol signatures
-        // in provided.rs exactly.  Making them structural eliminates the #1 source of
-        // type-mismatch compile errors downstream.
-        let errors_idx = add_node(
-            "backend/src/errors.rs", NodeType::Structural, 1, None, true,
-            "AppError enum — generated by structural::generate_errors_rs()",
-        );
-        let config_idx = add_node(
-            "backend/src/config.rs", NodeType::Structural, 1, None, true,
-            "AppConfig from env — generated by structural::generate_config_rs()",
-        );
-        let pagination_idx = add_node(
-            "backend/src/pagination.rs", NodeType::Structural, 1, None, true,
-            "PaginationParams + PaginatedResponse<T> — generated by structural::generate_pagination_rs()",
-        );
+        // ── Layer 1: Foundation structural nodes ─────────────────────────────
+        let errors_idx = if bp.has_http_server {
+            Some(add_node(
+                "backend/src/errors.rs", NodeType::Structural, 1, None, true,
+                "AppError enum — generated by structural::generate_errors_rs()",
+            ))
+        } else { None };
+        let config_idx = if bp.has_http_server {
+            Some(add_node(
+                "backend/src/config.rs", NodeType::Structural, 1, None, true,
+                "AppConfig from env — generated by structural::generate_config_rs()",
+            ))
+        } else { None };
+        let pagination_idx = if bp.has_http_server && bp.has_database {
+            Some(add_node(
+                "backend/src/pagination.rs", NodeType::Structural, 1, None, true,
+                "PaginationParams + PaginatedResponse<T> — generated by structural::generate_pagination_rs()",
+            ))
+        } else { None };
 
-        // ── Layer 2: Auth structural nodes ────────────────────────────────────
-        // user.rs is structural — hardcoded auth fields match provides_user_model_types() exactly
-        let user_model_idx = add_node(
-            "backend/src/models/user.rs", NodeType::Structural, 2,
-            Some("User".into()), true,
-            "User struct + CreateUserPayload + UpdateUserPayload — generated by structural::generate_user_model_rs()",
-        );
-        let auth_idx = add_node(
-            "backend/src/auth.rs", NodeType::Structural, 2, None, true,
-            "AuthUser extractor + Claims + encode_jwt + require_role — generated by structural::generate_auth_rs()",
-        );
+        // ── Layer 2: Auth structural nodes (conditional on has_auth) ─────────
+        let user_model_idx = if bp.has_auth {
+            Some(add_node(
+                "backend/src/models/user.rs", NodeType::Structural, 2,
+                Some("User".into()), true,
+                "User struct + CreateUserPayload + UpdateUserPayload — generated by structural::generate_user_model_rs()",
+            ))
+        } else { None };
+        let auth_idx = if bp.has_auth {
+            Some(add_node(
+                "backend/src/auth.rs", NodeType::Structural, 2, None, true,
+                "AuthUser extractor + Claims + encode_jwt + require_role — generated by structural::generate_auth_rs()",
+            ))
+        } else { None };
 
-        // ── Layer 3: Entity model structural nodes ────────────────────────────
-        // Models are deterministic from EntityDef — no LLM needed.
-        // Structural generator guarantees output matches provides_model_types() signatures.
+        // ── Layer 3: Entity model structural nodes ───────────────────────────
         let mut entity_model_indices: Vec<(String, usize)> = Vec::new();
         for entity in spec.entities.iter().filter(|e| e.name != "User") {
             let idx = add_node(
@@ -204,141 +222,171 @@ impl CodegenHdag {
             entity_model_indices.push((entity.name.clone(), idx));
         }
 
-        // ── Layer 4: Database nodes ───────────────────────────────────────────
-        // pool.rs is structural — fixed shape, no LLM needed
-        let pool_idx = add_node(
-            "backend/src/database/pool.rs", NodeType::Structural, 4, None, true,
-            "create_pool() — generated by structural::generate_pool_rs()",
-        );
+        // ── Layer 4: Database nodes (conditional on has_database) ────────────
+        let pool_idx = if bp.has_database {
+            Some(add_node(
+                "backend/src/database/pool.rs", NodeType::Structural, 4, None, true,
+                "create_pool() — generated by structural::generate_pool_rs()",
+            ))
+        } else { None };
 
-        // query nodes for every entity (including User)
         let mut entity_query_indices: Vec<(String, usize)> = Vec::new();
-        let all_entities: Vec<&EntityDef> = spec.entities.iter().collect();
-        for entity in &all_entities {
-            let p = crate::pluralize(&entity.snake_name);
-            let purpose = if entity.name == "User" {
-                format!(
-                    "CRUD query fns for {}: get_{s}, list_{p}, create_{s}, update_{s}, delete_{s}, \
-                     AND ALSO get_user_by_email (needed by auth_routes). \
-                     Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
-                    entity.name, s = entity.snake_name, p = p
-                )
-            } else {
-                format!(
-                    "CRUD query fns for {}: get_{s}, list_{p}, create_{s}, update_{s}, delete_{s}. \
-                     Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
-                    entity.name, s = entity.snake_name, p = p
-                )
-            };
-            let idx = add_node(
-                &format!("backend/src/database/{}_queries.rs", entity.snake_name),
-                NodeType::Llm, 4, Some(entity.name.clone()), true,
-                &purpose,
-            );
-            // errors → queries
-            edges.push(HdagEdge { from: errors_idx, to: idx, provides: provided::provides_apperror() });
-            // pool → queries
-            edges.push(HdagEdge { from: pool_idx, to: idx, provides: provided::provides_pool() });
-            // pagination → queries
-            edges.push(HdagEdge { from: pagination_idx, to: idx, provides: provided::provides_pagination() });
+        if bp.has_database {
+            let all_entities: Vec<&EntityDef> = spec.entities.iter().collect();
+            for entity in &all_entities {
+                let p = crate::pluralize(&entity.snake_name);
+                let purpose = if entity.name == "User" {
+                    format!(
+                        "CRUD query fns for {}: get_{s}, list_{p}, create_{s}, update_{s}, delete_{s}, \
+                         AND ALSO get_user_by_email (needed by auth_routes). \
+                         Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
+                        entity.name, s = entity.snake_name, p = p
+                    )
+                } else {
+                    format!(
+                        "CRUD query fns for {}: get_{s}, list_{p}, create_{s}, update_{s}, delete_{s}. \
+                         Use sqlx::query_as::<_, Type>(). Never query_as!() macro.",
+                        entity.name, s = entity.snake_name, p = p
+                    )
+                };
+                let idx = add_node(
+                    &format!("backend/src/database/{}_queries.rs", entity.snake_name),
+                    NodeType::Llm, 4, Some(entity.name.clone()), true,
+                    &purpose,
+                );
+                if let Some(ei) = errors_idx {
+                    edges.push(HdagEdge { from: ei, to: idx, provides: provided::provides_apperror() });
+                }
+                if let Some(pi) = pool_idx {
+                    edges.push(HdagEdge { from: pi, to: idx, provides: provided::provides_pool() });
+                }
+                if let Some(pagi) = pagination_idx {
+                    edges.push(HdagEdge { from: pagi, to: idx, provides: provided::provides_pagination() });
+                }
 
-            // model → queries (find the matching model index)
-            let model_sym = if entity.name == "User" {
-                // user model symbols
-                provided::provides_user_model_types()
-            } else {
-                // look up entity model index and provide its types
-                provided::provides_model_types(entity)
-            };
-            if entity.name == "User" {
-                edges.push(HdagEdge { from: user_model_idx, to: idx, provides: model_sym });
-            } else if let Some(&(_, model_idx)) = entity_model_indices.iter().find(|(n, _)| n == &entity.name) {
-                edges.push(HdagEdge { from: model_idx, to: idx, provides: model_sym });
+                let model_sym = if entity.name == "User" {
+                    provided::provides_user_model_types()
+                } else {
+                    provided::provides_model_types(entity)
+                };
+                if entity.name == "User" {
+                    if let Some(umi) = user_model_idx {
+                        edges.push(HdagEdge { from: umi, to: idx, provides: model_sym });
+                    }
+                } else if let Some(&(_, model_idx)) = entity_model_indices.iter().find(|(n, _)| n == &entity.name) {
+                    edges.push(HdagEdge { from: model_idx, to: idx, provides: model_sym });
+                }
+
+                entity_query_indices.push((entity.name.clone(), idx));
             }
-
-            entity_query_indices.push((entity.name.clone(), idx));
         }
 
-        // ── Layer 6: Service Structural nodes (thin delegation wrappers) ─────
+        // ── Layer 5: Service Structural nodes (thin delegation wrappers) ─────
         let mut entity_service_indices: Vec<(String, usize)> = Vec::new();
-        for entity in &all_entities {
-            let idx = add_node(
-                &format!("backend/src/services/{}.rs", entity.snake_name),
-                NodeType::Structural, 5, Some(entity.name.clone()), true,
-                &format!(
-                    "Service layer for {}: thin delegation wrappers around {}_queries. Deterministic.",
-                    entity.name, entity.snake_name
-                ),
-            );
-            // errors → service
-            edges.push(HdagEdge { from: errors_idx, to: idx, provides: provided::provides_apperror() });
-            // pagination → service
-            edges.push(HdagEdge { from: pagination_idx, to: idx, provides: provided::provides_pagination() });
-            // pool → service
-            edges.push(HdagEdge { from: pool_idx, to: idx, provides: provided::provides_pool() });
+        if bp.has_http_server || bp.has_cli {
+            let all_entities: Vec<&EntityDef> = spec.entities.iter().collect();
+            for entity in &all_entities {
+                let idx = add_node(
+                    &format!("backend/src/services/{}.rs", entity.snake_name),
+                    NodeType::Structural, 5, Some(entity.name.clone()), true,
+                    &format!(
+                        "Service layer for {}: thin delegation wrappers around {}_queries. Deterministic.",
+                        entity.name, entity.snake_name
+                    ),
+                );
+                if let Some(ei) = errors_idx {
+                    edges.push(HdagEdge { from: ei, to: idx, provides: provided::provides_apperror() });
+                }
+                if let Some(pagi) = pagination_idx {
+                    edges.push(HdagEdge { from: pagi, to: idx, provides: provided::provides_pagination() });
+                }
+                if let Some(pi) = pool_idx {
+                    edges.push(HdagEdge { from: pi, to: idx, provides: provided::provides_pool() });
+                }
 
-            // model → service
-            let model_sym = if entity.name == "User" {
-                provided::provides_user_model_types()
-            } else {
-                provided::provides_model_types(entity)
-            };
-            if entity.name == "User" {
-                edges.push(HdagEdge { from: user_model_idx, to: idx, provides: model_sym });
-            } else if let Some(&(_, model_idx)) = entity_model_indices.iter().find(|(n, _)| n == &entity.name) {
-                edges.push(HdagEdge { from: model_idx, to: idx, provides: model_sym });
+                let model_sym = if entity.name == "User" {
+                    provided::provides_user_model_types()
+                } else {
+                    provided::provides_model_types(entity)
+                };
+                if entity.name == "User" {
+                    if let Some(umi) = user_model_idx {
+                        edges.push(HdagEdge { from: umi, to: idx, provides: model_sym });
+                    }
+                } else if let Some(&(_, model_idx)) = entity_model_indices.iter().find(|(n, _)| n == &entity.name) {
+                    edges.push(HdagEdge { from: model_idx, to: idx, provides: model_sym });
+                }
+
+                if let Some(&(_, q_idx)) = entity_query_indices.iter().find(|(n, _)| n == &entity.name) {
+                    edges.push(HdagEdge { from: q_idx, to: idx, provides: provided::provides_query_fns(entity) });
+                }
+
+                entity_service_indices.push((entity.name.clone(), idx));
             }
-
-            // queries → service
-            if let Some(&(_, q_idx)) = entity_query_indices.iter().find(|(n, _)| n == &entity.name) {
-                edges.push(HdagEdge { from: q_idx, to: idx, provides: provided::provides_query_fns(entity) });
-            }
-
-            entity_service_indices.push((entity.name.clone(), idx));
         }
 
-        // ── Layer 6: API LLM nodes ────────────────────────────────────────────
-        // auth_routes (structural — deterministic register/login/me)
-        let auth_routes_idx = add_node(
-            "backend/src/api/auth_routes.rs", NodeType::Structural, 6,
-            Some("User".into()), true,
-            "Auth endpoints: register, login, me. Deterministic.",
-        );
-        edges.push(HdagEdge { from: errors_idx, to: auth_routes_idx, provides: provided::provides_apperror() });
-        edges.push(HdagEdge { from: auth_idx, to: auth_routes_idx, provides: provided::provides_authuser() });
-        edges.push(HdagEdge { from: user_model_idx, to: auth_routes_idx, provides: provided::provides_user_model_types() });
-        if let Some(&(_, q_idx)) = entity_query_indices.iter().find(|(n, _)| n == "User") {
-            edges.push(HdagEdge { from: q_idx, to: auth_routes_idx, provides: provided::provides_query_fns_user() });
-        }
-
-        // entity api handlers (structural — deterministic CRUD route wrappers)
-        for entity in spec.entities.iter().filter(|e| e.name != "User") {
-            let idx = add_node(
-                &format!("backend/src/api/{}.rs", entity.snake_name),
-                NodeType::Structural, 6, Some(entity.name.clone()), true,
-                &format!(
-                    "Actix-web CRUD handlers for {} with /api/{}s scope. Deterministic.",
-                    entity.name, entity.snake_name
-                ),
-            );
-            edges.push(HdagEdge { from: errors_idx, to: idx, provides: provided::provides_apperror() });
-            edges.push(HdagEdge { from: pagination_idx, to: idx, provides: provided::provides_pagination() });
-            edges.push(HdagEdge { from: auth_idx, to: idx, provides: provided::provides_authuser() });
-            edges.push(HdagEdge { from: config_idx, to: idx, provides: provided::provides_config() });
-
-            // model → api
-            let model_sym = provided::provides_model_types(entity);
-            if let Some(&(_, model_idx)) = entity_model_indices.iter().find(|(n, _)| n == &entity.name) {
-                edges.push(HdagEdge { from: model_idx, to: idx, provides: model_sym });
+        // ── Layer 6: API nodes (conditional on has_http_server) ──────────────
+        if bp.has_http_server {
+            if bp.has_auth {
+                let auth_routes_idx = add_node(
+                    "backend/src/api/auth_routes.rs", NodeType::Structural, 6,
+                    Some("User".into()), true,
+                    "Auth endpoints: register, login, me. Deterministic.",
+                );
+                if let Some(ei) = errors_idx {
+                    edges.push(HdagEdge { from: ei, to: auth_routes_idx, provides: provided::provides_apperror() });
+                }
+                if let Some(ai) = auth_idx {
+                    edges.push(HdagEdge { from: ai, to: auth_routes_idx, provides: provided::provides_authuser() });
+                }
+                if let Some(umi) = user_model_idx {
+                    edges.push(HdagEdge { from: umi, to: auth_routes_idx, provides: provided::provides_user_model_types() });
+                }
+                if let Some(&(_, q_idx)) = entity_query_indices.iter().find(|(n, _)| n == "User") {
+                    edges.push(HdagEdge { from: q_idx, to: auth_routes_idx, provides: provided::provides_query_fns_user() });
+                }
             }
 
-            // service → api
-            if let Some(&(_, svc_idx)) = entity_service_indices.iter().find(|(n, _)| n == &entity.name) {
-                edges.push(HdagEdge { from: svc_idx, to: idx, provides: provided::provides_service_fns(entity) });
+            for entity in spec.entities.iter().filter(|e| e.name != "User") {
+                let idx = add_node(
+                    &format!("backend/src/api/{}.rs", entity.snake_name),
+                    NodeType::Structural, 6, Some(entity.name.clone()), true,
+                    &format!(
+                        "Actix-web CRUD handlers for {} with /api/{}s scope. Deterministic.",
+                        entity.name, entity.snake_name
+                    ),
+                );
+                if let Some(ei) = errors_idx {
+                    edges.push(HdagEdge { from: ei, to: idx, provides: provided::provides_apperror() });
+                }
+                if let Some(pagi) = pagination_idx {
+                    edges.push(HdagEdge { from: pagi, to: idx, provides: provided::provides_pagination() });
+                }
+                if let Some(ai) = auth_idx {
+                    edges.push(HdagEdge { from: ai, to: idx, provides: provided::provides_authuser() });
+                }
+                if let Some(ci) = config_idx {
+                    edges.push(HdagEdge { from: ci, to: idx, provides: provided::provides_config() });
+                }
+
+                let model_sym = provided::provides_model_types(entity);
+                if let Some(&(_, model_idx)) = entity_model_indices.iter().find(|(n, _)| n == &entity.name) {
+                    edges.push(HdagEdge { from: model_idx, to: idx, provides: model_sym });
+                }
+
+                if let Some(&(_, svc_idx)) = entity_service_indices.iter().find(|(n, _)| n == &entity.name) {
+                    edges.push(HdagEdge { from: svc_idx, to: idx, provides: provided::provides_service_fns(entity) });
+                }
             }
         }
 
         CodegenHdag { nodes, edges }
+    }
+
+    /// Legacy build function (pre-D6) for comparison testing.
+    /// Produces the exact same output as `build(spec, &default_web_blueprint())`.
+    pub fn build_legacy(spec: &AppSpec) -> Self {
+        Self::build(spec, &crate::blueprint::default_web_blueprint())
     }
 
     /// Topological sort using Kahn's algorithm with deterministic lexicographic
@@ -449,7 +497,7 @@ mod tests {
     #[test]
     fn test_build_has_nodes_and_edges() {
         let spec = test_spec();
-        let hdag = CodegenHdag::build(&spec);
+        let hdag = CodegenHdag::build_legacy(&spec);
         assert!(!hdag.nodes.is_empty(), "HDAG must have nodes");
         assert!(!hdag.edges.is_empty(), "HDAG must have edges");
     }
@@ -457,7 +505,7 @@ mod tests {
     #[test]
     fn test_topological_sort_covers_all_nodes() {
         let spec = test_spec();
-        let hdag = CodegenHdag::build(&spec);
+        let hdag = CodegenHdag::build_legacy(&spec);
         let order = hdag.topological_sort();
         assert_eq!(order.len(), hdag.nodes.len(), "topological sort must cover all nodes");
     }
@@ -465,7 +513,7 @@ mod tests {
     #[test]
     fn test_topological_sort_respects_dependencies() {
         let spec = test_spec();
-        let hdag = CodegenHdag::build(&spec);
+        let hdag = CodegenHdag::build_legacy(&spec);
         let order = hdag.topological_sort();
 
         // Build position map
@@ -488,7 +536,7 @@ mod tests {
     #[test]
     fn test_errors_node_provides_apperror() {
         let spec = test_spec();
-        let hdag = CodegenHdag::build(&spec);
+        let hdag = CodegenHdag::build_legacy(&spec);
         let errors_node = hdag.nodes.iter().find(|n| n.path.ends_with("errors.rs")).unwrap();
         // errors.rs is now structural — no incoming edges
         assert_eq!(hdag.predecessors(errors_node.index).len(), 0, "errors.rs has no predecessors");
@@ -511,6 +559,44 @@ mod tests {
         assert!(
             provided.iter().any(|s| s.import_path.contains("AppError")),
             "product_queries.rs must receive AppError symbol from errors.rs"
+        );
+    }
+
+    #[test]
+    fn test_build_with_default_blueprint_matches_legacy() {
+        let spec = test_spec();
+        let bp = crate::blueprint::default_web_blueprint();
+        let hdag_new = CodegenHdag::build(&spec, &bp);
+        let hdag_legacy = CodegenHdag::build_legacy(&spec);
+        assert_eq!(
+            hdag_new.nodes.len(), hdag_legacy.nodes.len(),
+            "node count must match: new={} legacy={}",
+            hdag_new.nodes.len(), hdag_legacy.nodes.len()
+        );
+        assert_eq!(
+            hdag_new.edges.len(), hdag_legacy.edges.len(),
+            "edge count must match: new={} legacy={}",
+            hdag_new.edges.len(), hdag_legacy.edges.len()
+        );
+        let new_paths: Vec<&str> = hdag_new.nodes.iter().map(|n| n.path.as_str()).collect();
+        let legacy_paths: Vec<&str> = hdag_legacy.nodes.iter().map(|n| n.path.as_str()).collect();
+        assert_eq!(new_paths, legacy_paths, "node paths must match exactly");
+    }
+
+    #[test]
+    fn test_build_no_frontend_reduces_nodes() {
+        let spec = test_spec();
+        let mut bp = crate::blueprint::default_web_blueprint();
+        bp.has_frontend = false;
+        let hdag_full = CodegenHdag::build_legacy(&spec);
+        let hdag_no_fe = CodegenHdag::build(&spec, &bp);
+        assert!(
+            hdag_no_fe.nodes.len() < hdag_full.nodes.len(),
+            "no-frontend should have fewer nodes"
+        );
+        assert!(
+            !hdag_no_fe.nodes.iter().any(|n| n.path.contains("frontend/")),
+            "no frontend nodes when has_frontend=false"
         );
     }
 }

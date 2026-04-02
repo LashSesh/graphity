@@ -35,6 +35,7 @@
 //! ```
 
 pub mod artifact_collector;
+pub mod blueprint;
 pub mod forge;
 pub mod hdag;
 pub mod mock;
@@ -138,12 +139,14 @@ pub struct ForgePlan {
     pub spec: AppSpec,
     /// Norm IDs that this plan was composed from.
     pub norm_ids: Vec<String>,
+    /// D6: Infrastructure blueprint derived from activated norms.
+    pub blueprint: blueprint::InfraBlueprint,
 }
 
 impl ForgePlan {
     /// Build a `ForgePlan` from an `AppSpec` and a list of norm IDs.
     pub fn new(spec: AppSpec, norm_ids: Vec<String>) -> Self {
-        Self { spec, norm_ids }
+        Self { spec, norm_ids, blueprint: blueprint::default_web_blueprint() }
     }
 
     /// Create a minimal warehouse plan for testing / mock mode.
@@ -207,6 +210,7 @@ impl ForgePlan {
                 "ISLS-NORM-0103".into(), // ErrorSystem
                 "ISLS-NORM-0500".into(), // Warehouse organism
             ],
+            blueprint: blueprint::default_web_blueprint(),
         }
     }
 
@@ -299,6 +303,7 @@ impl ForgePlan {
         Self {
             spec,
             norm_ids: plan.contributing_norms.clone(),
+            blueprint: blueprint::default_web_blueprint(),
         }
     }
 
@@ -353,6 +358,7 @@ impl ForgePlan {
                 "ISLS-NORM-0103".into(),
                 "ISLS-NORM-0500".into(),
             ],
+            blueprint: blueprint::default_web_blueprint(),
         }
     }
 
@@ -433,6 +439,7 @@ impl ForgePlan {
                 "ISLS-NORM-0096".into(),
                 "ISLS-NORM-0103".into(),
             ],
+            blueprint: blueprint::default_web_blueprint(),
         }
     }
 }

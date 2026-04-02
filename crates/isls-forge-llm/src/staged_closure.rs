@@ -83,8 +83,8 @@ impl StagedClosure {
         eprintln!("[HDAG S1] Canon: entity names canonicalized");
         tracing::info!("S1 Canon: entity names canonicalized");
 
-        // S2: Expand — build Codegen-HDAG deterministically from AppSpec
-        let hdag = CodegenHdag::build(&spec);
+        // S2: Expand — build Codegen-HDAG from AppSpec + InfraBlueprint (D6)
+        let hdag = CodegenHdag::build(&spec, &self.plan.blueprint);
         eprintln!(
             "[HDAG S2] Expand: HDAG built ({} nodes, {} edges)",
             hdag.nodes.len(),
@@ -401,18 +401,19 @@ impl StagedClosure {
     /// Generate content for a structural node, dispatching to the appropriate
     /// generator in `structural.rs` or `static_files.rs`.
     fn generate_structural_content(&self, node: &HdagNode, spec: &AppSpec) -> String {
+        let bp = &self.plan.blueprint;
         match node.path.as_str() {
             p if p.ends_with("backend/Cargo.toml") || (p.contains("Cargo.toml") && !p.contains("src")) => {
-                static_files::generate_cargo_toml(spec)
+                static_files::generate_cargo_toml(spec, bp)
             }
             p if p.ends_with("docker-compose.yml") => {
-                static_files::generate_docker_compose(spec)
+                static_files::generate_docker_compose(spec, bp)
             }
             p if p.ends_with("Dockerfile") => {
-                static_files::generate_dockerfile(spec)
+                static_files::generate_dockerfile(spec, bp)
             }
             p if p.ends_with(".env.example") => {
-                static_files::generate_env_example(spec)
+                static_files::generate_env_example(spec, bp)
             }
             ".gitignore" => {
                 static_files::GITIGNORE_TEMPLATE.to_string()
