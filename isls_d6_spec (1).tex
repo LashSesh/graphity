@@ -1,0 +1,1132 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+\lstdefinestyle{rust}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,HashSet,PathBuf,Result,Option,
+    bool,true,false,usize},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+\lstdefinestyle{toml}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  commentstyle=\color{isls-gray}\itshape,
+  morecomment=[l]{\#},
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS D6 Spec --- M\"obius-Umst\"ulpung}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v2.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+  citecolor=isls-green,
+}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS D6 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} M\"obius-Umst\"ulpung:\\Norm-getriebener HDAG \& Infrastruktur als emergente Eigenschaft}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}    & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}   & v4.0 (D6) \\
+\textbf{Author:}    & Sebastian Klemm \\
+\textbf{Date:}      & \today \\
+\textbf{Status:}    & Specification \\
+\textbf{Depends:}   & D5 (complete), all 10 crates \\
+\textbf{Branch:}    & \texttt{claude/implement-isls-d6-spec} \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+License: MIT
+}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+ISLS generates applications. Until now, it generates exactly one kind: 
+Actix-Web/PostgreSQL/Docker CRUD web apps. This is hardcoded in 
+\texttt{CodegenHdag::build()}, which constructs a fixed file tree
+(48 structural + 7 LLM nodes) regardless of what the user describes.
+
+D6 removes this constraint. The HDAG becomes \textbf{norm-driven}: 
+the file tree emerges from the composition of activated norms, not
+from a hardcoded function. A web-app description activates 
+web-infrastructure norms $\to$ web-app HDAG. A CLI-tool description
+activates CLI-infrastructure norms $\to$ CLI-tool HDAG. A library
+description activates library-infrastructure norms $\to$ library HDAG.
+No categories defined. No archetypes. The infrastructure is an
+\emph{emergent property} of the description matched against the norm 
+catalog.
+
+The M\"obius proof: ISLS generates a management dashboard for itself
+(ISLS Studio), demonstrating that the same pipeline produces different
+infrastructure configurations from different descriptions.
+
+\subsection{The Architectural Problem}
+
+\texttt{hdag.rs::CodegenHdag::build()} contains $\sim$200 lines that
+hardcode:
+
+\begin{itemize}[nosep]
+\item \texttt{backend/Cargo.toml} with actix-web, sqlx, jsonwebtoken
+\item \texttt{docker-compose.yml} with PostgreSQL, Nginx
+\item \texttt{backend/src/models/}, \texttt{database/}, \texttt{services/}, 
+      \texttt{api/} directories
+\item \texttt{frontend/} with index.html, style.css, client.js, 
+      entity pages
+\item \texttt{backend/Dockerfile} with \texttt{rust:1.88-slim}
+\item Fixed layer ordering: 0 (static) $\to$ 1 (foundation) $\to$ 
+      2 (auth) $\to$ 3 (models) $\to$ 4 (database) $\to$ 5 (services) 
+      $\to$ 6 (api) $\to$ 7 (main) $\to$ 8 (frontend) $\to$ 9 (tests)
+\end{itemize}
+
+Every node, every edge, every \texttt{ProvidedSymbol} assumes this 
+specific shape. Generating a CLI tool, a library, or a desktop app 
+is impossible without rewriting the entire function.
+
+\subsection{The Solution: InfraBlueprint}
+
+An \textbf{InfraBlueprint} is a pure-data struct that describes which 
+file categories, layers, and infrastructure components a project has.
+It is derived from the activated norms at generation time. 
+\texttt{CodegenHdag::build()} takes \texttt{(AppSpec, InfraBlueprint)} 
+instead of just \texttt{AppSpec} and constructs nodes/edges according 
+to the blueprint.
+
+The current web-app structure becomes the output of composing a specific
+set of infrastructure norms. Not a hardcoded default. Just the first 
+norm family that was built.
+
+\subsection{What D6 Achieves}
+
+\begin{enumerate}[nosep]
+\item \textbf{InfraBlueprint} data structure and derivation from norms.
+\item \textbf{Infrastructure Norms:} 7 new builtin norms defining 
+      web-server, database, auth, frontend, docker, CLI, and library 
+      infrastructure.
+\item \textbf{Refactored HDAG:} \texttt{CodegenHdag::build()} reads 
+      blueprint, not hardcoded assumptions.
+\item \textbf{Refactored Structural Generators:} Dispatched by 
+      blueprint capabilities, not by path-matching.
+\item \textbf{ISLS Studio TOML + forge-self:} Self-description that 
+      activates web-infrastructure norms through description matching.
+\item \textbf{Backward Compatibility:} All D1--D5 apps (warehouse, 
+      hotel, clinic, gym, school, spa) still generate identically.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{InfraBlueprint}
+\label{sec:blueprint}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Data Structure}
+
+\begin{lstlisting}[style=rust]
+/// Infrastructure blueprint derived from activated norms.
+/// Describes WHAT the generated project contains — not HOW 
+/// to generate it (that's the structural generators' job).
+#[derive(Clone, Debug, Default)]
+pub struct InfraBlueprint {
+    // ── Output shape ─────────────────────────────────
+    /// Project produces a runnable binary.
+    pub has_binary: bool,
+    /// Project produces a library crate (pub API).
+    pub has_library: bool,
+    
+    // ── Server ───────────────────────────────────────
+    /// Project includes an HTTP server.
+    pub has_http_server: bool,
+    /// Server framework crate name (e.g. "actix-web").
+    pub server_framework: Option<String>,
+    
+    // ── Persistence ──────────────────────────────────
+    /// Project uses a database.
+    pub has_database: bool,
+    /// Database type (e.g. "postgresql", "sqlite").
+    pub database_type: Option<String>,
+    /// Database driver crate (e.g. "sqlx").
+    pub database_driver: Option<String>,
+    
+    // ── Auth ─────────────────────────────────────────
+    /// Project includes authentication.
+    pub has_auth: bool,
+    /// Auth mechanism (e.g. "jwt").
+    pub auth_type: Option<String>,
+    
+    // ── Frontend ─────────────────────────────────────
+    /// Project includes a web frontend.
+    pub has_frontend: bool,
+    /// Frontend type (e.g. "vanilla-js", "react").
+    pub frontend_type: Option<String>,
+    
+    // ── Deployment ───────────────────────────────────
+    /// Project includes Docker files.
+    pub has_docker: bool,
+    
+    // ── CLI ──────────────────────────────────────────
+    /// Project includes CLI argument parsing.
+    pub has_cli: bool,
+    /// CLI framework (e.g. "clap").
+    pub cli_framework: Option<String>,
+    
+    // ── Crate dependencies ───────────────────────────
+    /// Additional Cargo.toml dependencies from norms.
+    pub extra_dependencies: Vec<CrateDep>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CrateDep {
+    pub name: String,
+    pub version: String,
+    pub features: Vec<String>,
+}
+\end{lstlisting}
+
+\subsection{Key Principle: Booleans, Not Enums}
+
+The blueprint uses boolean flags (\texttt{has\_http\_server}, 
+\texttt{has\_database}, \texttt{has\_cli}), not an enum like 
+\texttt{ProjectType::WebApp}. This is deliberate:
+
+\begin{itemize}[nosep]
+\item A project can have BOTH an HTTP server AND a CLI 
+      (e.g. a web server with CLI management commands).
+\item A project can have a database WITHOUT an HTTP server 
+      (e.g. a batch-processing CLI tool with PostgreSQL).
+\item A project can have NEITHER server nor CLI --- just a library.
+\item The blueprint describes \emph{capabilities}, not \emph{categories}.
+\end{itemize}
+
+No combination is invalid. The HDAG builder creates nodes for whatever
+capabilities the blueprint declares. If a capability is absent, the
+corresponding nodes are simply not created.
+
+\subsection{Derivation from Norms}
+
+\begin{lstlisting}[style=rust]
+/// Derive an InfraBlueprint from activated infrastructure norms.
+pub fn derive_blueprint(
+    activated: &[ActivatedNorm],
+) -> InfraBlueprint {
+    let mut bp = InfraBlueprint::default();
+    
+    for norm in activated {
+        match norm.norm.id.as_str() {
+            "ISLS-NORM-INFRA-WEB" => {
+                bp.has_binary = true;
+                bp.has_http_server = true;
+                bp.server_framework = Some("actix-web".into());
+            }
+            "ISLS-NORM-INFRA-DB" => {
+                bp.has_database = true;
+                bp.database_type = Some("postgresql".into());
+                bp.database_driver = Some("sqlx".into());
+            }
+            "ISLS-NORM-INFRA-AUTH" => {
+                bp.has_auth = true;
+                bp.auth_type = Some("jwt".into());
+            }
+            "ISLS-NORM-INFRA-FRONTEND" => {
+                bp.has_frontend = true;
+                bp.frontend_type = Some("vanilla-js".into());
+            }
+            "ISLS-NORM-INFRA-DOCKER" => {
+                bp.has_docker = true;
+            }
+            "ISLS-NORM-INFRA-CLI" => {
+                bp.has_binary = true;
+                bp.has_cli = true;
+                bp.cli_framework = Some("clap".into());
+            }
+            "ISLS-NORM-INFRA-LIB" => {
+                bp.has_library = true;
+            }
+            _ => {} // Entity/feature norms don't affect blueprint
+        }
+    }
+    
+    // Default: if nothing activated, assume web app
+    // (backward compat with D1-D5 TOML files)
+    if !bp.has_binary && !bp.has_library {
+        bp.has_binary = true;
+        bp.has_http_server = true;
+        bp.server_framework = Some("actix-web".into());
+        bp.has_database = true;
+        bp.database_type = Some("postgresql".into());
+        bp.database_driver = Some("sqlx".into());
+        bp.has_auth = true;
+        bp.auth_type = Some("jwt".into());
+        bp.has_frontend = true;
+        bp.frontend_type = Some("vanilla-js".into());
+        bp.has_docker = true;
+    }
+    
+    bp
+}
+\end{lstlisting}
+
+The default fallback ensures all existing D1--D5 apps generate 
+identically. The system only deviates from the web-app shape when 
+infrastructure norms explicitly configure it differently.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Infrastructure Norms}
+\label{sec:infra-norms}
+% ══════════════════════════════════════════════════════════════════════════════
+
+Seven new builtin norms are added to \texttt{catalog.rs}. They have 
+\texttt{NormLevel::Atom} (infrastructure primitives, below Molecule).
+
+\begin{longtable}{llp{6cm}}
+\toprule
+\textbf{ID} & \textbf{Name} & \textbf{Triggers / Keywords} \\
+\midrule
+\texttt{ISLS-NORM-INFRA-WEB} & Web-Server 
+  & web, server, api, rest, http, endpoint, backend, app, 
+    application, service, microservice \\
+\texttt{ISLS-NORM-INFRA-DB} & Database 
+  & database, db, postgres, sql, storage, persist, table, 
+    query, migration, data \\
+\texttt{ISLS-NORM-INFRA-AUTH} & Authentication 
+  & auth, login, register, jwt, token, user, password, 
+    session, security \\
+\texttt{ISLS-NORM-INFRA-FRONTEND} & Frontend 
+  & frontend, ui, page, dashboard, interface, browser, web ui, 
+    html, css, javascript \\
+\texttt{ISLS-NORM-INFRA-DOCKER} & Docker 
+  & docker, container, deploy, compose, production, 
+    deployment \\
+\texttt{ISLS-NORM-INFRA-CLI} & CLI-Tool 
+  & cli, command, terminal, tool, script, batch, utility, 
+    convert, process, parse \\
+\texttt{ISLS-NORM-INFRA-LIB} & Library 
+  & library, crate, lib, sdk, api (without ``server''/``web''),
+    module, package \\
+\bottomrule
+\end{longtable}
+
+\paragraph{Activation Logic.} Infrastructure norms are matched against 
+the user's description by the same \texttt{match\_description()} 
+function as entity norms. The description ``Restaurant app with table 
+reservations'' triggers WEB (``app''), DB (``table'', ``data''), AUTH 
+(implicitly via ``app'' $\to$ users), FRONTEND (``app'' implies UI), 
+DOCKER (``app'' implies deployment). The description ``CLI tool for 
+converting CSV files'' triggers CLI (``cli'', ``tool'', ``convert'')
+and possibly DB if ``database'' appears.
+
+\paragraph{NormLayers.} Infrastructure norms have empty 
+\texttt{NormLayers} --- they carry no entity-level artifacts. Their 
+purpose is to influence the \texttt{InfraBlueprint}, not to inject 
+database tables or models.
+
+\paragraph{Excludes.} ISLS-NORM-INFRA-LIB has 
+\texttt{excludes: ["server", "web", "app", "deploy"]} to prevent 
+activation alongside web-server norms (a library doesn't serve HTTP).
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Refactored HDAG Builder}
+\label{sec:hdag-refactor}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Current: \texttt{CodegenHdag::build(spec)}}
+
+\begin{lstlisting}[style=rust]
+// BEFORE: 200 lines of hardcoded nodes
+pub fn build(spec: &AppSpec) -> Self {
+    // Layer 0: ALWAYS creates Cargo.toml, Dockerfile, 
+    //          docker-compose, nginx, frontend...
+    // Layer 1: ALWAYS creates errors.rs, pagination.rs, 
+    //          auth.rs, config.rs, pool.rs...
+    // ... etc.
+}
+\end{lstlisting}
+
+\subsection{Target: \texttt{CodegenHdag::build(spec, blueprint)}}
+
+\begin{lstlisting}[style=rust]
+pub fn build(spec: &AppSpec, bp: &InfraBlueprint) -> Self {
+    let mut nodes = Vec::new();
+    let mut edges = Vec::new();
+    // helper closure: add_node(...)
+    
+    // ── Layer 0: Infrastructure (conditional) ─────────
+    add_node("backend/Cargo.toml", Structural, 0, ...);
+    add_node(".gitignore", Structural, 0, ...);
+    
+    if bp.has_docker {
+        add_node("backend/Dockerfile", Structural, 0, ...);
+        add_node("docker-compose.yml", Structural, 0, ...);
+        add_node(".env.example", Structural, 0, ...);
+    }
+    if bp.has_frontend {
+        add_node("frontend/nginx.conf", Structural, 0, ...);
+        add_node("frontend/index.html", Structural, 8, ...);
+        add_node("frontend/style.css", Structural, 8, ...);
+        add_node("frontend/src/api/client.js", Structural, 8,...);
+        for entity in non_user_entities {
+            add_node(frontend_page(entity), Structural, 8,...);
+        }
+    }
+    
+    // ── Layer 1: Foundation (conditional) ─────────────
+    if bp.has_http_server {
+        errors_idx = add_node("backend/src/errors.rs",...);
+        config_idx = add_node("backend/src/config.rs",...);
+    }
+    if bp.has_http_server && bp.has_database {
+        pagination_idx = add_node("backend/src/pagination.rs",...);
+        pool_idx = add_node("backend/src/database/pool.rs",...);
+    }
+    
+    // ── Layer 2: Auth (conditional) ───────────────────
+    if bp.has_auth {
+        user_model_idx = add_node("backend/src/models/user.rs",...);
+        auth_idx = add_node("backend/src/auth.rs", ...);
+    }
+    
+    // ── Layer 3: Models (always, if entities exist) ───
+    if bp.has_database || bp.has_http_server {
+        for entity in non_user_entities {
+            add_node(model_path(entity), Structural, 3, ...);
+        }
+    }
+    
+    // ── Layer 4: Database (conditional) ───────────────
+    if bp.has_database {
+        add_node("backend/migrations/001_initial.sql",...);
+        for entity in all_entities {
+            add_node(query_path(entity), Llm, 4, ...);
+        }
+    }
+    
+    // ── Layer 5: Services (conditional) ───────────────
+    if bp.has_http_server || bp.has_cli {
+        for entity in all_entities {
+            add_node(service_path(entity), Structural, 5,...);
+        }
+    }
+    
+    // ── Layer 6: API routes (conditional) ─────────────
+    if bp.has_http_server {
+        if bp.has_auth {
+            add_node("backend/src/api/auth_routes.rs",...);
+        }
+        for entity in non_user_entities {
+            add_node(api_route_path(entity), Structural, 6,...);
+        }
+    }
+    
+    // ── Layer 7: Entry point ─────────────────────────
+    add_node("backend/src/main.rs", Structural, 7, ...);
+    // main.rs content adapts to blueprint:
+    // - if has_http_server: actix-web HttpServer::new()
+    // - if has_cli: clap App::new() + subcommands
+    // - if has_library: no main.rs (lib.rs only)
+    
+    // ── Layer 8: Frontend (handled above) ────────────
+    
+    // ── Layer 9: Tests ───────────────────────────────
+    add_node("backend/tests/api_tests.rs", Structural, 9,...);
+    
+    // ── Mod files (always) ───────────────────────────
+    // mod.rs files are created for whatever directories
+    // were populated by the conditional blocks above.
+    add_mod_files(&nodes, &mut edges, ...);
+    
+    // ── Edges ────────────────────────────────────────
+    // Wired based on which nodes actually exist.
+    wire_edges(&nodes, &mut edges, bp, spec);
+    
+    CodegenHdag { nodes, edges }
+}
+\end{lstlisting}
+
+\subsection{Key Change: Conditional Node Creation}
+
+The critical difference: nodes are only created when the blueprint
+declares the corresponding capability. If \texttt{has\_frontend == false},
+no frontend nodes exist. If \texttt{has\_docker == false}, no Dockerfile
+or docker-compose. If \texttt{has\_auth == false}, no user model, no 
+auth.rs, no auth\_routes.
+
+The edge-wiring function \texttt{wire\_edges()} must handle missing 
+nodes gracefully. If \texttt{pagination\_idx} doesn't exist because 
+there's no HTTP server, the edges from pagination to queries are simply 
+not created. The LLM prompts for query files then don't include 
+PaginationParams --- which is correct for a non-web context.
+
+\subsection{Structural Generator Adaptation}
+
+\texttt{structural.rs} and \texttt{static\_files.rs} generators don't 
+need fundamental changes. They are dispatched by file path, and the HDAG 
+only creates paths that the blueprint permits. What changes:
+
+\begin{itemize}[nosep]
+\item \texttt{generate\_cargo\_toml()} reads \texttt{InfraBlueprint} 
+      to determine which dependencies to include (actix-web? clap? both?).
+\item \texttt{generate\_main\_rs()} reads blueprint to determine entry 
+      point shape (HTTP server? CLI parser? both?).
+\item \texttt{generate\_dockerfile()} --- only called if 
+      \texttt{has\_docker}.
+\item \texttt{generate\_docker\_compose()} --- only called if 
+      \texttt{has\_docker}.
+\end{itemize}
+
+All other generators (models, services, routes, frontend) remain 
+unchanged --- they are simply not invoked when their nodes don't exist.
+
+The \texttt{ForgePlan} struct gains an \texttt{InfraBlueprint} field:
+
+\begin{lstlisting}[style=rust]
+pub struct ForgePlan {
+    pub spec: AppSpec,
+    pub norm_ids: Vec<String>,
+    pub blueprint: InfraBlueprint,  // NEW
+}
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Work Packages}
+% ══════════════════════════════════════════════════════════════════════════════
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W1: InfraBlueprint + Infrastructure Norms}
+\label{sec:w1}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Define the \texttt{InfraBlueprint} struct and the 7 infrastructure 
+norms. Pure data, no behavior changes yet.
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-forge-llm/src/blueprint.rs}
+  & \texttt{InfraBlueprint} struct, \texttt{CrateDep} struct,
+    \texttt{derive\_blueprint()} function. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-forge-llm/src/lib.rs}
+  & Add \texttt{pub mod blueprint;} Add \texttt{blueprint: InfraBlueprint}
+    to \texttt{ForgePlan}. \\
+\texttt{isls-norms/src/catalog.rs}
+  & Add 7 infrastructure norms to \texttt{builtin\_norms()}. \\
+\texttt{isls-norms/src/types.rs}
+  & Add \texttt{NormLevel::Atom} variant (below Molecule). \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{cargo build --workspace} --- compiles.
+\item Unit test: \texttt{derive\_blueprint()} with web-infrastructure 
+      norms produces blueprint with all web flags true.
+\item Unit test: empty norm list produces default web-app blueprint 
+      (backward compatibility).
+\item Unit test: CLI infrastructure norm produces 
+      \texttt{has\_cli = true, has\_http\_server = false}.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W2: Refactor CodegenHdag::build()}
+\label{sec:w2}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Change \texttt{CodegenHdag::build()} from \texttt{build(spec)} to 
+\texttt{build(spec, blueprint)}. All node creation becomes conditional 
+on blueprint flags.
+
+\subsubsection{Approach}
+
+\begin{enumerate}[nosep]
+\item Copy the current \texttt{build()} to 
+      \texttt{build\_legacy(spec)} (safety net for testing).
+\item Implement new \texttt{build(spec, blueprint)} with conditional
+      node creation as described in Section~\ref{sec:hdag-refactor}.
+\item Extract edge-wiring into \texttt{wire\_edges()} helper that 
+      handles absent nodes.
+\item All callers updated to pass blueprint.
+\end{enumerate}
+
+\subsubsection{Critical Invariant}
+
+When called with the default web-app blueprint, 
+\texttt{build(spec, bp\_web)} MUST produce the \textbf{exact same}
+nodes and edges as the old \texttt{build(spec)}. 
+This is verified by a test that compares both outputs.
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-forge-llm/src/hdag.rs}
+  & Refactor \texttt{build()} to \texttt{build(spec, blueprint)}.
+    Add \texttt{wire\_edges()} helper. Keep 
+    \texttt{build\_legacy()} for comparison test. \\
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & Pass \texttt{self.plan.blueprint} to \texttt{CodegenHdag::build()}.\\
+\texttt{isls-forge-llm/src/forge.rs}
+  & Pass blueprint through \texttt{LlmForge}. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W2 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{cargo test --workspace} --- all 181+ tests pass.
+\item Comparison test: \texttt{build(spec, default\_web\_blueprint()) 
+      == build\_legacy(spec)} for node count, edge count, node paths.
+\item Reduced blueprint test: \texttt{build(spec, no\_frontend\_bp())}
+      produces fewer nodes (no frontend/ nodes).
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W3: Adaptive Structural Generators}
+\label{sec:w3}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Make \texttt{generate\_cargo\_toml()} and \texttt{generate\_main\_rs()}
+blueprint-aware so they produce correct content for different 
+infrastructure configurations.
+
+\subsubsection{Changes}
+
+\paragraph{\texttt{generate\_cargo\_toml(spec, blueprint)}}
+
+\begin{itemize}[nosep]
+\item If \texttt{has\_http\_server}: include actix-web, actix-cors.
+\item If \texttt{has\_database}: include sqlx with appropriate feature 
+      flags.
+\item If \texttt{has\_auth}: include jsonwebtoken, bcrypt.
+\item If \texttt{has\_cli}: include clap with derive feature.
+\item If \texttt{has\_library}: \texttt{[lib]} section instead of / 
+      in addition to \texttt{[[bin]]}.
+\item Always: serde, tracing, thiserror, chrono.
+\end{itemize}
+
+\paragraph{\texttt{generate\_main\_rs(spec, blueprint)}}
+
+\begin{itemize}[nosep]
+\item If \texttt{has\_http\_server}: Actix HttpServer with route 
+      configuration.
+\item If \texttt{has\_cli}: Clap-based argument parsing dispatching 
+      to subcommands.
+\item If both: main.rs has CLI parsing that includes a ``serve'' 
+      subcommand starting the HTTP server.
+\item If \texttt{has\_library} only: no main.rs generated 
+      (lib.rs with pub API).
+\end{itemize}
+
+\paragraph{\texttt{generate\_structural\_content()}} in 
+\texttt{staged\_closure.rs} already dispatches by path. It now 
+receives \texttt{\&self.plan.blueprint} and passes it to 
+\texttt{static\_files} and \texttt{structural} generators that 
+need it.
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-forge-llm/src/static\_files.rs}
+  & \texttt{generate\_cargo\_toml(spec, bp)}, 
+    \texttt{generate\_dockerfile(spec, bp)}, 
+    \texttt{generate\_docker\_compose(spec, bp)} take blueprint. \\
+\texttt{isls-forge-llm/src/structural.rs}
+  & \texttt{generate\_main\_rs(spec, bp)} adapts entry point.
+    \texttt{generate\_for\_path(path, spec, bp)} receives blueprint.\\
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & \texttt{generate\_structural\_content()} passes blueprint. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W3 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{cargo test --workspace} --- all tests pass.
+\item Unit test: \texttt{generate\_cargo\_toml()} with web blueprint 
+      includes actix-web. Without: doesn't.
+\item Unit test: \texttt{generate\_cargo\_toml()} with CLI blueprint 
+      includes clap.
+\item Unit test: \texttt{generate\_main\_rs()} with web blueprint 
+      contains \texttt{HttpServer}.
+\item Unit test: \texttt{generate\_main\_rs()} with CLI blueprint 
+      contains \texttt{clap::Parser}.
+\item Regression: run \texttt{isls forge-chat -m "Pet shop..."} with 
+      default blueprint. Output identical to D5 (same files, same 
+      structure, same compile result).
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W4: Pipeline Integration}
+\label{sec:w4}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Wire the blueprint derivation into the generation pipeline so that 
+\texttt{forge-chat} and \texttt{forge-v2} automatically derive the 
+blueprint from the user's description via norm matching.
+
+\subsubsection{Flow}
+
+\begin{lstlisting}[style=bash]
+Description
+  |
+  v
+NormRegistry::match_description()
+  |
+  v
+activated norms (entity norms + infrastructure norms)
+  |
+  v
+blueprint::derive_blueprint(&activated)
+  |
+  v
+ForgePlan { spec, norm_ids, blueprint }
+  |
+  v
+CodegenHdag::build(&spec, &blueprint)
+  |
+  v
+S0-S7 pipeline (unchanged)
+\end{lstlisting}
+
+\subsubsection{Changes}
+
+In \texttt{isls-chat}: after extracting entities and matching norms
+(D4 enrichment), call \texttt{derive\_blueprint()} and attach the
+blueprint to the \texttt{ForgePlan}.
+
+In \texttt{isls-cli::cmd\_forge\_v2()}: when building ForgePlan from 
+TOML, also match the description against infrastructure norms to 
+derive a blueprint.
+
+\subsubsection{Backward Compatibility}
+
+If no infrastructure norms activate (old TOML files that don't have 
+descriptions triggering CLI/library norms), the default web-app 
+blueprint is used. All existing TOML files produce identical output.
+
+\subsubsection{W4 Verification}
+
+\begin{enumerate}[nosep]
+\item Run all 6 D4 pipeline domains (petshop, hotel, clinic, gym, 
+      school, spa) with the new pipeline. All must compile.
+\item Verify generated file trees are identical to D5 output.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W5: ISLS Studio Self-Description + forge-self}
+\label{sec:w5}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Create the ISLS Studio TOML and the \texttt{isls forge-self} command.
+The TOML describes ISLS's own entities. The description activates
+web-infrastructure norms, producing a web-app blueprint.
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{examples/isls\_studio.toml}
+  & ISLS self-description: 5 entities (Norm, NormCandidate, 
+    Generation, ScrapeJob, NormWiring) + User. \\
+\bottomrule
+\end{longtable}
+
+The TOML uses the same format as all other ISLS requirements files. 
+The \texttt{[app] description} field triggers web-infrastructure 
+norms through keyword matching (``management interface'', ``dashboard'').
+
+\texttt{isls forge-self} is 30--50 lines in \texttt{main.rs} that 
+delegates to \texttt{forge-v2} with hardcoded TOML path. After 
+generation, it triggers D4 observation (self-scrape).
+
+\subsubsection{Norm Seed in Migration}
+
+Extend \texttt{structural.rs::generate\_migration()} to detect a 
+``Norm'' entity with \texttt{is\_builtin} field. If present, append 
+24 INSERT statements for builtin norms. Conditional --- doesn't 
+affect non-ISLS apps. Compliant with Rule~8 (seed columns from 
+EntityDef).
+
+\subsubsection{W5 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{isls forge-self --mock-oracle} produces output with 
+      correct structure.
+\item \texttt{isls forge-self --api-key \$KEY} generates full Studio.
+\item Generated \texttt{backend/} compiles with \texttt{cargo build}.
+\item Migration contains 6 CREATE TABLE + 24 norm seed INSERTs.
+\item \texttt{isls norms candidates} shows ``isls-studio'' domain.
+\end{enumerate}
+
+
+% ──────────────────────────────────────────────────────────────────────────────
+\subsection{W6: Full Verification}
+\label{sec:w6}
+% ──────────────────────────────────────────────────────────────────────────────
+
+\subsubsection{Goal}
+
+Prove backward compatibility AND forward capability.
+
+\subsubsection{Backward Compatibility Tests}
+
+All 6 existing domains must still compile:
+
+\begin{lstlisting}[style=bash]
+isls forge-chat -m "Pet shop with animals, owners, appointments" \
+    --api-key $KEY --output ./output/d6-test/petshop
+cd output/d6-test/petshop/backend && cargo build
+
+# Repeat for hotel, clinic, gym, school, spa
+\end{lstlisting}
+
+\subsubsection{Forward Capability: ISLS Studio}
+
+\begin{lstlisting}[style=bash]
+isls forge-self --api-key $KEY
+cd output/isls-studio/backend && cargo build
+# Docker optional: docker-compose up -d
+\end{lstlisting}
+
+\subsubsection{Norm System Integrity}
+
+\begin{lstlisting}[style=bash]
+isls norms list          # 24+ builtins + 7 infra + auto
+isls norms stats         # Infra norms visible
+isls norms candidates    # isls-studio domain observed
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{File Inventory}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{New Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Purpose} \\
+\midrule
+isls-forge-llm & \texttt{src/blueprint.rs}
+  & InfraBlueprint struct + derivation \\
+isls & \texttt{examples/isls\_studio.toml}
+  & Self-description TOML \\
+\bottomrule
+\end{longtable}
+
+\subsection{Modified Files}
+
+\begin{longtable}{llp{7cm}}
+\toprule
+\textbf{Crate} & \textbf{File} & \textbf{Change} \\
+\midrule
+isls-forge-llm & \texttt{src/lib.rs}
+  & Add \texttt{pub mod blueprint}, blueprint field on ForgePlan \\
+isls-forge-llm & \texttt{src/hdag.rs}
+  & Refactor \texttt{build()} to take blueprint \\
+isls-forge-llm & \texttt{src/static\_files.rs}
+  & Blueprint-aware Cargo.toml, Dockerfile, compose \\
+isls-forge-llm & \texttt{src/structural.rs}
+  & Blueprint-aware main.rs, norm seed in migration \\
+isls-forge-llm & \texttt{src/staged\_closure.rs}
+  & Pass blueprint through pipeline \\
+isls-forge-llm & \texttt{src/forge.rs}
+  & Pass blueprint through LlmForge \\
+isls-norms & \texttt{src/catalog.rs}
+  & Add 7 infrastructure norms \\
+isls-norms & \texttt{src/types.rs}
+  & Add NormLevel::Atom \\
+isls-cli & \texttt{src/main.rs}
+  & Add forge-self, blueprint derivation in forge paths \\
+isls-chat & \texttt{src/lib.rs} or \texttt{extract.rs}
+  & Attach blueprint to ForgePlan after norm matching \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The 12 Rules --- D6 Compliance}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Status} & \textbf{D6 Impact} \\
+\midrule
+1  & \color{isls-green}\checkmark & LLM surface unchanged (query files 
+     only). Blueprint controls which structural files exist, not which 
+     are LLM-generated. \\
+2  & \color{isls-green}\checkmark & mod.rs files generated for 
+     whichever directories the blueprint creates. \\
+3  & \color{isls-green}\checkmark & Function naming convention 
+     unchanged. \\
+4  & \color{isls-green}\checkmark & AuthUser still parameter (when 
+     auth is active). \\
+5  & \color{isls-green}\checkmark & Owned payloads. \\
+6  & \color{isls-green}\checkmark & No actix\_web in queries. \\
+7  & \color{isls-green}\checkmark & bcrypt/tracing when relevant. \\
+8  & \color{isls-green}\checkmark & Seed INSERT uses EntityDef 
+     columns. \\
+9  & \color{isls-green}\checkmark & \texttt{rust:1.88-slim} when Docker 
+     active. \\
+10 & \color{isls-green}\checkmark & Blueprint derivation failure $\to$ 
+     default web-app. \\
+11 & \color{isls-green}\checkmark & ProvidedSymbol content matches 
+     structural output. \\
+12 & \color{isls-green}\checkmark & LLM prompts still include full 
+     type context. \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Why This Is Not Categorization}
+% ══════════════════════════════════════════════════════════════════════════════
+
+The infrastructure norms are not categories. They are \emph{capabilities}
+that compose freely:
+
+\begin{itemize}[nosep]
+\item ``Restaurant app'' $\to$ WEB + DB + AUTH + FRONTEND + DOCKER 
+      = Full-stack web app with Docker deployment.
+\item ``CLI tool for CSV conversion'' $\to$ CLI = Binary with clap 
+      parsing, no server, no database.
+\item ``Data processing service with REST API'' $\to$ WEB + DB + CLI 
+      = Server with CLI management, no frontend.
+\item ``Math library'' $\to$ LIB = Pure library crate, no binary, 
+      no server.
+\item ``Desktop app with local database'' $\to$ CLI + DB(sqlite) 
+      = Binary with embedded database, no server.
+\end{itemize}
+
+No combination is predefined. The norms activate from the description.
+The blueprint composes from the norms. The HDAG builds from the 
+blueprint. Each layer derives from the previous --- nothing is
+hardcoded.
+
+If tomorrow a new infrastructure norm appears (e.g. 
+ISLS-NORM-INFRA-GRPC for gRPC servers), it adds a 
+\texttt{has\_grpc} flag to the blueprint, a conditional block in 
+\texttt{build()}, and a dependency generator. No existing code changes.
+The system grows by accretion, not by modification.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{Backward compatibility is non-negotiable.} All D1--D5 
+      apps must generate identically after D6. Test this with the 
+      pipeline bat.
+\item \textbf{Keep \texttt{build\_legacy()}} as a comparison 
+      function. A test MUST verify that 
+      \texttt{build(spec, default\_web\_bp())} produces equivalent 
+      output to \texttt{build\_legacy(spec)}.
+\item \textbf{InfraBlueprint is pure data.} No methods that generate 
+      code. It describes, it doesn't do.
+\item \textbf{Infrastructure norms have empty NormLayers.} They 
+      influence the blueprint, not entity-level artifacts.
+\item \textbf{Default fallback is web-app.} If no infrastructure 
+      norms activate, the system behaves exactly as D5.
+\item \textbf{Do not modify} isls-norms/src/types.rs beyond adding 
+      \texttt{NormLevel::Atom}.
+\item \textbf{Do not modify} isls-reader, isls-code-topo, 
+      isls-hypercube, isls-types, isls-agent.
+\item \textbf{Do not modify} the observation pipeline (D4) or scraping 
+      pipeline (D5).
+\item All new code MUST compile with \texttt{cargo build --workspace}.
+\item \texttt{cargo test --workspace} --- all existing tests pass 
+      (181+), plus new blueprint tests.
+\item Branch: \texttt{claude/implement-isls-d6-spec}.
+\item Commit format: \texttt{D6/W\{n\}: <description>}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Dependency Graph}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{verbatim}
+W1 (InfraBlueprint + Infrastructure Norms)
+  |
+  v
+W2 (Refactor CodegenHdag::build)
+  |
+  v
+W3 (Adaptive Structural Generators)
+  |
+  v
+W4 (Pipeline Integration)
+  |
+  v
+W5 (ISLS Studio TOML + forge-self + Norm Seed)
+  |
+  v
+W6 (Full Verification)
+\end{verbatim}
+
+Strictly sequential. Each WP depends on all previous.
+Recommended implementation order: W1 $\to$ W2 $\to$ W3 $\to$ W4 
+$\to$ W5 $\to$ W6.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Acceptance Criteria}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Pass} & \textbf{Criterion} \\
+\midrule
+1 & & \texttt{cargo build --workspace} compiles. \\
+2 & & \texttt{cargo test --workspace} passes (181+ existing + new). \\
+3 & & Comparison test: \texttt{build(spec, web\_bp) == build\_legacy(spec)}.\\
+4 & & All 6 D4 pipeline apps compile with new pipeline. \\
+5 & & \texttt{isls forge-self --mock-oracle} produces output. \\
+6 & & \texttt{isls forge-self --api-key \$KEY} generates Studio. \\
+7 & & Generated Studio compiles with \texttt{cargo build}. \\
+8 & & Migration contains 6 CREATE TABLE + 24 norm seed. \\
+9 & & \texttt{isls norms list} shows 7 infrastructure norms. \\
+10 & & \texttt{isls norms candidates} shows isls-studio observation. \\
+\bottomrule
+\end{longtable}
+
+D6 is passed when criteria 1--4 and 6--7 are fulfilled (backward 
+compat proven, Studio generated and compiled). Criteria 5, 8--10 
+are secondary.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Verification Sequence (Complete)}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \texttt{cargo build --workspace}
+\item \texttt{cargo test --workspace}
+\item Run D4 pipeline bat --- all 6 apps compile.
+\item \texttt{isls norms list} --- 24 + 7 infra norms visible.
+\item \texttt{isls forge-self --mock-oracle} --- output created.
+\item \texttt{isls forge-self --api-key \$KEY} --- Studio generated.
+\item \texttt{cd output/isls-studio/backend \&\& cargo build} --- 
+      compiles.
+\item \texttt{isls norms candidates} --- isls-studio observed.
+\end{enumerate}
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of D6 Specification.\\[0.3em]
+Die Infrastruktur ist keine Kategorie.\\
+Sie emergiert aus den Normen.\\
+Der Spielautomat hat seine Walzen.}
+\end{center}
+
+\end{document}
