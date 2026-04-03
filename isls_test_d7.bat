@@ -93,13 +93,9 @@ if "!API_KEY!"=="" (
 type "%TEMP%\isls_t2.json"
 echo.
 
-:: Extrahiere session_id (einfaches parsing)
-for /f "tokens=2 delims=:," %%a in ('findstr /C:"session_id" "%TEMP%\isls_t2.json"') do (
-    set "RAW_SID=%%a"
-)
-:: Entferne Anfuehrungszeichen und Leerzeichen
-set "SESSION_ID=!RAW_SID:"=!"
-set "SESSION_ID=!SESSION_ID: =!"
+:: Extrahiere session_id via PowerShell (robust, JSON-unabhaengig)
+set "SESSION_ID="
+for /f "usebackq delims=" %%a in (`powershell -NoProfile -Command "(Get-Content '%TEMP%\isls_t2.json' | ConvertFrom-Json).session_id"`) do set "SESSION_ID=%%a"
 
 if "!SESSION_ID!"=="" (
     echo   !RED!FAIL — keine Session-ID erhalten!RST!
