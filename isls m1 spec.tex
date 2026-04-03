@@ -1,0 +1,686 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+\lstdefinestyle{rust}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,HashSet,PathBuf,Result,Option,
+    f64,usize,bool,u32,u64,Box,dyn},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS M1 Spec --- MERKABA Orbitkern}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v2.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+  citecolor=isls-green,
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS M1 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} MERKABA Orbitkern}\\[0.3cm]
+{\large\color{isls-gray} Backend-agnostischer Ophanim Swarm\\
+mit Resonanz-Konsensus f\"ur Code-Generierung}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}       & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}      & v5.0 (M1) \\
+\textbf{Author:}       & Sebastian Klemm \\
+\textbf{Date:}         & \today \\
+\textbf{Status:}       & Specification \\
+\textbf{Depends:}      & D8 (complete), PSP-1.2-SRI-MERKABA v3.0 \\
+\textbf{Branch:}       & \texttt{claude/implement-isls-m1-spec} \\
+\textbf{Crate:}        & \texttt{isls-merkaba} (new) \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+Reference: PSP Schnitt 1.2 --- Structural Resonance Intelligence (Klemm, April 2026)\\
+License: MIT
+}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+After D8, ISLS calls one oracle once per LLM-node. If the answer is 
+bad, S6 Coagula repairs after the fact. This is reactive.
+
+M1 replaces the single call with the \textbf{Ophanim Swarm}: $n$ 
+calls to \emph{any} oracle (OpenAI, Ollama, anything implementing 
+the \texttt{Oracle} trait), each with a different context projection, 
+aggregated through structural resonance consensus, and collapsed 
+into a single emission only when coherence exceeds a threshold.
+
+The key architectural decision: \texttt{SwarmOracle} wraps a 
+\texttt{Box<dyn Oracle>}. It does not know or care what oracle it 
+wraps. The consensus math is identical whether the inner oracle is 
+GPT-4o at \$0.60/swarm-run or a local 7B model at \$0.00. 
+The intelligence is in the exoskeleton, not the oracle.
+
+\subsection{What M1 Produces}
+
+A new crate \texttt{isls-merkaba} containing:
+
+\begin{enumerate}[nosep]
+\item \textbf{SwarmOracle:} wraps any \texttt{Box<dyn Oracle>}, 
+      calls it $n$ times with $n$ different projections, applies 
+      resonance consensus, returns the best answer. Drop-in 
+      replacement --- implements \texttt{Oracle}.
+\item \textbf{Chameleon Pipeline:} deterministic prompt projector. 
+      One prompt $\to$ $n$ focused variants. Zero LLM cost.
+\item \textbf{Ophanim Coherer:} structural code similarity across 
+      $n$ candidates. Per-Thronengel resonance product $D_k$.
+\item \textbf{Konus Lens:} $D_\text{total}$ from geometric mean 
+      of all $D_k$. Soft unanimity.
+\item \textbf{Monolith Gate:} Mandorla selection (best candidate) 
+      or Swarm-Coagula (retry with evidence).
+\end{enumerate}
+
+No dependency on Ollama, OpenAI, or any specific provider. 
+\texttt{isls-merkaba} depends only on \texttt{isls-forge-llm} 
+(for the \texttt{Oracle} trait) and \texttt{isls-reader} 
+(for Rust code parsing).
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Core Design: Oracle Wrapping}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{lstlisting}[style=rust]
+/// The Ophanim Swarm Oracle.
+///
+/// Wraps ANY Oracle implementation. Calls it n times with
+/// n different Chameleon projections. Applies resonance
+/// consensus. Returns the Mandorla candidate.
+///
+/// The inner oracle does not know it is inside a swarm.
+/// The caller does not know a swarm was used.
+pub struct SwarmOracle {
+    /// The wrapped oracle (OpenAI, Ollama, Mock, anything).
+    inner: Box<dyn Oracle>,
+    /// Number of Thronengel per call (default: 4).
+    pub swarm_size: usize,
+    /// Resonance threshold Theta (default: 0.25).
+    pub threshold: f64,
+    /// Max Swarm-Coagula rounds (default: 2).
+    pub max_coagula: u32,
+}
+
+impl SwarmOracle {
+    pub fn new(inner: Box<dyn Oracle>, swarm_size: usize) -> Self {
+        Self {
+            inner,
+            swarm_size,
+            threshold: 0.25,
+            max_coagula: 2,
+        }
+    }
+    
+    pub fn with_threshold(mut self, theta: f64) -> Self {
+        self.threshold = theta;
+        self
+    }
+}
+
+impl Oracle for SwarmOracle {
+    fn call(
+        &self,
+        prompt: &str,
+        max_tokens: u32,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        // 1. Chameleon: prompt -> n projections
+        let projections = chameleon::project(prompt, self.swarm_size);
+        
+        // 2. Swarm: call inner oracle n times
+        let mut candidates: Vec<String> = Vec::new();
+        for pi in &projections {
+            match self.inner.call(pi, max_tokens) {
+                Ok(resp) => candidates.push(resp),
+                Err(e) => {
+                    tracing::warn!("Thronengel failed: {}", e);
+                    candidates.push(String::new());
+                }
+            }
+        }
+        
+        // 3. Ophanim: measure coherence
+        let dk = ophanim::compute_resonance(&candidates);
+        
+        // 4. Konus: D_total
+        let (dtotal, omega) = konus::compute_dtotal(&dk);
+        
+        // 5. Monolith: decide
+        monolith::select(
+            &candidates, &dk, dtotal, omega,
+            self.threshold, self.max_coagula,
+            self.inner.as_ref(),
+            prompt, max_tokens,
+        )
+    }
+}
+\end{lstlisting}
+
+\subsection{Composability Example}
+
+\begin{lstlisting}[style=rust]
+// Single OpenAI call (current behavior):
+let oracle = Box::new(OpenAiOracle::new(key, "gpt-4o"));
+
+// Swarm of 4 OpenAI calls with consensus:
+let oracle = Box::new(SwarmOracle::new(
+    Box::new(OpenAiOracle::new(key, "gpt-4o")),
+    4,
+));
+
+// Swarm of 4 Ollama calls with consensus:
+let oracle = Box::new(SwarmOracle::new(
+    Box::new(OllamaOracle::new("codellama:7b", "http://localhost:11434")),
+    4,
+));
+
+// Swarm of 2 on weak hardware:
+let oracle = Box::new(SwarmOracle::new(
+    Box::new(OllamaOracle::new("phi3:mini", "http://localhost:11434")),
+    2,
+));
+
+// All four pass to StagedClosure identically.
+// StagedClosure does not know which variant it has.
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The Chameleon Pipeline}
+\label{sec:chameleon}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Four Canonical Lenses}
+
+Each Thronengel receives the full base prompt plus a focus directive. 
+The directives are engineering-level instructions, not vague hints:
+
+\begin{longtable}{clp{7cm}}
+\toprule
+\textbf{$k$} & \textbf{Lens} & \textbf{Directive (appended to prompt)} \\
+\midrule
+1 & \textbf{Correctness}
+  & ``PRIORITY: Type correctness. Every \texttt{use} import MUST 
+    resolve. Every function signature MUST match the AVAILABLE 
+    IMPORTS section exactly. If an import path is not listed, 
+    do NOT use it. Prefer explicit types over inference.'' \\
+2 & \textbf{Completeness}
+  & ``PRIORITY: Complete implementation. Every CRUD function must 
+    have a full body. No \texttt{todo!()}, no \texttt{unimplemented!()}, 
+    no stub returns. Every SQL query must include all fields from 
+    the model struct.'' \\
+3 & \textbf{Robustness}
+  & ``PRIORITY: Error handling. Every \texttt{sqlx::query} call 
+    must \texttt{.map\_err(|e| AppError::DatabaseError(...))}. 
+    Not-found must return \texttt{AppError::NotFound}. Duplicate 
+    key must return \texttt{AppError::Conflict}. Never 
+    \texttt{.unwrap()} on database results.'' \\
+4 & \textbf{Consistency}
+  & ``PRIORITY: Naming conventions. Functions: 
+    \texttt{get\_\{entity\}}, \texttt{list\_\{entities\}}, 
+    \texttt{create\_\{entity\}}, \texttt{update\_\{entity\}}, 
+    \texttt{delete\_\{entity\}}. Parameters: 
+    \texttt{pool: \&PgPool}, then payload, then id. Match the 
+    style of the PROVIDED SYMBOLS exactly.'' \\
+\bottomrule
+\end{longtable}
+
+These four lenses map to the four most common failure modes 
+in ISLS code generation (identified from D1--D7 debug cycles):
+
+\begin{enumerate}[nosep]
+\item Wrong imports (Rule 11, ProvidedSymbol mismatch).
+\item Incomplete implementations (\texttt{todo!()} stubs).
+\item Missing error handling (\texttt{.unwrap()} on queries).
+\item Wrong naming (Rule 3 violations).
+\end{enumerate}
+
+Each lens attacks one failure mode. The consensus filters out 
+answers that fail on any of the four.
+
+\subsection{Implementation}
+
+\begin{lstlisting}[style=rust]
+pub fn project(base_prompt: &str, n: usize) -> Vec<String> {
+    let lenses = [
+        LENS_CORRECTNESS,
+        LENS_COMPLETENESS,
+        LENS_ROBUSTNESS,
+        LENS_CONSISTENCY,
+    ];
+    
+    (0..n).map(|k| {
+        let lens = lenses[k % lenses.len()];
+        format!(
+            "{base}\n\n\
+             ## FOCUS DIRECTIVE (Thronengel {idx}/{total})\n\
+             {lens}\n\n\
+             Produce ONLY the Rust source code. \
+             No markdown fences. No explanations.",
+            base = base_prompt,
+            idx = k + 1,
+            total = n,
+            lens = lens,
+        )
+    }).collect()
+}
+\end{lstlisting}
+
+Deterministic. Same prompt $\to$ same projections. 
+For $n = 1$: returns one prompt with Correctness lens 
+(graceful degradation to single-call-plus-focus).
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The Ophanim Coherer}
+\label{sec:ophanim}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Structural Code Similarity}
+
+Given code strings $c_1, \ldots, c_n$, extract from each using 
+\texttt{isls\_reader::parse\_string(c\_k, Language::Rust)}:
+
+\begin{itemize}[nosep]
+\item $F(c_k)$: function names with arity (\texttt{get\_trade/2}).
+\item $S(c_k)$: struct/enum names.
+\item $I(c_k)$: \texttt{use} import paths.
+\item $L(c_k)$: line count.
+\end{itemize}
+
+Pairwise similarity (Barbara weights from \texttt{isls-code-topo}):
+
+\begin{equation}
+\text{sim}(a, b) = 0.40 \cdot J(F_a, F_b) + 0.25 \cdot J(S_a, S_b) 
+                  + 0.20 \cdot J(I_a, I_b) + 0.15 \cdot \frac{\min(L_a, L_b)}{\max(L_a, L_b)}
+\label{eq:sim}
+\end{equation}
+
+\subsection{Per-Ophanim Resonance Product}
+
+\begin{equation}
+\psi_k = \frac{1}{n-1} \sum_{j \neq k} \text{sim}(c_k, c_j) \quad\text{(agreement)}
+\end{equation}
+\begin{equation}
+\rho_k = \min\!\left(1.0,\;\frac{|F(c_k)| + |S(c_k)|}{5}\right) \quad\text{(content richness, capped)}
+\end{equation}
+\begin{equation}
+\omega_k = \begin{cases} 
+1.0 & \text{if } c_k \text{ has } \geq 1 \text{ function AND } \geq 1 \text{ use statement} \\ 
+0.5 & \text{if only partial structure} \\ 
+0.0 & \text{if empty or no Rust structure found}
+\end{cases}
+\end{equation}
+\begin{equation}
+D_k = \psi_k \cdot \rho_k \cdot \omega_k
+\end{equation}
+
+If $\psi_k < 0.15$ (extreme outlier): $D_k = 0$.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The Konus Lens}
+\label{sec:konus}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{equation}
+D_\text{total} = \left(\prod_{k=1}^{n} \max(D_k, \epsilon)\right)^{1/n} \cdot \Omega
+\label{eq:dtotal}
+\end{equation}
+
+where $\epsilon = 10^{-6}$ prevents log-domain collapse, and:
+
+\begin{equation}
+\Omega = \frac{2}{n(n-1)} \sum_{i < j} \text{sim}(c_i, c_j)
+\quad\text{(mean pairwise similarity)}
+\end{equation}
+
+Properties (from SRI Paper \S6.3):
+\begin{itemize}[nosep]
+\item \textbf{Soft unanimity:} If any $D_k \to 0$, 
+      $D_\text{total} \to 0$.
+\item \textbf{Noise suppression:} Variance scales as $O(1/n)$ 
+      with swarm size (Theorem 6.7).
+\item \textbf{False positive rate} $\to 0$ as $n \to \infty$ 
+      (Corollary C.1).
+\end{itemize}
+
+Default threshold $\Theta = 0.20$, tunable via 
+\texttt{--swarm-threshold}.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The Monolith Gate}
+\label{sec:monolith}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Mandorla Selection}
+
+If $D_\text{total} \geq \Theta$: return the candidate with the 
+highest $D_k$. This is the Thronengel that agrees most with the 
+group, has the richest content, and parses correctly. The 
+\emph{Mandorla} --- the region where all perspectives overlap.
+
+\subsection{Swarm-Coagula}
+
+If $D_\text{total} < \Theta$:
+
+\begin{enumerate}[nosep]
+\item Take the candidate with the highest $D_k$ as base.
+\item Identify the disagreements: functions present in $\geq$2 
+      candidates but absent from the base.
+\item Build a Coagula prompt: base code + ``The following elements 
+      were expected by peer review but are missing: [list]. 
+      Fix the code to include them.''
+\item Call \texttt{self.inner.call(coagula\_prompt, max\_tokens)}.
+\item Re-evaluate coherence with the new answer included.
+\item Max \texttt{self.max\_coagula} rounds (default 2).
+\end{enumerate}
+
+If Coagula exhausts: return the best candidate anyway. Graceful 
+degradation (Rule 10). The downstream S5 Gate (cargo check) 
+catches remaining issues.
+
+\subsection{Logging}
+
+\begin{lstlisting}[style=bash]
+[MERKABA] Swarm(n=4, oracle=OpenAI/gpt-4o) for norm_queries.rs
+  T1 (Correctness):  D=0.72  fns=5 structs=2 imports=8
+  T2 (Completeness): D=0.68  fns=5 structs=2 imports=7
+  T3 (Robustness):   D=0.61  fns=4 structs=2 imports=8
+  T4 (Consistency):  D=0.70  fns=5 structs=2 imports=8
+  Omega=0.82  Dtotal=0.55  Theta=0.20 -> EMIT (Mandorla: T1)
+  Tokens: 4x2340=9360  Time: 12.4s
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Work Packages}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{W1: Crate isls-merkaba}
+
+\subsubsection{File Structure}
+
+\begin{lstlisting}[style=bash]
+crates/isls-merkaba/
+  Cargo.toml
+  src/
+    lib.rs           # pub mod + SwarmOracle re-export
+    chameleon.rs     # Chameleon Pipeline (4 lenses)
+    ophanim.rs       # Structural similarity + Dk
+    konus.rs         # Dtotal, Omega, threshold
+    monolith.rs      # Mandorla selection, Swarm-Coagula
+    swarm_oracle.rs  # Oracle trait impl, orchestration
+\end{lstlisting}
+
+\subsubsection{Dependencies}
+
+\begin{lstlisting}[style=bash]
+[dependencies]
+isls-forge-llm = { path = "../isls-forge-llm" }  # Oracle trait
+isls-reader    = { path = "../isls-reader" }      # parse_string
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+tracing        = { workspace = true }
+# NO reqwest — inner Oracle handles all HTTP
+\end{lstlisting}
+
+Note: \texttt{isls-merkaba} has \textbf{no HTTP dependency}. 
+It never makes network calls. It calls \texttt{self.inner.call()}, 
+and the inner oracle handles the transport. This makes 
+\texttt{isls-merkaba} a pure consensus engine, testable 
+without any server.
+
+\subsubsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{cargo build -p isls-merkaba} --- compiles.
+\item Unit test: \texttt{chameleon::project(prompt, 4)} returns 
+      4 strings, each containing one of the 4 focus directives.
+\item Unit test: \texttt{ophanim::compute\_resonance()} on 4 
+      identical code strings returns all $D_k > 0.8$.
+\item Unit test: 4 completely different strings $\to$ all 
+      $D_k < 0.2$.
+\item Unit test: \texttt{konus::compute\_dtotal()} with uniform 
+      $D_k = 0.7$ returns $D_\text{total} > 0.4$.
+\item Unit test: \texttt{konus::compute\_dtotal()} with one 
+      $D_k = 0.0$ returns $D_\text{total} \approx 0$.
+\item Unit test: \texttt{monolith::select()} picks highest-$D_k$.
+\item Unit test: SwarmOracle with MockOracle($n=4$) returns 
+      the mock's response (consensus trivial when identical).
+\end{enumerate}
+
+
+\subsection{W2: CLI Integration}
+
+\subsubsection{Commands}
+
+\begin{lstlisting}[style=bash]
+# Swarm with OpenAI (uses API budget):
+isls forge-chat -m "Pet shop" --swarm --api-key $KEY
+
+# Swarm with Ollama (free, local):
+isls forge-chat -m "Pet shop" --swarm --ollama
+
+# Customize swarm:
+isls forge-chat -m "Pet shop" --swarm --swarm-size 6 \
+    --swarm-threshold 0.30 --api-key $KEY
+
+# Single call (default, unchanged behavior):
+isls forge-chat -m "Pet shop" --api-key $KEY
+\end{lstlisting}
+
+Oracle selection (extended):
+\begin{enumerate}[nosep]
+\item \texttt{--mock-oracle} $\to$ MockOracle
+\item \texttt{--swarm --api-key} $\to$ SwarmOracle(OpenAiOracle)
+\item \texttt{--swarm --ollama} $\to$ SwarmOracle(OllamaOracle)
+\item \texttt{--swarm} alone $\to$ SwarmOracle(MockOracle) --- useful 
+      for testing consensus math without cost
+\item \texttt{--ollama} $\to$ OllamaOracle (single call)
+\item \texttt{--api-key} $\to$ OpenAiOracle (single call)
+\item None $\to$ MockOracle
+\end{enumerate}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-cli/src/main.rs}
+  & \texttt{--swarm}, \texttt{--swarm-size}, 
+    \texttt{--swarm-threshold} flags. SwarmOracle construction. \\
+\texttt{isls-cli/Cargo.toml}
+  & Add \texttt{isls-merkaba} dependency. \\
+\texttt{Cargo.toml} (workspace)
+  & Add \texttt{isls-merkaba} to members. \\
+\bottomrule
+\end{longtable}
+
+
+\subsection{W3: Metrics + Verification}
+
+\subsubsection{Extended Metrics}
+
+\begin{lstlisting}[style=rust]
+pub struct GenerationMetrics {
+    // ... existing fields from D7 ...
+    pub oracle_type: String,     // "mock"|"openai"|"ollama"|"swarm"
+    pub swarm_size: Option<usize>,
+    pub swarm_inner: Option<String>,  // "openai"|"ollama"|"mock"
+    pub swarm_dtotal_avg: Option<f64>,
+    pub swarm_emit_rate: Option<f64>, // % of nodes where Monolith fired
+    pub swarm_coagula_rounds: Option<u32>,
+}
+\end{lstlisting}
+
+\subsubsection{Comparison Report}
+
+\begin{lstlisting}[style=bash]
+isls metrics --compare
+
+ISLS Generation Metrics — Oracle Comparison
+---
+                   Single     Swarm(4)
+Generations:       12         5
+Compile success:   83%        100%
+Avg coagula (S6):  0.42       0.00
+Avg Dtotal:        --         0.58
+Emit rate:         --         100%
+Avg tokens:        12,400     49,600
+Avg duration:      180s       380s
+\end{lstlisting}
+
+The hypothesis: Swarm uses $4\times$ tokens and $2\times$ time but 
+achieves $\sim$100\% compile success with zero S6 Coagula, because 
+the resonance consensus pre-filters errors before they reach 
+\texttt{cargo check}.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Cost Model}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{lrrr}
+\toprule
+\textbf{Mode} & \textbf{Calls/Run} & \textbf{Cost/Run} & \textbf{Runs/\$20} \\
+\midrule
+Single OpenAI    & 7    & \$0.15  & 133 \\
+Swarm(4) OpenAI  & 28   & \$0.60  & 33 \\
+Swarm(4) Ollama  & 28   & \$0.00  & $\infty$ \\
+Swarm(2) OpenAI  & 14   & \$0.30  & 66 \\
+\bottomrule
+\end{longtable}
+
+With \$20 OpenAI budget: 33 full Swarm runs. Enough to verify 
+the hypothesis. When budget is tight: \texttt{--swarm-size 2} 
+halves the cost while still providing two independent perspectives 
+(Correctness + Completeness --- the two most impactful lenses).
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \texttt{isls-merkaba} has \textbf{zero HTTP dependencies}. 
+      No reqwest. No tokio. No network code. It calls 
+      \texttt{self.inner.call()} and that is all.
+\item \texttt{SwarmOracle} MUST implement \texttt{Oracle} from 
+      \texttt{isls-forge-llm}. No trait changes.
+\item \texttt{SwarmOracle::new(inner, swarm\_size)} takes 
+      \texttt{Box<dyn Oracle>}. The inner oracle is opaque.
+\item Chameleon projections MUST be deterministic.
+\item Code parsing via \texttt{isls\_reader::parse\_string()}.
+      Do not reimplement Rust parsing.
+\item Graceful degradation everywhere: failed inner call $\to$ 
+      empty candidate (not panic). Exhausted Coagula $\to$ return 
+      best (not error).
+\item Do NOT modify isls-forge-llm, isls-norms, isls-reader, 
+      isls-code-topo, isls-gateway, or any structural generators.
+\item All existing tests MUST pass.
+\item Branch: \texttt{claude/implement-isls-m1-spec}.
+\item Commit format: \texttt{M1/W\{n\}: <description>}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Post-M1 Roadmap}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{description}[nosep]
+\item[M2 --- ScorpioSync:] Phase-tagged event loop. Thronengel 
+  activate in phase windows. Temporal coordination.
+\item[M3 --- Gabriel Cells:] $(\psi, \rho, \omega)$ extraction 
+  at input level. Norm-matching becomes resonance-based.
+\item[M4 --- MEF Ledger:] Hash-chained evidence replacing flat 
+  \texttt{norms.json}. Every Monolith event, every norm 
+  promotion recorded with cryptographic integrity.
+\item[M5 --- Adaptive $\Theta$:] Threshold learns from history. 
+  High-SGB domains get stricter consensus. New domains get 
+  more exploration.
+\end{description}
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of M1 Specification v2.0.\\[0.3em]
+The oracle is replaceable.\\
+The exoskeleton is the intelligence.\\
+--- PSP Schnitt 1.2, \S1}
+\end{center}
+
+\end{document}
