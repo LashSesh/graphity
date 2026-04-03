@@ -22,6 +22,9 @@ enum Command {
         model: String,
         ollama: bool,
         ollama_url: String,
+        swarm: bool,
+        swarm_size: usize,
+        swarm_threshold: f64,
     },
     /// D3: Chat-to-App — natural language to compiled application.
     ForgeChat {
@@ -31,6 +34,9 @@ enum Command {
         model: String,
         ollama: bool,
         ollama_url: String,
+        swarm: bool,
+        swarm_size: usize,
+        swarm_threshold: f64,
     },
     /// D4: Norm catalog inspection and management.
     Norms { subcmd: NormsSubcmd },
@@ -51,6 +57,9 @@ enum Command {
         model: String,
         ollama: bool,
         ollama_url: String,
+        swarm: bool,
+        swarm_size: usize,
+        swarm_threshold: f64,
     },
     /// D7: Generation metrics inspection.
     Metrics { compare: bool, last: Option<usize> },
@@ -104,7 +113,16 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
-            Command::ForgeV2 { requirements, output, mock_oracle, api_key, model, ollama, ollama_url }
+            let swarm = args.contains(&"--swarm".to_string());
+            let swarm_size = args.iter().position(|a| a == "--swarm-size")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(4);
+            let swarm_threshold = args.iter().position(|a| a == "--swarm-threshold")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.20);
+            Command::ForgeV2 { requirements, output, mock_oracle, api_key, model, ollama, ollama_url, swarm, swarm_size, swarm_threshold }
         }
         "forge-chat" => {
             let message = args.iter().position(|a| a == "--message" || a == "-m")
@@ -131,7 +149,16 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
-            Command::ForgeChat { message, output, api_key, model, ollama, ollama_url }
+            let swarm = args.contains(&"--swarm".to_string());
+            let swarm_size = args.iter().position(|a| a == "--swarm-size")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(4);
+            let swarm_threshold = args.iter().position(|a| a == "--swarm-threshold")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.20);
+            Command::ForgeChat { message, output, api_key, model, ollama, ollama_url, swarm, swarm_size, swarm_threshold }
         }
         "norms" => {
             let subcmd = args.get(2).map(|s| s.as_str()).unwrap_or("list");
@@ -200,7 +227,16 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
                 .unwrap_or_else(|| "http://localhost:11434".to_string());
-            Command::ForgeSelf { output, mock_oracle, api_key, model, ollama, ollama_url }
+            let swarm = args.contains(&"--swarm".to_string());
+            let swarm_size = args.iter().position(|a| a == "--swarm-size")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(4);
+            let swarm_threshold = args.iter().position(|a| a == "--swarm-threshold")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.20);
+            Command::ForgeSelf { output, mock_oracle, api_key, model, ollama, ollama_url, swarm, swarm_size, swarm_threshold }
         }
         "metrics" => {
             let compare = args.contains(&"--compare".to_string());
@@ -234,6 +270,9 @@ fn cmd_forge_v2(
     model: &str,
     ollama: bool,
     ollama_url: &str,
+    swarm: bool,
+    swarm_size: usize,
+    swarm_threshold: f64,
 ) {
     use isls_hypercube::{
         DimState, DimValue,
@@ -241,6 +280,7 @@ fn cmd_forge_v2(
     };
     use isls_forge_llm::{ForgePlan, forge::LlmForge};
     use isls_forge_llm::oracle::{MockOracle, OllamaOracle, OpenAiOracle};
+    use isls_merkaba::SwarmOracle;
 
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║     ISLS v3.4 HDAG Staged Closure Pipeline           ║");
@@ -262,8 +302,13 @@ fn cmd_forge_v2(
     let use_mock = mock_oracle
         || (!ollama && api_key.is_none() && std::env::var("OPENAI_API_KEY").is_err());
 
-    if use_mock {
+    if use_mock && !swarm {
         println!("[Mode] Mock oracle — no LLM calls (compilable output)");
+    } else if swarm {
+        let inner_desc = if use_mock { "mock".to_string() }
+            else if ollama { format!("ollama/{}", model) }
+            else { format!("openai/{}", model) };
+        println!("[Mode] MERKABA Swarm(n={}, inner={}, Θ={:.2})", swarm_size, inner_desc, swarm_threshold);
     } else if ollama {
         println!("[Mode] Ollama oracle — {} at {}", model, ollama_url);
     } else {
@@ -340,11 +385,10 @@ fn cmd_forge_v2(
     let mut plan = plan;
     plan.blueprint = isls_forge_llm::blueprint::derive_blueprint_from_description(&plan.spec.description);
 
-    // 5. Create oracle (D8: mock > ollama > openai > mock fallback)
-    let oracle: Box<dyn isls_forge_llm::oracle::Oracle> = if use_mock {
+    // 5. Create inner oracle (D8: mock > ollama > openai > mock fallback)
+    let inner_oracle: Box<dyn isls_forge_llm::oracle::Oracle> = if use_mock && !swarm {
         Box::new(MockOracle)
     } else if ollama {
-        // D8/W2: Ollama oracle — check availability, then create
         match OllamaOracle::check_availability(ollama_url) {
             Ok(()) => {
                 if let Err(e) = OllamaOracle::check_model(ollama_url, model) {
@@ -357,6 +401,9 @@ fn cmd_forge_v2(
                 Box::new(MockOracle)
             }
         }
+    } else if swarm && use_mock {
+        // --swarm alone → SwarmOracle(MockOracle) for testing consensus
+        Box::new(MockOracle)
     } else {
         match OpenAiOracle::new(api_key, Some(model.to_string())) {
             Ok(o) => Box::new(o),
@@ -365,6 +412,16 @@ fn cmd_forge_v2(
                 Box::new(MockOracle)
             }
         }
+    };
+
+    // M1: Optionally wrap with SwarmOracle for Ophanim consensus
+    let oracle: Box<dyn isls_forge_llm::oracle::Oracle> = if swarm {
+        Box::new(
+            SwarmOracle::new(inner_oracle, swarm_size)
+                .with_threshold(swarm_threshold)
+        )
+    } else {
+        inner_oracle
     };
 
     // 6. Create output dir and run LlmForge
@@ -417,6 +474,9 @@ fn cmd_forge_chat(
     model: &str,
     ollama: bool,
     ollama_url: &str,
+    swarm: bool,
+    swarm_size: usize,
+    swarm_threshold: f64,
 ) {
     use isls_forge_llm::oracle::{OllamaOracle, OpenAiOracle};
 
@@ -432,8 +492,8 @@ fn cmd_forge_chat(
     let resolved_key = api_key.clone()
         .or_else(|| std::env::var("OPENAI_API_KEY").ok());
 
-    if !ollama && resolved_key.is_none() {
-        eprintln!("[ERROR] --api-key, OPENAI_API_KEY, or --ollama required for forge-chat");
+    if !ollama && !swarm && resolved_key.is_none() {
+        eprintln!("[ERROR] --api-key, OPENAI_API_KEY, --ollama, or --swarm required for forge-chat");
         std::process::exit(1);
     }
 
@@ -531,6 +591,9 @@ fn cmd_forge_chat(
         model,
         ollama,
         ollama_url,
+        swarm,
+        swarm_size,
+        swarm_threshold,
     );
 }
 
@@ -543,6 +606,9 @@ fn cmd_forge_self(
     model: &str,
     ollama: bool,
     ollama_url: &str,
+    swarm: bool,
+    swarm_size: usize,
+    swarm_threshold: f64,
 ) {
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║  D6 Möbius — Generating ISLS Studio                   ║");
@@ -551,7 +617,7 @@ fn cmd_forge_self(
     println!();
 
     let requirements = "examples/isls_studio.toml";
-    cmd_forge_v2(requirements, output, mock_oracle, api_key.clone(), model, ollama, ollama_url);
+    cmd_forge_v2(requirements, output, mock_oracle, api_key.clone(), model, ollama, ollama_url, swarm, swarm_size, swarm_threshold);
 
     // D6: Self-observation — feed generated artifacts into D4 norm learning
     let output_dir = Path::new(output);
@@ -630,6 +696,9 @@ fn print_help() {
     println!("  --model <model>        LLM model name (default: gpt-4o)");
     println!("  --ollama               Use local Ollama instance instead of OpenAI");
     println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
+    println!("  --swarm                M1: Use MERKABA Ophanim Swarm (n oracle calls + consensus)");
+    println!("  --swarm-size <n>       Number of Thronengel per call (default: 4)");
+    println!("  --swarm-threshold <f>  Resonance threshold Theta (default: 0.20)");
     println!();
     println!("forge-self options:");
     println!("  --output <path>        Output directory (default: ./output/isls-studio)");
@@ -638,6 +707,9 @@ fn print_help() {
     println!("  --model <model>        LLM model name (default: gpt-4o)");
     println!("  --ollama               Use local Ollama instance instead of OpenAI");
     println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
+    println!("  --swarm                M1: Use MERKABA Ophanim Swarm");
+    println!("  --swarm-size <n>       Number of Thronengel (default: 4)");
+    println!("  --swarm-threshold <f>  Resonance threshold (default: 0.20)");
     println!();
     println!("forge-chat options:");
     println!("  --message / -m <text>  Application description in natural language (required)");
@@ -646,6 +718,9 @@ fn print_help() {
     println!("  --model <model>        LLM model name (default: gpt-4o)");
     println!("  --ollama               Use local Ollama instance instead of OpenAI");
     println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
+    println!("  --swarm                M1: Use MERKABA Ophanim Swarm");
+    println!("  --swarm-size <n>       Number of Thronengel (default: 4)");
+    println!("  --swarm-threshold <f>  Resonance threshold (default: 0.20)");
     println!();
     println!("norms subcommands:");
     println!("  list [--auto-only]     List all norms (builtin + auto-discovered)");
@@ -681,14 +756,14 @@ fn main() {
     let cmd = parse_args(&args);
 
     match cmd {
-        Command::ForgeV2 { requirements, output, mock_oracle, api_key, model, ollama, ollama_url } => {
-            cmd_forge_v2(&requirements, &output, mock_oracle, api_key, &model, ollama, &ollama_url);
+        Command::ForgeV2 { requirements, output, mock_oracle, api_key, model, ollama, ollama_url, swarm, swarm_size, swarm_threshold } => {
+            cmd_forge_v2(&requirements, &output, mock_oracle, api_key, &model, ollama, &ollama_url, swarm, swarm_size, swarm_threshold);
         }
-        Command::ForgeChat { message, output, api_key, model, ollama, ollama_url } => {
-            cmd_forge_chat(&message, &output, api_key, &model, ollama, &ollama_url);
+        Command::ForgeChat { message, output, api_key, model, ollama, ollama_url, swarm, swarm_size, swarm_threshold } => {
+            cmd_forge_chat(&message, &output, api_key, &model, ollama, &ollama_url, swarm, swarm_size, swarm_threshold);
         }
-        Command::ForgeSelf { output, mock_oracle, api_key, model, ollama, ollama_url } => {
-            cmd_forge_self(&output, mock_oracle, api_key, &model, ollama, &ollama_url);
+        Command::ForgeSelf { output, mock_oracle, api_key, model, ollama, ollama_url, swarm, swarm_size, swarm_threshold } => {
+            cmd_forge_self(&output, mock_oracle, api_key, &model, ollama, &ollama_url, swarm, swarm_size, swarm_threshold);
         }
         Command::Scrape { path, url, manifest, domain, max_size_mb, timeout_secs } => {
             cmd_scrape::cmd_scrape(cmd_scrape::ScrapeOpts {
@@ -913,6 +988,62 @@ mod tests {
                 assert_eq!(norm_id, "ISLS-NORM-0042");
             }
             _ => panic!("expected Norms Inspect"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_v2_swarm() {
+        let cmd = parse_args(&args(&[
+            "isls", "forge-v2", "--swarm", "--swarm-size", "6",
+            "--swarm-threshold", "0.30", "--mock-oracle",
+        ]));
+        match cmd {
+            Command::ForgeV2 { swarm, swarm_size, swarm_threshold, mock_oracle, .. } => {
+                assert!(swarm);
+                assert_eq!(swarm_size, 6);
+                assert!((swarm_threshold - 0.30).abs() < 0.001);
+                assert!(mock_oracle);
+            }
+            _ => panic!("expected ForgeV2"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_v2_swarm_defaults() {
+        let cmd = parse_args(&args(&["isls", "forge-v2", "--swarm"]));
+        match cmd {
+            Command::ForgeV2 { swarm, swarm_size, swarm_threshold, .. } => {
+                assert!(swarm);
+                assert_eq!(swarm_size, 4);
+                assert!((swarm_threshold - 0.20).abs() < 0.001);
+            }
+            _ => panic!("expected ForgeV2"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_chat_swarm_ollama() {
+        let cmd = parse_args(&args(&[
+            "isls", "forge-chat", "-m", "Pet shop", "--swarm", "--ollama",
+        ]));
+        match cmd {
+            Command::ForgeChat { swarm, ollama, message, .. } => {
+                assert!(swarm);
+                assert!(ollama);
+                assert_eq!(message, "Pet shop");
+            }
+            _ => panic!("expected ForgeChat"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_v2_no_swarm_by_default() {
+        let cmd = parse_args(&args(&["isls", "forge-v2"]));
+        match cmd {
+            Command::ForgeV2 { swarm, .. } => {
+                assert!(!swarm, "swarm should be false by default");
+            }
+            _ => panic!("expected ForgeV2"),
         }
     }
 }
