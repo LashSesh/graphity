@@ -129,6 +129,11 @@ impl StagedClosure {
         let order = hdag.topological_sort();
         let total = order.len();
 
+        // I1: Gate result accumulators
+        let mut mikro_results: Vec<(String, crate::gates::MikroGateResult)> = Vec::new();
+        let mut meso_results: Vec<crate::gates::MesoGateResult> = Vec::new();
+        let mut coagula_error_counts: Vec<usize> = Vec::new();
+
         // D7/W3: fire start event
         self.fire_progress(ForgeProgressEvent::Start { total_nodes: total });
 
@@ -199,6 +204,50 @@ impl StagedClosure {
                         index: i + 1, total, path: node.path.clone(),
                         method: "llm".into(), tokens: node_tokens,
                     });
+
+                    // I1: Mikro-Gate — per-file validation (informational)
+                    if node.is_rust {
+                        let mg = crate::gates::mikro_gate(
+                            &self.generated_files.last().unwrap().content,
+                            &node,
+                            &provided,
+                            crate::gates::MIKRO_THRESHOLD,
+                        );
+                        if mg.pass {
+                            tracing::debug!(path = %node.path, resonance = %mg.codematrix.resonance(), "Mikro-Gate: PASS");
+                        } else {
+                            eprintln!("[HDAG I1] Mikro-Gate WARN: {} ({} violations)", node.path, mg.violations.len());
+                            tracing::warn!(path = %node.path, violations = mg.violations.len(), "Mikro-Gate: WARN");
+                        }
+                        mikro_results.push((node.path.clone(), mg));
+                    }
+                }
+            }
+        }
+
+        // I1: Meso-Gate — cross-file consistency (informational)
+        {
+            let mut layer_groups: std::collections::BTreeMap<u8, Vec<(String, String, crate::codematrix::Codematrix)>> = std::collections::BTreeMap::new();
+            for (path, mg) in &mikro_results {
+                let layer = crate::codematrix::infer_layer_depth(path);
+                if let Some(gf) = self.generated_files.iter().find(|f| &f.path == path) {
+                    layer_groups.entry(layer).or_default().push((
+                        path.clone(),
+                        gf.content.clone(),
+                        mg.codematrix,
+                    ));
+                }
+            }
+            for (layer, files) in &layer_groups {
+                if files.len() >= 2 {
+                    let mg = crate::gates::meso_gate(files);
+                    if mg.pass {
+                        tracing::debug!(layer, "Meso-Gate: PASS");
+                    } else {
+                        eprintln!("[HDAG I1] Meso-Gate WARN: layer {} ({} violations)", layer, mg.violations.len());
+                        tracing::warn!(layer, violations = mg.violations.len(), "Meso-Gate: WARN");
+                    }
+                    meso_results.push(mg);
                 }
             }
         }
@@ -223,6 +272,7 @@ impl StagedClosure {
             }
             Err(errors) => {
                 let error_count = errors.lines().count();
+                coagula_error_counts.push(error_count);
                 // S6: Coagula — anomaly path (MUST be logged)
                 eprintln!(
                     "[HDAG S6] Coagula triggered — anomaly path ({} error lines)",
@@ -288,6 +338,59 @@ impl StagedClosure {
                 eprintln!("[HDAG S7.1] Observe: failed (non-blocking): {}", e);
                 tracing::warn!("S7.1 Observe: failed (non-blocking): {}", e);
             }
+        }
+
+        // I1: Fitness-Rückkopplung — update norm fitness based on outcome
+        {
+            let success = self.stats.compile_failures == 0 || self.stats.compile_checks > self.stats.compile_failures;
+            let norm_ids: Vec<String> = self.plan.norm_ids.clone();
+            if !norm_ids.is_empty() {
+                let mut fitness_store = isls_norms::fitness::FitnessStore::load();
+                fitness_store.update_fitness(&norm_ids, success);
+                if let Err(e) = fitness_store.save() {
+                    tracing::warn!("Could not save fitness.json: {}", e);
+                }
+                eprintln!("[HDAG I1] Fitness updated for {} norms (success={})", norm_ids.len(), success);
+            }
+        }
+
+        // I1: Kontraktivitäts-Monitor — log contraction ratios
+        {
+            let mut contraction_ratios = Vec::new();
+            let mut was_contractive = true;
+            for i in 1..coagula_error_counts.len() {
+                let prev = coagula_error_counts[i - 1] as f64;
+                let curr = coagula_error_counts[i] as f64;
+                let ratio = if prev > 0.0 { curr / prev } else { 0.0 };
+                contraction_ratios.push(ratio);
+                if curr >= prev && prev > 0.0 {
+                    was_contractive = false;
+                }
+            }
+            if !contraction_ratios.is_empty() {
+                eprintln!("[HDAG I1] Contraction ratios: {:?} (contractive={})",
+                    contraction_ratios.iter().map(|r| format!("{:.2}", r)).collect::<Vec<_>>(),
+                    was_contractive);
+            }
+
+            // Compute I1 gate pass rates
+            let mikro_total = mikro_results.len();
+            let mikro_passed = mikro_results.iter().filter(|(_, r)| r.pass).count();
+            let mikro_rate = if mikro_total > 0 { mikro_passed as f64 / mikro_total as f64 } else { 1.0 };
+
+            let meso_total = meso_results.len();
+            let meso_passed = meso_results.iter().filter(|r| r.pass).count();
+            let meso_rate = if meso_total > 0 { meso_passed as f64 / meso_total as f64 } else { 1.0 };
+
+            eprintln!("[HDAG I1] Mikro-Gate: {}/{} passed ({:.0}%), Meso-Gate: {}/{} passed ({:.0}%)",
+                mikro_passed, mikro_total, mikro_rate * 100.0,
+                meso_passed, meso_total, meso_rate * 100.0);
+
+            // Store I1 metrics on stats for later retrieval
+            self.stats.i1_contraction_ratios = contraction_ratios;
+            self.stats.i1_was_contractive = was_contractive;
+            self.stats.i1_mikro_gate_pass_rate = mikro_rate;
+            self.stats.i1_meso_gate_pass_rate = meso_rate;
         }
 
         Ok(self.generated_files.clone())

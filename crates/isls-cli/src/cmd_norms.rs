@@ -205,6 +205,47 @@ pub fn cmd_norms_stats() {
     println!("Persistence:         {}", persistence_info);
 }
 
+/// Show norm fitness report.
+pub fn cmd_norms_fitness() {
+    let store = isls_norms::fitness::FitnessStore::load();
+    let entries = store.sorted_entries();
+
+    println!("ISLS Norm Fitness Report");
+    println!("---");
+
+    if entries.is_empty() {
+        println!("No fitness data yet. Run a generation to start tracking.");
+        return;
+    }
+
+    for entry in &entries {
+        let ratio = if entry.activation_count > 0 {
+            format!("{}/{}", entry.success_count, entry.activation_count)
+        } else {
+            "n/a".to_string()
+        };
+        println!(
+            "{:<35} {:.2}  ({} success)",
+            entry.norm_id, entry.fitness, ratio,
+        );
+    }
+
+    println!("---");
+    println!("Total tracked: {}", entries.len());
+
+    // Show weakest
+    let weak: Vec<_> = entries.iter().filter(|e| e.fitness < 0.5 && e.activation_count >= 2).collect();
+    if !weak.is_empty() {
+        println!("\nWeakest:");
+        for e in weak {
+            println!(
+                "  {:<35} {:.2}  ({}/{}) -- needs attention",
+                e.norm_id, e.fitness, e.success_count, e.activation_count,
+            );
+        }
+    }
+}
+
 /// Delete ~/.isls/norms.json (reset auto-discovered norms).
 pub fn cmd_norms_reset() {
     let persistence_path = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok().map(std::path::PathBuf::from)

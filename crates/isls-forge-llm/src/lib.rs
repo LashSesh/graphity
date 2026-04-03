@@ -35,6 +35,8 @@
 //! ```
 
 pub mod artifact_collector;
+pub mod codematrix;
+pub mod gates;
 pub mod metrics;
 pub mod blueprint;
 pub mod forge;
@@ -509,6 +511,15 @@ pub struct ForgeStats {
     pub retries: usize,
     /// Wall-clock time for the full generation run.
     pub total_time_secs: f64,
+    // I1: Infogenetik extensions
+    /// Contraction ratios per Coagula cycle pair.
+    pub i1_contraction_ratios: Vec<f64>,
+    /// Whether all Coagula cycles were contractive.
+    pub i1_was_contractive: bool,
+    /// Mikro-Gate pass rate [0, 1].
+    pub i1_mikro_gate_pass_rate: f64,
+    /// Meso-Gate pass rate [0, 1].
+    pub i1_meso_gate_pass_rate: f64,
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

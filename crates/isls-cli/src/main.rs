@@ -79,6 +79,8 @@ enum NormsSubcmd {
     Candidates,
     /// Summary statistics.
     Stats,
+    /// Norm fitness report.
+    Fitness,
     /// Reset auto-discovered norms.
     Reset,
 }
@@ -176,10 +178,11 @@ fn parse_args(args: &[String]) -> Command {
                 }
                 "candidates" => NormsSubcmd::Candidates,
                 "stats" => NormsSubcmd::Stats,
+                "fitness" => NormsSubcmd::Fitness,
                 "reset" => NormsSubcmd::Reset,
                 _ => {
                     eprintln!("[ERROR] Unknown norms subcommand: {}", subcmd);
-                    eprintln!("Available: list, inspect, candidates, stats, reset");
+                    eprintln!("Available: list, inspect, candidates, stats, fitness, reset");
                     std::process::exit(1);
                 }
             };
@@ -775,6 +778,7 @@ fn main() {
             NormsSubcmd::Inspect { norm_id } => cmd_norms::cmd_norms_inspect(&norm_id),
             NormsSubcmd::Candidates => cmd_norms::cmd_norms_candidates(),
             NormsSubcmd::Stats => cmd_norms::cmd_norms_stats(),
+            NormsSubcmd::Fitness => cmd_norms::cmd_norms_fitness(),
             NormsSubcmd::Reset => cmd_norms::cmd_norms_reset(),
         },
         Command::Metrics { compare, last } => {

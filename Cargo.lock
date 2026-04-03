@@ -767,6 +767,7 @@ dependencies = [
  "chrono",
  "isls-hypercube",
  "isls-norms",
+ "isls-reader",
  "regex",
  "reqwest",
  "serde",
@@ -829,6 +830,7 @@ dependencies = [
 name = "isls-norms"
 version = "1.0.0"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
  "sha2",

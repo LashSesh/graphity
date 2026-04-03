@@ -29,6 +29,15 @@ pub struct GenerationMetrics {
     pub duration_secs: f64,
     pub norms_activated: Vec<String>,
     pub conversation_turns: usize,
+    // I1: Infogenetik extensions
+    #[serde(default)]
+    pub contraction_ratios: Vec<f64>,
+    #[serde(default)]
+    pub was_contractive: bool,
+    #[serde(default)]
+    pub mikro_gate_pass_rate: f64,
+    #[serde(default)]
+    pub meso_gate_pass_rate: f64,
 }
 
 /// Source of a generation run.
@@ -213,6 +222,10 @@ mod tests {
             duration_secs: 120.0,
             norms_activated: vec!["ISLS-NORM-0042".to_string()],
             conversation_turns: turns,
+            contraction_ratios: vec![],
+            was_contractive: true,
+            mikro_gate_pass_rate: 1.0,
+            meso_gate_pass_rate: 1.0,
         }
     }
 
