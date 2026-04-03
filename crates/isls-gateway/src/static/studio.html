@@ -1,2559 +1,600 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ISLS Studio</title>
 <style>
-/* ─── CSS Reset & Custom Properties ───────────────────────────────────── */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* ═══════════════════════════════════════════════════════════════════
+   S1a: ISLS Studio — Visual Shell
+   Dark theme, two-mode chat layout, responsive.
+   Zero external dependencies.
+   ═══════════════════════════════════════════════════════════════════ */
 
+/* ── Reset & Variables ──────────────────────────────────────────── */
 :root {
-    --bg-primary: #0d0d1a;
-    --bg-secondary: #1a1a2e;
-    --bg-tertiary: #16213e;
-    --text-primary: #e0e0e0;
-    --text-secondary: #a0b4d6;
-    --text-dim: #64748b;
-    --accent: #3b82f6;
-    --success: #22c55e;
-    --warning: #eab308;
-    --error: #ef4444;
-    --border: #2a2a4a;
-    --gold: #d4a843;
-    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-    --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-    --radius: 8px;
-    --gap: 1rem;
+    --bg-primary: #0d1117;
+    --bg-card: #161b22;
+    --bg-input: #1c2128;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-dim: #484f58;
+    --accent: #d4871b;
+    --accent-success: #3fb950;
+    --accent-error: #f85149;
+    --accent-info: #58a6ff;
+    --border: #30363d;
 }
 
-html, body { height: 100%; overflow: hidden; }
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
 
-body {
-    font-family: var(--font-ui);
+html, body {
+    height: 100%;
+    overflow: hidden;
     background: var(--bg-primary);
     color: var(--text-primary);
-    font-size: 14px;
-    line-height: 1.5;
-}
-
-/* ─── Studio Grid Layout ─────────────────────────────────────────────── */
-.studio {
-    display: grid;
-    grid-template-columns: 56px 1fr;
-    grid-template-rows: 48px 1fr 32px;
-    height: 100vh;
-}
-
-/* ─── Sidebar ─────────────────────────────────────────────────────────── */
-.sidebar {
-    grid-row: 1 / -1;
-    background: var(--bg-secondary);
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 8px 0;
-    gap: 4px;
-}
-
-.sidebar .logo {
-    width: 36px; height: 36px;
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 900; font-size: 14px; color: var(--accent);
-    border-bottom: 1px solid var(--border);
-    padding-bottom: 8px; margin-bottom: 4px;
-    cursor: default;
-}
-
-.nav-btn {
-    width: 40px; height: 40px;
-    display: flex; align-items: center; justify-content: center;
-    background: transparent;
-    border: none; border-radius: var(--radius);
-    color: var(--text-dim);
-    font-size: 16px; font-weight: 700;
-    cursor: pointer;
-    transition: all 0.15s;
-    font-family: var(--font-mono);
-}
-.nav-btn:hover { background: var(--bg-tertiary); color: var(--text-secondary); }
-.nav-btn.active { background: var(--accent); color: #fff; }
-
-.sidebar-bottom {
-    margin-top: auto;
-    padding: 8px 4px;
-    text-align: center;
-    font-size: 9px;
-    color: var(--text-dim);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 15px;
     line-height: 1.6;
 }
 
-.status-pill {
-    display: inline-block;
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    background: var(--success);
-    margin-bottom: 4px;
-}
-.status-pill.yellow { background: var(--warning); }
-.status-pill.red { background: var(--error); }
-
-/* ─── Header ──────────────────────────────────────────────────────────── */
-.header {
-    grid-column: 2;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    gap: 16px;
-}
-
-.header h1 {
-    font-size: 15px; font-weight: 700;
-    color: var(--text-primary);
-}
-
-.header .subtitle {
-    font-size: 12px; color: var(--text-dim);
-}
-
-.header .spacer { flex: 1; }
-
-.kbd {
-    display: inline-block;
-    padding: 1px 6px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--text-dim);
-}
-
-/* ─── Content ─────────────────────────────────────────────────────────── */
-.content {
-    grid-column: 2;
-    overflow: auto;
-    padding: var(--gap);
-}
-
-/* ─── Status Bar ──────────────────────────────────────────────────────── */
-.status-bar {
-    grid-column: 2;
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    font-size: 11px;
-    color: var(--text-dim);
-    gap: 16px;
-}
-
-/* ─── View (hidden by default) ────────────────────────────────────────── */
-.view { display: none; }
-.view.active { display: block; }
-
-/* ─── Cards & Panels ──────────────────────────────────────────────────── */
-.card {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px;
-    margin-bottom: var(--gap);
-}
-
-.card h3 {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-dim);
-    margin-bottom: 12px;
-}
-
-.metric-grid {
+/* ── App Layout ─────────────────────────────────────────────────── */
+#app {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 12px;
+    grid-template-columns: 40px 1fr;
+    grid-template-rows: 1fr;
+    height: 100vh;
+    width: 100vw;
 }
 
-.metric-card {
-    background: var(--bg-tertiary);
-    border-radius: var(--radius);
-    padding: 12px;
-    text-align: center;
-}
-
-.metric-value {
-    font-size: 22px; font-weight: 700;
-    color: var(--accent);
-    font-family: var(--font-mono);
-}
-.metric-value.green { color: var(--success); }
-.metric-value.gold { color: var(--gold); }
-
-.metric-label {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-top: 2px;
-}
-
-/* ─── Tables ──────────────────────────────────────────────────────────── */
-.data-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    font-family: var(--font-mono);
-}
-
-.data-table th {
-    text-align: left;
-    padding: 8px 12px;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-dim);
-    border-bottom: 1px solid var(--border);
-}
-
-.data-table td {
-    padding: 6px 12px;
-    border-bottom: 1px solid var(--border);
-    color: var(--text-secondary);
-}
-
-.data-table tr:hover td { background: var(--bg-tertiary); }
-.data-table tr { cursor: pointer; }
-
-/* ─── Buttons ─────────────────────────────────────────────────────────── */
-.btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 16px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: var(--radius);
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-    font-family: var(--font-ui);
-}
-.btn:hover { background: #2563eb; }
-.btn-secondary { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--border); }
-.btn-secondary:hover { background: var(--border); }
-.btn-sm { padding: 4px 10px; font-size: 12px; }
-
-/* ─── Forms ───────────────────────────────────────────────────────────── */
-textarea, input, select {
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 12px;
-    font-size: 13px;
-    font-family: var(--font-mono);
-    width: 100%;
-    outline: none;
-    transition: border-color 0.15s;
-}
-textarea:focus, input:focus, select:focus { border-color: var(--accent); }
-textarea { resize: vertical; min-height: 80px; }
-select { cursor: pointer; width: auto; }
-
-.form-row {
+/* ── Mode Strip ─────────────────────────────────────────────────── */
+#mode-strip {
     display: flex;
-    gap: 12px;
+    flex-direction: column;
     align-items: center;
-    margin-bottom: 12px;
-}
-.form-row label {
-    font-size: 12px;
-    color: var(--text-dim);
-    min-width: 70px;
-}
-
-/* ─── Progress Bar ────────────────────────────────────────────────────── */
-.progress-bar {
-    width: 100%;
-    height: 6px;
-    background: var(--bg-primary);
-    border-radius: 3px;
-    overflow: hidden;
-    margin: 8px 0;
-}
-.progress-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 3px;
-    transition: width 0.3s;
+    padding-top: 16px;
+    gap: 8px;
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    z-index: 10;
 }
 
-/* ─── Event Feed ──────────────────────────────────────────────────────── */
-.event-feed {
-    max-height: 200px;
-    overflow-y: auto;
-    font-family: var(--font-mono);
-    font-size: 12px;
-}
-
-.event-line {
-    padding: 3px 8px;
-    border-bottom: 1px solid var(--bg-primary);
-    color: var(--text-secondary);
-}
-.event-line .time { color: var(--text-dim); margin-right: 8px; }
-.event-line .tag {
-    display: inline-block;
-    padding: 0 4px;
-    border-radius: 3px;
-    font-size: 10px;
-    font-weight: 600;
-    margin-right: 6px;
-}
-.tag-crystal { background: #1e3a5f; color: var(--accent); }
-.tag-gate { background: #1a2e1a; color: var(--success); }
-.tag-tick { background: #2e2a1a; color: var(--gold); }
-.tag-alert { background: #2e1a1a; color: var(--error); }
-
-/* ─── Canvas Charts ───────────────────────────────────────────────────── */
-.chart-container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-}
-.chart-card {
-    background: var(--bg-tertiary);
-    border-radius: var(--radius);
-    padding: 12px;
-}
-.chart-card h4 {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-bottom: 8px;
-}
-.chart-card canvas { width: 100%; height: 80px; }
-
-/* ─── Filter Buttons ──────────────────────────────────────────────────── */
-.filter-bar {
-    display: flex; gap: 6px; margin-bottom: 12px;
-}
-.filter-btn {
-    padding: 4px 10px;
-    font-size: 11px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    color: var(--text-dim);
-    cursor: pointer;
-    font-family: var(--font-mono);
-}
-.filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-
-/* ─── Tabs ────────────────────────────────────────────────────────────── */
-.tab-bar {
-    display: flex; gap: 0; margin-bottom: 16px;
-    border-bottom: 1px solid var(--border);
-}
-.tab-btn {
-    padding: 8px 16px;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    color: var(--text-dim);
-    font-size: 13px;
-    cursor: pointer;
-    font-family: var(--font-ui);
-}
-.tab-btn:hover { color: var(--text-secondary); }
-.tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-
-/* ─── Constitution Constraints ────────────────────────────────────────── */
-.constraint-row {
-    display: flex; align-items: center; gap: 12px;
-    padding: 6px 0;
-    border-bottom: 1px solid var(--bg-primary);
-    font-family: var(--font-mono);
-    font-size: 13px;
-}
-.constraint-id { color: var(--text-dim); width: 50px; }
-.constraint-name { color: var(--text-secondary); flex: 1; }
-.constraint-status { font-weight: 700; }
-.constraint-status.pass { color: var(--success); }
-.constraint-status.fail { color: var(--error); }
-
-/* ─── Code Preview ────────────────────────────────────────────────────── */
-.code-preview {
-    background: var(--bg-primary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    color: var(--text-secondary);
-    overflow-x: auto;
-    white-space: pre;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-/* ─── Tree View ───────────────────────────────────────────────────────── */
-.tree { font-family: var(--font-mono); font-size: 12px; }
-.tree-item { padding: 2px 0; color: var(--text-secondary); }
-.tree-item .icon { color: var(--text-dim); margin-right: 4px; }
-.tree-indent { margin-left: 16px; }
-
-/* ─── Command Palette ─────────────────────────────────────────────────── */
-.cmd-palette {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.6);
-    z-index: 1000;
-    align-items: flex-start;
+.mode-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
     justify-content: center;
-    padding-top: 15vh;
-}
-.cmd-palette.open { display: flex; }
-
-.cmd-box {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    width: 500px;
-    max-width: 90vw;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-}
-.cmd-box input {
     border: none;
-    border-radius: 0;
-    border-bottom: 1px solid var(--border);
-    padding: 16px;
-    font-size: 15px;
-}
-.cmd-results {
-    max-height: 300px;
-    overflow-y: auto;
-}
-.cmd-result {
-    padding: 10px 16px;
+    background: transparent;
+    color: var(--text-dim);
+    font-size: 18px;
     cursor: pointer;
+    border-radius: 6px;
+    position: relative;
+    transition: color 0.2s, background 0.2s;
+}
+
+.mode-btn:hover {
+    color: var(--text-secondary);
+    background: var(--bg-input);
+}
+
+.mode-btn.active {
+    color: var(--accent);
+}
+
+.mode-btn.active::after {
+    content: '';
+    position: absolute;
+    right: -5px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+
+/* ── Main Area ──────────────────────────────────────────────────── */
+#main {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+    position: relative;
+}
+
+/* ── Conversation ───────────────────────────────────────────────── */
+#conversation {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+#conversation::-webkit-scrollbar {
+    width: 6px;
+}
+
+#conversation::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+}
+
+#conversation::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* ── Empty State ────────────────────────────────────────────────── */
+#empty-state {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -60%);
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    width: 90%;
+    max-width: 500px;
+}
+
+#empty-state.hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+#empty-title {
+    font-size: 24px;
+    color: var(--text-secondary);
+    margin-bottom: 24px;
+    font-weight: 400;
+}
+
+.suggestion {
+    display: block;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 8px 16px;
+    margin: 4px auto;
+    cursor: pointer;
+    pointer-events: auto;
+    border-radius: 8px;
+    transition: color 0.2s, background 0.2s;
+    max-width: 360px;
+}
+
+.suggestion:hover {
+    color: var(--text-secondary);
+    background: var(--bg-card);
+}
+
+/* ── Messages ───────────────────────────────────────────────────── */
+.msg {
+    max-width: 720px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    animation: msg-in 0.2s ease-out;
+}
+
+@keyframes msg-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.msg.user {
+    align-self: flex-end;
+    background: var(--bg-input);
+    border-left: 3px solid var(--accent);
+    margin-left: 60px;
+}
+
+.msg.system {
+    align-self: flex-start;
+    background: var(--bg-card);
+    border-radius: 10px;
+    margin-right: 60px;
+}
+
+.msg.process {
+    align-self: flex-start;
+    background: transparent;
+    border-left: 2px solid var(--accent);
+    padding: 6px 12px;
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
     font-size: 13px;
     color: var(--text-secondary);
-}
-.cmd-result:hover, .cmd-result.selected { background: var(--bg-tertiary); }
-.cmd-result .cmd-key {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--text-dim);
-    float: right;
+    margin-right: 60px;
 }
 
-/* ─── Scrollbar ───────────────────────────────────────────────────────── */
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+.msg.error {
+    align-self: flex-start;
+    background: rgba(248, 81, 73, 0.1);
+    border-left: 3px solid var(--accent-error);
+    color: var(--accent-error);
+    margin-right: 60px;
+}
 
-/* ─── Detail Panel ────────────────────────────────────────────────────── */
-.detail-panel {
-    display: none;
-    background: var(--bg-secondary);
+/* ── Input Area ─────────────────────────────────────────────────── */
+#input-area {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-primary);
+}
+
+#chat-input {
+    flex: 1;
+    background: var(--bg-input);
+    color: var(--text-primary);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 16px;
-    margin-top: var(--gap);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.5;
+    resize: none;
+    min-height: 42px;
+    max-height: 160px;
+    outline: none;
+    transition: border-color 0.2s;
 }
-.detail-panel.open { display: block; }
-.detail-row { display: flex; gap: 12px; margin-bottom: 6px; font-size: 13px; }
-.detail-label { color: var(--text-dim); min-width: 120px; }
-.detail-value { color: var(--text-secondary); font-family: var(--font-mono); }
+
+#chat-input:focus {
+    border-color: var(--accent);
+}
+
+#chat-input::placeholder {
+    color: var(--text-dim);
+}
+
+/* ── Readiness Ring ─────────────────────────────────────────────── */
+#readiness-ring {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 7px;
+}
+
+#readiness-ring.hidden {
+    display: none;
+}
+
+#readiness-ring svg {
+    width: 16px;
+    height: 16px;
+}
+
+#ring-bg {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 2;
+}
+
+#ring-fill {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-dasharray: 37.7;
+    stroke-dashoffset: 37.7;
+    transform: rotate(-90deg);
+    transform-origin: center;
+    transition: stroke-dashoffset 0.5s ease;
+}
+
+@keyframes pulse-ring {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+#readiness-ring.full #ring-fill {
+    animation: pulse-ring 2s ease-in-out infinite;
+}
+
+/* ── Send Button ────────────────────────────────────────────────── */
+#send-btn {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-bottom: 3px;
+    transition: opacity 0.2s;
+}
+
+#send-btn:hover {
+    opacity: 0.85;
+}
+
+/* ── Responsive: Mobile ─────────────────────────────────────────── */
+@media (max-width: 768px) {
+    #app {
+        grid-template-columns: 1fr;
+        grid-template-rows: 32px 1fr;
+    }
+
+    #mode-strip {
+        flex-direction: row;
+        justify-content: center;
+        padding-top: 0;
+        gap: 16px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        height: 32px;
+    }
+
+    .mode-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 15px;
+    }
+
+    .mode-btn.active::after {
+        right: auto;
+        bottom: -3px;
+        top: auto;
+        left: 50%;
+        transform: translateX(-50%);
+    }
+
+    #main {
+        height: calc(100vh - 32px);
+    }
+
+    #empty-title {
+        font-size: 20px;
+    }
+
+    .msg.user {
+        margin-left: 30px;
+    }
+
+    .msg.system,
+    .msg.process,
+    .msg.error {
+        margin-right: 30px;
+    }
+
+    #conversation {
+        padding: 16px 12px;
+    }
+}
 </style>
 </head>
 <body>
 
-<div class="studio">
-    <!-- Sidebar Navigation -->
-    <nav class="sidebar">
-        <div class="logo">IS</div>
-        <button class="nav-btn" data-view="dashboard" title="Dashboard (Ctrl+1)">D</button>
-        <button class="nav-btn" data-view="forge" title="Forge (Ctrl+2)">F</button>
-        <button class="nav-btn" data-view="explorer" title="Explorer (Ctrl+3)">E</button>
-        <button class="nav-btn" data-view="monitor" title="Monitor (Ctrl+4)">M</button>
-        <button class="nav-btn" data-view="foundry" title="Foundry (Ctrl+5)">B</button>
-        <button class="nav-btn" data-view="oracle" title="Oracle (Ctrl+6)">O</button>
-        <button class="nav-btn" data-view="constitution" title="Constitution (Ctrl+7)">C</button>
-        <button class="nav-btn" data-view="navigator" title="Navigator (Ctrl+8)">N</button>
-        <button class="nav-btn" data-view="agent" title="Agent (Ctrl+9)">A</button>
-        <button class="nav-btn active" data-view="chat" title="Chat (Ctrl+0)" style="font-size:10px">CH</button>
-        <button class="nav-btn" data-view="norms" title="Norm Explorer" style="font-size:10px">NR</button>
-        <button class="nav-btn" data-view="projects" title="Projects" style="font-size:10px">PJ</button>
-        <button class="nav-btn" data-view="architect" title="Architect (D7)" style="font-size:10px;color:var(--success)">AR</button>
-        <div class="sidebar-bottom">
-            <div class="status-pill" id="statusPill"></div><br>
-            <span id="sidebarUptime">0m</span><br>
-            <span id="sidebarCrystals">0</span> crystals
-        </div>
+<div id="app">
+    <!-- Mode Strip -->
+    <nav id="mode-strip">
+        <button class="mode-btn active" id="btn-create" onclick="switchMode('create')" title="Erschaffen">&#10022;</button>
+        <button class="mode-btn" id="btn-discover" onclick="switchMode('discover')" title="Entdecken">&#9673;</button>
     </nav>
 
-    <!-- Header -->
-    <header class="header">
-        <h1 id="viewTitle">Dashboard</h1>
-        <span class="subtitle" id="viewSubtitle">System health at a glance</span>
-        <div class="spacer"></div>
-        <span class="kbd">Ctrl+K</span>
-        <span style="font-size:11px;color:var(--text-dim)">Command palette</span>
-    </header>
-
-    <!-- Main Content Area -->
-    <main class="content">
-
-        <!-- ═══ View 1: Dashboard ═══════════════════════════════════════ -->
-        <div class="view" id="view-dashboard">
-            <div class="metric-grid" id="dashMetrics">
-                <div class="metric-card"><div class="metric-value green" id="dashHealth">GREEN</div><div class="metric-label">Health</div></div>
-                <div class="metric-card"><div class="metric-value" id="dashCrystals">0</div><div class="metric-label">Crystals</div></div>
-                <div class="metric-card"><div class="metric-value" id="dashEntities">0</div><div class="metric-label">Entities</div></div>
-                <div class="metric-card"><div class="metric-value" id="dashUptime">0m</div><div class="metric-label">Uptime</div></div>
-                <div class="metric-card"><div class="metric-value" id="dashTests">319</div><div class="metric-label">Tests</div></div>
-                <div class="metric-card"><div class="metric-value green" id="dashDrift">NONE</div><div class="metric-label">Drift</div></div>
-            </div>
-
-            <div class="card">
-                <h3>Scenario Summary</h3>
-                <table class="data-table" id="scenarioTable">
-                    <thead><tr><th>Scenario</th><th>Crystals</th><th>Pass Rate</th></tr></thead>
-                    <tbody></tbody>
-                </table>
-            </div>
-
-            <div class="card">
-                <h3>Key Metrics</h3>
-                <div class="metric-grid" id="keyMetrics">
-                    <div class="metric-card"><div class="metric-value" id="metIngestion">0</div><div class="metric-label">Ingestion (obs/s)</div></div>
-                    <div class="metric-card"><div class="metric-value" id="metReplay">0</div><div class="metric-label">Replay (steps/s)</div></div>
-                    <div class="metric-card"><div class="metric-value" id="metEvidence">0</div><div class="metric-label">Evidence (μs/verify)</div></div>
-                    <div class="metric-card"><div class="metric-value" id="metMemory">0</div><div class="metric-label">Memory (MB)</div></div>
-                    <div class="metric-card"><div class="metric-value" id="metAutonomy">0%</div><div class="metric-label">Autonomy</div></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>Live Event Feed</h3>
-                <div class="event-feed" id="dashEventFeed"></div>
-            </div>
-
-            <div class="card">
-                <h3>Constitution</h3>
-                <div id="dashConstitution" style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
-                    Loading...
-                </div>
+    <!-- Main Area -->
+    <div id="main">
+        <!-- Empty State -->
+        <div id="empty-state">
+            <div id="empty-title">Was soll entstehen?</div>
+            <div id="suggestions">
+                <span class="suggestion" onclick="fillInput(this.textContent)">Trading Journal f&uuml;r Crypto-Portfolios</span>
+                <span class="suggestion" onclick="fillInput(this.textContent)">CLI Tool zum Konvertieren von CSV</span>
+                <span class="suggestion" onclick="fillInput(this.textContent)">REST API f&uuml;r Buchungsverwaltung</span>
             </div>
         </div>
 
-        <!-- ═══ View 2: Forge ═══════════════════════════════════════════ -->
-        <div class="view" id="view-forge">
-            <div class="card">
-                <h3>Intent</h3>
-                <textarea id="forgeIntent" placeholder="Describe what you want to build...&#10;e.g. Build a REST API for a bookmark manager with tags, search, and user authentication"></textarea>
-                <div class="form-row" style="margin-top:12px">
-                    <label>Domain:</label>
-                    <select id="forgeDomain"><option>Rust</option><option>TypeScript</option><option>Python</option><option>Go</option></select>
-                    <label>Template:</label>
-                    <select id="forgeTemplate"><option>Auto-detect</option><option>REST API</option><option>CLI Tool</option><option>Library</option><option>Full-Stack</option></select>
-                    <label>Strategy:</label>
-                    <select id="forgeStrategy"><option>Hybrid</option><option>Memory-first</option><option>Oracle-first</option></select>
-                    <label>Max atoms:</label>
-                    <input type="number" id="forgeMaxAtoms" value="20" style="width:60px">
-                </div>
-                <button class="btn" id="forgeBtn" onclick="startForge()">FORGE</button>
-                <span class="kbd" style="margin-left:8px">Ctrl+Enter</span>
+        <!-- Conversation Stream -->
+        <div id="conversation"></div>
+
+        <!-- Input Area -->
+        <div id="input-area">
+            <textarea id="chat-input" rows="1" placeholder="Nachricht eingeben..."></textarea>
+
+            <!-- Readiness Ring (Erschaffen only) -->
+            <div id="readiness-ring" title="Readiness: 0%">
+                <svg viewBox="0 0 16 16">
+                    <circle id="ring-bg" cx="8" cy="8" r="6"/>
+                    <circle id="ring-fill" cx="8" cy="8" r="6"/>
+                </svg>
             </div>
 
-            <div class="card" id="forgeProgressCard" style="display:none">
-                <h3>Progress</h3>
-                <div class="progress-bar"><div class="progress-fill" id="forgeProgressBar" style="width:0%"></div></div>
-                <div id="forgeProgressText" style="font-size:12px;color:var(--text-dim);margin-bottom:8px"></div>
-                <div id="forgeAtomList" class="event-feed"></div>
-            </div>
-
-            <div class="card" id="forgeOutputCard" style="display:none">
-                <h3>Output Preview</h3>
-                <div class="code-preview" id="forgeOutput"></div>
-            </div>
-
-            <div class="card" id="forgeTreeCard" style="display:none">
-                <h3>Composition Tree</h3>
-                <div class="tree" id="forgeTree"></div>
-            </div>
+            <button id="send-btn" onclick="sendMessage()" title="Senden">&#9654;</button>
         </div>
-
-        <!-- ═══ View 3: Explorer ════════════════════════════════════════ -->
-        <div class="view" id="view-explorer">
-            <div class="tab-bar">
-                <button class="tab-btn active" data-tab="crystals">Crystals</button>
-                <button class="tab-btn" data-tab="manifests">Manifests</button>
-                <button class="tab-btn" data-tab="patterns">Patterns</button>
-                <button class="tab-btn" data-tab="templates">Templates</button>
-            </div>
-
-            <div class="form-row">
-                <input type="text" id="explorerSearch" placeholder="Search by ID, tick, scale, domain..." style="flex:1">
-                <label>Filter:</label>
-                <select id="explorerFilter">
-                    <option value="">All scales</option>
-                    <option value="micro">Micro</option>
-                    <option value="meso">Meso</option>
-                    <option value="macro">Macro</option>
-                </select>
-            </div>
-
-            <div class="card">
-                <table class="data-table" id="crystalTable">
-                    <thead><tr><th>ID</th><th>Tick</th><th>Score</th><th>Scale</th><th>Checks</th></tr></thead>
-                    <tbody id="crystalTableBody"></tbody>
-                </table>
-            </div>
-
-            <div class="detail-panel" id="crystalDetail">
-                <h3 style="margin-bottom:12px">Crystal Detail</h3>
-                <div id="crystalDetailContent"></div>
-                <div style="margin-top:12px;display:flex;gap:8px">
-                    <button class="btn btn-sm btn-secondary" onclick="validateCrystal()">Validate</button>
-                    <button class="btn btn-sm btn-secondary" onclick="replayCrystal()">Replay</button>
-                    <button class="btn btn-sm btn-secondary" onclick="exportCrystal()">Export</button>
-                    <button class="btn btn-sm" onclick="forgeFromCrystal()">Forge from this</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ View 4: Monitor ═════════════════════════════════════════ -->
-        <div class="view" id="view-monitor">
-            <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
-                <button class="btn btn-sm" onclick="engineStart()">Start</button>
-                <button class="btn btn-sm btn-secondary" onclick="engineStop()">Stop</button>
-                <button class="btn btn-sm btn-secondary" onclick="engineStep()">Step</button>
-                <div style="flex:1"></div>
-                <span style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
-                    Engine: <span id="monEngineState">STOPPED</span> |
-                    Tick: <span id="monTick">0</span> |
-                    Entities: <span id="monEntities">0</span> |
-                    Mode: <span id="monMode">-</span>
-                </span>
-            </div>
-
-            <div class="card">
-                <h3>Metric Charts</h3>
-                <div class="chart-container">
-                    <div class="chart-card"><h4>Coherence</h4><canvas id="chartCoherence" width="300" height="80"></canvas></div>
-                    <div class="chart-card"><h4>Gate Selectivity</h4><canvas id="chartGate" width="300" height="80"></canvas></div>
-                    <div class="chart-card"><h4>Crystal Rate</h4><canvas id="chartCrystal" width="300" height="80"></canvas></div>
-                    <div class="chart-card"><h4>Spectral Gap</h4><canvas id="chartSpectral" width="300" height="80"></canvas></div>
-                    <div class="chart-card"><h4>Kuramoto r</h4><canvas id="chartKuramoto" width="300" height="80"></canvas></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>Live Event Stream</h3>
-                <div class="filter-bar">
-                    <button class="filter-btn active" data-filter="all">All</button>
-                    <button class="filter-btn" data-filter="crystal">Crystal</button>
-                    <button class="filter-btn" data-filter="gate">Gate</button>
-                    <button class="filter-btn" data-filter="tick">Tick</button>
-                    <button class="filter-btn" data-filter="alert">Alert</button>
-                    <button class="filter-btn" data-filter="scale">Scale</button>
-                </div>
-                <div class="event-feed" id="monEventFeed" style="max-height:300px"></div>
-            </div>
-
-            <div class="card">
-                <h3>Scale State</h3>
-                <div class="metric-grid" id="scaleState">
-                    <div class="metric-card"><div class="metric-value" id="scaleMicro">0</div><div class="metric-label">Micro entities</div></div>
-                    <div class="metric-card"><div class="metric-value" id="scaleMeso">0</div><div class="metric-label">Meso clusters</div></div>
-                    <div class="metric-card"><div class="metric-value" id="scaleMacro">0</div><div class="metric-label">Macro domains</div></div>
-                    <div class="metric-card"><div class="metric-value" id="scaleBridges">0</div><div class="metric-label">Bridges</div></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ View 5: Foundry ═════════════════════════════════════════ -->
-        <div class="view" id="view-foundry">
-            <div class="card">
-                <div class="form-row">
-                    <label>Operation:</label>
-                    <select id="foundryOp">
-                        <option>New Project</option>
-                        <option>Add Component</option>
-                        <option>Add Endpoint</option>
-                        <option>Implement Trait</option>
-                        <option>Fix</option>
-                        <option>Generate Tests</option>
-                        <option>Refactor</option>
-                        <option>Document</option>
-                    </select>
-                </div>
-                <textarea id="foundryIntent" placeholder="Describe what to build..."></textarea>
-                <div class="form-row" style="margin-top:12px">
-                    <label>Output:</label>
-                    <input type="text" id="foundryOutput" value="~/projects/my-project" style="flex:1">
-                </div>
-                <button class="btn" id="foundryBtn" onclick="startFoundry()">BUILD</button>
-                <span class="kbd" style="margin-left:8px">Ctrl+Enter</span>
-            </div>
-
-            <div class="card" id="foundryProgressCard" style="display:none">
-                <h3>Fabrication Progress</h3>
-                <div class="progress-bar"><div class="progress-fill" id="foundryProgressBar" style="width:0%"></div></div>
-                <div id="foundryProgressText" style="font-size:12px;color:var(--text-dim);margin-bottom:8px"></div>
-                <div class="code-preview" id="foundryLog" style="max-height:200px;overflow-y:auto;white-space:pre-wrap"></div>
-            </div>
-
-            <div class="card" id="foundryTreeCard" style="display:none">
-                <h3>File Tree</h3>
-                <div class="tree" id="foundryTree"></div>
-            </div>
-
-            <div class="card" id="foundryPreviewCard" style="display:none">
-                <h3>Code Preview</h3>
-                <div class="code-preview" id="foundryPreview">Click a file to preview</div>
-            </div>
-        </div>
-
-        <!-- ═══ View 6: Oracle ══════════════════════════════════════════ -->
-        <div class="view" id="view-oracle">
-            <div class="metric-grid" style="margin-bottom:var(--gap)">
-                <div class="metric-card"><div class="metric-value gold" id="oracleAutonomy">0%</div><div class="metric-label">Autonomy Ratio</div></div>
-                <div class="metric-card"><div class="metric-value" id="oracleCalls">0</div><div class="metric-label">Oracle Calls</div></div>
-                <div class="metric-card"><div class="metric-value" id="oracleRejections">0</div><div class="metric-label">Rejections</div></div>
-                <div class="metric-card"><div class="metric-value" id="oracleTokens">0</div><div class="metric-label">Tokens Used</div></div>
-                <div class="metric-card"><div class="metric-value" id="oracleCost">$0.00</div><div class="metric-label">Cost</div></div>
-                <div class="metric-card"><div class="metric-value" id="oracleBudget">0/100</div><div class="metric-label">Budget (calls)</div></div>
-            </div>
-
-            <div class="card">
-                <h3>Autonomy Over Time</h3>
-                <canvas id="chartAutonomy" width="600" height="100" style="width:100%;height:100px"></canvas>
-            </div>
-
-            <div class="card">
-                <h3>Pattern Memory</h3>
-                <div class="form-row">
-                    <input type="text" id="patternSearch" placeholder="Search patterns..." style="flex:1">
-                </div>
-                <table class="data-table" id="patternTable">
-                    <thead><tr><th>ID</th><th>Domain</th><th>Quality</th><th>Reuse Count</th></tr></thead>
-                    <tbody id="patternTableBody"></tbody>
-                </table>
-            </div>
-
-            <div class="card">
-                <h3>Oracle Configuration</h3>
-                <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
-                    <div class="detail-row"><span class="detail-label">Provider:</span><span class="detail-value">Claude (claude-sonnet-4-20250514)</span></div>
-                    <div class="detail-row"><span class="detail-label">Temperature:</span><span class="detail-value">0.0</span></div>
-                    <div class="detail-row"><span class="detail-label">Max tokens:</span><span class="detail-value">4096</span></div>
-                    <div class="detail-row"><span class="detail-label">Memory-first:</span><span class="detail-value" style="color:var(--success)">ON</span></div>
-                    <div class="detail-row"><span class="detail-label">Match threshold:</span><span class="detail-value">0.85</span></div>
-                    <div class="detail-row"><span class="detail-label">API Key:</span><span class="detail-value" style="color:var(--success)">configured (env)</span></div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ View 7: Constitution ════════════════════════════════════ -->
-        <div class="view" id="view-constitution">
-            <div class="metric-grid" style="margin-bottom:var(--gap)">
-                <div class="metric-card"><div class="metric-value" id="constGenesis" style="font-size:14px">a315ea43</div><div class="metric-label">Genesis Crystal</div></div>
-                <div class="metric-card"><div class="metric-value">v1.0.0</div><div class="metric-label">ADAMANT Version</div></div>
-                <div class="metric-card"><div class="metric-value gold">C4</div><div class="metric-label">Conformance Class</div></div>
-                <div class="metric-card"><div class="metric-value green" id="constDrift">NONE</div><div class="metric-label">Drift</div></div>
-            </div>
-
-            <div class="card">
-                <h3>Constraints (GC-01 to GC-21)</h3>
-                <div id="constraintList"></div>
-            </div>
-
-            <div class="card">
-                <h3>System Fingerprint</h3>
-                <div style="font-family:var(--font-mono);font-size:13px;color:var(--text-secondary)">
-                    <div class="detail-row"><span class="detail-label">ISLS:</span><span class="detail-value">v1.0.0</span></div>
-                    <div class="detail-row"><span class="detail-label">Crates:</span><span class="detail-value">27</span></div>
-                    <div class="detail-row"><span class="detail-label">Tests:</span><span class="detail-value" id="constTests">319</span></div>
-                    <div class="detail-row"><span class="detail-label">Platform:</span><span class="detail-value" id="constPlatform">-</span></div>
-                    <div class="detail-row"><span class="detail-label">Rust:</span><span class="detail-value">1.90.0</span></div>
-                </div>
-            </div>
-
-            <div style="display:flex;gap:8px;margin-top:16px">
-                <button class="btn" onclick="validateGenesis()">Validate Genesis</button>
-                <button class="btn btn-secondary" onclick="exportCertificate()">Export Certificate</button>
-            </div>
-        </div>
-
-        <!-- ═══ View 8: Navigator (C29) ════════════════════════════════ -->
-        <div class="view" id="view-navigator">
-            <div class="metric-grid" style="margin-bottom:var(--gap)">
-                <div class="metric-card"><div class="metric-value" id="navVertices">—</div><div class="metric-label">Vertices</div></div>
-                <div class="metric-card"><div class="metric-value" id="navEdges">—</div><div class="metric-label">Edges</div></div>
-                <div class="metric-card"><div class="metric-value" id="navSimplices">—</div><div class="metric-label">Simplices</div></div>
-                <div class="metric-card"><div class="metric-value gold" id="navBestRes">—</div><div class="metric-label">Best Resonance</div></div>
-            </div>
-
-            <div class="card" style="margin-bottom:var(--gap)">
-                <h3>Navigator Controls</h3>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-                    <select id="navMode" style="padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
-                        <option value="config">Config Optimization</option>
-                        <option value="architecture">Architecture Exploration</option>
-                    </select>
-                    <input type="number" id="navSteps" value="20" min="1" max="500"
-                        style="width:80px;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
-                    <span style="font-size:12px;color:var(--text-dim)">steps</span>
-                    <button class="btn" onclick="navigatorStep()">▶ RUN</button>
-                    <button class="btn btn-secondary" onclick="navigatorRefresh()">↺ Refresh</button>
-                    <button class="btn btn-secondary" onclick="navigatorExportMesh()">⬇ Export Mesh</button>
-                </div>
-                <div id="navRunLog" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);min-height:24px"></div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin-bottom:var(--gap)">
-                <div class="card">
-                    <h3>Mesh Metrics</h3>
-                    <div style="font-family:var(--font-mono);font-size:13px">
-                        <div class="detail-row"><span class="detail-label">Spectral Gap:</span><span class="detail-value" id="navSpecGap">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Betti [b0,b1,b2]:</span><span class="detail-value" id="navBetti">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Singularities:</span><span class="detail-value" id="navSingCount">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Steps run:</span><span class="detail-value" id="navStepsRun">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Mode:</span><span class="detail-value" id="navModeDisplay">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Spiral:</span><span class="detail-value" style="color:var(--text-dim)">NavigatorSpiral (golden-angle)</span></div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <h3>Best Configuration</h3>
-                    <div style="font-family:var(--font-mono);font-size:13px">
-                        <div class="detail-row"><span class="detail-label">Resonance:</span><span class="detail-value gold" id="navBestResFull">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Point:</span><span class="detail-value" id="navBestPoint" style="word-break:break-all;font-size:11px">—</span></div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3>Singularity Feed <span style="font-size:12px;font-weight:normal;color:var(--text-dim)">— unexplored gold</span></h3>
-                <div id="navSingularities" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary)">
-                    <span style="color:var(--text-dim)">No singularities detected yet. Run the navigator to explore the pattern space.</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ View 9: Agent (C30) ═════════════════════════════════════ -->
-        <div class="view" id="view-agent">
-            <div class="metric-grid" style="margin-bottom:var(--gap)">
-                <div class="metric-card"><div class="metric-value" id="agStepsRun">—</div><div class="metric-label">Steps Run</div></div>
-                <div class="metric-card"><div class="metric-value gold" id="agBestScore">—</div><div class="metric-label">Best Score</div></div>
-                <div class="metric-card"><div class="metric-value" id="agPlanSize">—</div><div class="metric-label">Plan Size</div></div>
-                <div class="metric-card"><div class="metric-value" id="agComplete">—</div><div class="metric-label">Complete</div></div>
-            </div>
-
-            <div class="card" style="margin-bottom:var(--gap)">
-                <h3>New Agent Goal</h3>
-                <div style="display:flex;gap:8px;align-items:flex-start;flex-direction:column;margin-bottom:12px">
-                    <input type="text" id="agIntent" placeholder="Describe your goal…"
-                        style="width:100%;box-sizing:border-box;padding:8px 12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:14px">
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                        <input type="text" id="agDomain" placeholder="domain (e.g. rust)"
-                            style="width:140px;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
-                        <input type="number" id="agConfidence" value="0.75" min="0" max="1" step="0.05"
-                            style="width:80px;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px">
-                        <span style="font-size:12px;color:var(--text-dim)">confidence</span>
-                        <button class="btn" onclick="agentRunGoal()">▶ RUN GOAL</button>
-                        <button class="btn btn-secondary" onclick="agentStepOne()">→ STEP</button>
-                        <button class="btn btn-secondary" onclick="agentRefresh()">↺ Refresh</button>
-                    </div>
-                    <input type="text" id="agConstraint" placeholder="Add constraint (press Enter)"
-                        style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px"
-                        onkeydown="if(event.key==='Enter'){agentAddConstraint();}">
-                    <div id="agConstraintList" style="display:flex;flex-wrap:wrap;gap:6px;font-size:12px"></div>
-                </div>
-                <div id="agRunLog" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);min-height:24px"></div>
-            </div>
-
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--gap);margin-bottom:var(--gap)">
-                <div class="card">
-                    <h3>Current State</h3>
-                    <div style="font-family:var(--font-mono);font-size:13px">
-                        <div class="detail-row"><span class="detail-label">Intent:</span><span class="detail-value" id="agIntent2" style="word-break:break-all;font-size:11px">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Domain:</span><span class="detail-value" id="agDomain2">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Mode:</span><span class="detail-value" id="agMode">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Plan idx:</span><span class="detail-value" id="agPlanIdx">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Confidence:</span><span class="detail-value" id="agConfidence2">—</span></div>
-                        <div class="detail-row"><span class="detail-label">Constraints:</span><span class="detail-value" id="agConstraints2" style="font-size:11px">—</span></div>
-                    </div>
-                </div>
-                <div class="card">
-                    <h3>Step History <span id="agHistoryCount" style="font-size:12px;font-weight:normal;color:var(--text-dim)"></span></h3>
-                    <div id="agHistoryFeed" style="font-family:var(--font-mono);font-size:12px;color:var(--text-secondary);max-height:200px;overflow-y:auto">
-                        <span style="color:var(--text-dim)">No history yet.</span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- C30 Agent Chat (Phase 12 — default view, no-code operator UI) -->
-        <div class="view active" id="view-chat" style="display:flex;flex-direction:column;height:calc(100vh - 80px)">
-            <!-- Chat header -->
-            <div id="chat-header" style="padding:0.75rem 1rem;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:1rem;flex-shrink:0">
-                <h3 style="margin:0;font-size:16px;color:var(--text-primary)">ISLS Agent</h3>
-                <span id="chat-project" style="color:var(--text-dim);font-size:12px">Kein Projekt gebunden</span>
-                <div style="flex:1"></div>
-                <span id="chat-autonomy" style="font-size:11px;color:var(--text-dim)">Autonomie: 0% | Muster: 0 | Gespart: $0.00</span>
-            </div>
-            <!-- Project binder bar (collapsible) -->
-            <div style="display:flex;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);flex-shrink:0;background:var(--bg-secondary)">
-                <input type="text" id="chatProject" placeholder="Projektpfad (optional)"
-                    style="width:200px;padding:4px 8px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:12px">
-                <button class="btn" onclick="bindProject()" style="flex-shrink:0;font-size:12px;padding:4px 10px">Binden</button>
-                <span id="chatBindStatus" style="color:var(--text-dim);font-size:11px;align-self:center"></span>
-            </div>
-            <!-- Accumulation metrics bar -->
-            <div id="chatAccumBar" style="padding:4px 12px;font-size:11px;color:var(--text-dim);background:var(--bg-secondary);border-bottom:1px solid var(--border);flex-shrink:0">
-                Autonomie: 0% | Muster: 0 | $0.0000 | Gespart: $0.00
-            </div>
-            <!-- Message area -->
-            <div id="chat-messages" style="flex:1;overflow-y:auto;padding:12px 16px;font-family:var(--font-mono,monospace)">
-                <div style="padding:8px 0;color:var(--text-secondary);font-size:13px;line-height:1.6">
-                    Willkommen. Beschreibe was du bauen möchtest, oder zeige mir ein bestehendes Projekt.
-                </div>
-            </div>
-            <!-- Input area -->
-            <div style="display:flex;gap:0.5rem;padding:0.5rem;border-top:1px solid var(--border);flex-shrink:0">
-                <input id="chat-input" type="text" placeholder="Was soll die Software können?"
-                    style="flex:1;padding:8px 12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:14px"
-                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat();}">
-                <button class="btn" onclick="sendChat()" style="flex-shrink:0">Los</button>
-            </div>
-        </div>
-
-        <!-- ═══ View 11: Norm Explorer ═══════════════════════════════════ -->
-        <div class="view" id="view-norms">
-            <div style="display:flex;gap:8px;padding:0 0 12px 0;align-items:center">
-                <input id="norm-search" type="text" placeholder="Search norms…"
-                    style="flex:1;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px"
-                    oninput="filterNorms()">
-                <select id="norm-level-filter" onchange="filterNorms()"
-                    style="padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px">
-                    <option value="">All levels</option>
-                    <option value="Atom">Atom</option>
-                    <option value="Molecule">Molecule</option>
-                    <option value="Organism">Organism</option>
-                </select>
-                <button class="btn" onclick="loadNorms()">Refresh</button>
-            </div>
-            <div class="card" style="overflow-y:auto;flex:1">
-                <table class="data-table" id="normsTable">
-                    <thead><tr><th>ID</th><th>Name</th><th>Level</th><th>Type</th></tr></thead>
-                    <tbody id="normsBody"><tr><td colspan="4" style="color:var(--text-dim)">Click Refresh to load norms.</td></tr></tbody>
-                </table>
-            </div>
-            <div class="card" id="norm-detail" style="margin-top:12px;display:none">
-                <h3 id="norm-detail-title">Norm Detail</h3>
-                <pre id="norm-detail-json" style="font-size:11px;color:var(--text-secondary);white-space:pre-wrap;word-break:break-all"></pre>
-            </div>
-            <div class="card" style="margin-top:12px">
-                <h3>Candidates <span style="font-size:11px;color:var(--text-dim)">(auto-discovered)</span></h3>
-                <table class="data-table" id="candidatesTable">
-                    <thead><tr><th>ID</th><th>Observations</th><th>Consistency</th><th>Status</th></tr></thead>
-                    <tbody id="candidatesBody"><tr><td colspan="4" style="color:var(--text-dim)">No candidates yet.</td></tr></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ═══ View 12: Projects ════════════════════════════════════════ -->
-        <div class="view" id="view-projects">
-            <div style="display:flex;gap:8px;padding:0 0 12px 0;align-items:center">
-                <h3 style="margin:0;flex:1">Projects</h3>
-                <button class="btn" onclick="showCreateProjectModal()">+ New Project</button>
-                <button class="btn" onclick="loadProjects()">Refresh</button>
-            </div>
-            <div class="card" style="overflow-y:auto">
-                <table class="data-table" id="projectsTable">
-                    <thead><tr><th>ID</th><th>Name</th><th>Domain</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
-                    <tbody id="projectsBody"><tr><td colspan="6" style="color:var(--text-dim)">Click Refresh to load projects.</td></tr></tbody>
-                </table>
-            </div>
-            <!-- Create project modal -->
-            <div id="createProjectModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center">
-                <div style="background:var(--bg-secondary);border:1px solid var(--border);border-radius:8px;padding:24px;width:560px;max-width:90vw">
-                    <h3 style="margin:0 0 16px 0">New Project</h3>
-                    <div style="margin-bottom:12px">
-                        <label style="font-size:12px;color:var(--text-dim)">Name</label>
-                        <input id="proj-name" type="text" placeholder="my-ecommerce-app"
-                            style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px;margin-top:4px">
-                    </div>
-                    <div style="margin-bottom:12px">
-                        <label style="font-size:12px;color:var(--text-dim)">TOML Configuration</label>
-                        <textarea id="proj-toml" rows="8" placeholder="[app]&#10;name = &quot;my-app&quot;&#10;description = &quot;...&quot;"
-                            style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:12px;font-family:monospace;margin-top:4px;resize:vertical"></textarea>
-                    </div>
-                    <div style="margin-bottom:16px">
-                        <label style="font-size:12px;color:var(--text-dim)">Domain (optional)</label>
-                        <input id="proj-domain" type="text" placeholder="ecommerce, warehouse, project_management…"
-                            style="width:100%;box-sizing:border-box;padding:6px 10px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;font-size:13px;margin-top:4px">
-                    </div>
-                    <div style="display:flex;gap:8px;justify-content:flex-end">
-                        <button class="btn" onclick="hideCreateProjectModal()">Cancel</button>
-                        <button class="btn" onclick="createProject()">Create</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- ═══ View: Architect (D7) ══════════════════════════════════ -->
-        <div class="view" id="view-architect">
-            <div style="display:grid;grid-template-columns:1fr 320px;gap:16px;height:100%">
-                <!-- Chat Panel -->
-                <div style="display:flex;flex-direction:column;height:100%;min-height:0">
-                    <div id="archChat" style="flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px">
-                        <div style="color:var(--text-dim);padding:16px;text-align:center">
-                            Describe the application you want to build. The architect will extract entities, fields, and relationships.
-                        </div>
-                    </div>
-                    <div style="display:flex;gap:8px;padding:8px 0 0 0">
-                        <textarea id="archInput" rows="2" placeholder="Describe your application..."
-                            style="flex:1;padding:8px 12px;background:var(--bg-tertiary);color:var(--text-primary);border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:var(--font-ui);resize:none"
-                            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();archSendMessage()}"></textarea>
-                        <button class="btn" onclick="archSendMessage()" id="archSendBtn" style="align-self:flex-end">Send</button>
-                    </div>
-                </div>
-                <!-- Readiness Panel -->
-                <div style="display:flex;flex-direction:column;gap:12px;overflow-y:auto">
-                    <div class="card" style="text-align:center">
-                        <div id="archReadinessScore" style="font-size:48px;font-weight:900;color:var(--text-dim)">0%</div>
-                        <div style="font-size:11px;color:var(--text-dim)">READINESS</div>
-                    </div>
-                    <div class="card" id="archCriteria">
-                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--text-dim)">CRITERIA</h4>
-                        <div id="archCriteriaList" style="font-size:12px;display:flex;flex-direction:column;gap:4px">
-                            <div style="color:var(--text-dim)">Send a message to start</div>
-                        </div>
-                    </div>
-                    <div class="card" id="archEntities">
-                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--text-dim)">ENTITIES</h4>
-                        <div id="archEntityList" style="font-size:12px;display:flex;flex-direction:column;gap:4px">
-                            <div style="color:var(--text-dim)">No entities yet</div>
-                        </div>
-                    </div>
-                    <div id="archSuggestions" class="card" style="display:none">
-                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--warning)">SUGGESTIONS</h4>
-                        <div id="archSuggestionList" style="font-size:12px;display:flex;flex-direction:column;gap:4px"></div>
-                    </div>
-                    <button id="archForgeBtn" class="btn" onclick="archStartForge()"
-                        style="width:100%;padding:12px;font-size:14px;font-weight:700;background:var(--bg-tertiary);color:var(--text-dim);border:2px solid var(--border);cursor:not-allowed"
-                        disabled>FORGE</button>
-                    <!-- Forge Progress (shown during forge) -->
-                    <div id="archProgress" style="display:none" class="card">
-                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--accent)">FORGE PROGRESS</h4>
-                        <div id="archProgressBar" style="height:6px;background:var(--bg-tertiary);border-radius:3px;overflow:hidden;margin-bottom:8px">
-                            <div id="archProgressFill" style="height:100%;width:0%;background:var(--accent);transition:width 0.3s"></div>
-                        </div>
-                        <div id="archProgressStatus" style="font-size:11px;color:var(--text-dim)">Starting...</div>
-                    </div>
-                    <!-- Forge Result -->
-                    <div id="archResult" style="display:none" class="card">
-                        <h4 style="margin:0 0 8px 0;font-size:12px;color:var(--success)">FORGE RESULT</h4>
-                        <div id="archResultInfo" style="font-size:12px"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    </main>
-
-    <!-- Status Bar -->
-    <footer class="status-bar">
-        <span>ISLS v1.0.0</span>
-        <span id="sbUptime">Uptime: 0m</span>
-        <span id="sbWs">WS: connecting...</span>
-        <div style="flex:1"></div>
-        <span id="sbClients">0 clients</span>
-    </footer>
-</div>
-
-<!-- Command Palette -->
-<div class="cmd-palette" id="cmdPalette">
-    <div class="cmd-box">
-        <input type="text" id="cmdInput" placeholder="Type a command..." autocomplete="off">
-        <div class="cmd-results" id="cmdResults"></div>
     </div>
 </div>
 
 <script>
-// ─── State ───────────────────────────────────────────────────────────────
-let ws = null;
-let currentView = 'dashboard';
-let wsConnected = false;
-const events = [];
-const chartData = { coherence: [], gate: [], crystal: [], spectral: [], kuramoto: [], autonomy: [] };
-let selectedCrystalId = null;
+/* ═══════════════════════════════════════════════════════════════════
+   S1a: JS Shell — Stubs + basic UI interaction
+   ═══════════════════════════════════════════════════════════════════ */
 
-// ─── Command Registry ────────────────────────────────────────────────────
-const commands = [
-    { label: 'Switch to Dashboard', action: () => switchView('dashboard'), keys: 'Ctrl+1' },
-    { label: 'Switch to Forge', action: () => switchView('forge'), keys: 'Ctrl+2' },
-    { label: 'Switch to Explorer', action: () => switchView('explorer'), keys: 'Ctrl+3' },
-    { label: 'Switch to Monitor', action: () => switchView('monitor'), keys: 'Ctrl+4' },
-    { label: 'Switch to Foundry', action: () => switchView('foundry'), keys: 'Ctrl+5' },
-    { label: 'Switch to Oracle', action: () => switchView('oracle'), keys: 'Ctrl+6' },
-    { label: 'Switch to Constitution', action: () => switchView('constitution'), keys: 'Ctrl+7' },
-    { label: 'Start engine', action: () => engineStart(), keys: 'Ctrl+S' },
-    { label: 'Stop engine', action: () => engineStop(), keys: '' },
-    { label: 'Forge: start', action: () => { switchView('forge'); }, keys: '' },
-    { label: 'Validate all crystals', action: () => apiCommand('validate all'), keys: '' },
-    { label: 'Oracle status', action: () => { switchView('oracle'); }, keys: '' },
-    { label: 'Template list', action: () => apiCommand('template list'), keys: '' },
-    { label: 'Export report HTML', action: () => apiCommand('export report html'), keys: '' },
-];
+// ── State ──────────────────────────────────────────────────────────
+let currentMode = 'create';
+let hasMessages = { create: false, discover: false };
+let messages = { create: [], discover: [] };
 
-// ─── View titles ─────────────────────────────────────────────────────────
-const viewTitles = {
-    dashboard: ['Dashboard', 'System health at a glance'],
-    forge: ['Forge', 'Describe what you want — watch it build'],
-    explorer: ['Explorer', 'Browse crystals, manifests, patterns'],
-    monitor: ['Monitor', 'Live engine metrics and events'],
-    foundry: ['Foundry', 'Project fabrication with compile feedback'],
-    oracle: ['Oracle', 'Autonomy metrics, pattern memory, budget'],
-    constitution: ['Constitution', 'Genesis Crystal, ADAMANT status'],
-    navigator: ['Navigator', 'C29 — Spectral-Guided Pattern Space Exploration'],
-    agent: ['Agent', 'C30 — Autonomous Goal-Directed Agent'],
-    chat: ['ISLS Agent', 'Beschreibe was du bauen möchtest'],
-    norms: ['Norm Explorer', 'Built-in, auto-discovered, and candidate norms'],
-    projects: ['Projects', 'Manage generated projects and their output files'],
-    architect: ['Architect', 'D7 — Multi-turn conversation to AppSpec'],
+// ── Placeholder Data ───────────────────────────────────────────────
+const placeholders = {
+    create: {
+        title: 'Was soll entstehen?',
+        suggestions: [
+            'Trading Journal f\u00fcr Crypto-Portfolios',
+            'CLI Tool zum Konvertieren von CSV',
+            'REST API f\u00fcr Buchungsverwaltung'
+        ]
+    },
+    discover: {
+        title: 'Was willst du finden?',
+        suggestions: [
+            'rust async state machine',
+            'connection pooling patterns',
+            'was fehlt mir?'
+        ]
+    }
 };
 
-// ─── Navigation ──────────────────────────────────────────────────────────
-function switchView(view) {
-    currentView = view;
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('view-' + view).classList.add('active');
-    document.querySelector(`.nav-btn[data-view="${view}"]`).classList.add('active');
-    const [title, sub] = viewTitles[view] || [view, ''];
-    document.getElementById('viewTitle').textContent = title;
-    document.getElementById('viewSubtitle').textContent = sub;
-    localStorage.setItem('isls-studio-view', view);
-    if (view === 'navigator') navigatorRefresh();
-    if (view === 'agent') agentRefresh();
-    if (view === 'chat') { renderedEventCount = 0; }
-    if (view === 'norms') loadNorms();
-    if (view === 'projects') loadProjects();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ subscribe: getEventsForView(view) }));
-    }
+// ── DOM refs ───────────────────────────────────────────────────────
+const $conv    = document.getElementById('conversation');
+const $empty   = document.getElementById('empty-state');
+const $title   = document.getElementById('empty-title');
+const $sugg    = document.getElementById('suggestions');
+const $input   = document.getElementById('chat-input');
+const $ring    = document.getElementById('readiness-ring');
+const $btnC    = document.getElementById('btn-create');
+const $btnD    = document.getElementById('btn-discover');
+
+// ── Mode Switching ─────────────────────────────────────────────────
+function switchMode(mode) {
+    if (mode === currentMode) return;
+    currentMode = mode;
+
+    $btnC.classList.toggle('active', mode === 'create');
+    $btnD.classList.toggle('active', mode === 'discover');
+
+    // Readiness ring only in create mode
+    $ring.classList.toggle('hidden', mode !== 'create');
+
+    // Update placeholder
+    updateEmptyState();
+
+    // Re-render messages for current mode
+    renderAllMessages();
 }
 
-function getEventsForView(view) {
-    switch (view) {
-        case 'dashboard': return ['tick', 'crystal', 'gate', 'alert', 'heartbeat'];
-        case 'forge': return ['forge_progress', 'heartbeat'];
-        case 'explorer': return ['crystal', 'heartbeat'];
-        case 'monitor': return ['tick', 'crystal', 'gate', 'alert', 'metric', 'heartbeat'];
-        case 'foundry': return ['foundry_progress', 'heartbeat'];
-        case 'oracle': return ['metric', 'heartbeat'];
-        case 'constitution': return ['alert', 'heartbeat'];
-        case 'navigator': return ['heartbeat'];
-        case 'agent': return ['heartbeat'];
-        case 'chat': return ['heartbeat'];
-        case 'norms': return ['heartbeat'];
-        case 'projects': return ['heartbeat'];
-        default: return ['heartbeat'];
-    }
-}
-
-document.querySelectorAll('.nav-btn').forEach(btn => {
-    btn.addEventListener('click', () => switchView(btn.dataset.view));
-});
-
-// ─── WebSocket ───────────────────────────────────────────────────────────
-function connectWs() {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${location.host}/events`);
-
-    ws.onopen = () => {
-        wsConnected = true;
-        document.getElementById('sbWs').textContent = 'WS: connected';
-        ws.send(JSON.stringify({ subscribe: getEventsForView(currentView) }));
-    };
-
-    ws.onmessage = (event) => {
-        const msg = JSON.parse(event.data);
-        handleEvent(msg);
-    };
-
-    ws.onclose = () => {
-        wsConnected = false;
-        document.getElementById('sbWs').textContent = 'WS: disconnected';
-        setTimeout(connectWs, 3000);
-    };
-
-    ws.onerror = () => {
-        document.getElementById('sbWs').textContent = 'WS: error';
-    };
-}
-
-function handleEvent(msg) {
-    const time = new Date(msg.timestamp * 1000).toLocaleTimeString();
-    events.unshift({ type: msg.type, time, data: msg.data });
-    if (events.length > 500) events.pop();
-
-    switch (msg.type) {
-        case 'tick':
-            document.getElementById('monTick').textContent = msg.data.tick || 0;
-            document.getElementById('monEntities').textContent = msg.data.entity_count || 0;
-            addEventLine('dashEventFeed', time, 'tick', `tick ${msg.data.tick}: ${msg.data.entity_count || 0} entities`);
-            addEventLine('monEventFeed', time, 'tick', `tick ${msg.data.tick}: ${msg.data.entity_count || 0} entities`);
-            break;
-        case 'crystal':
-            addEventLine('dashEventFeed', time, 'crystal', `crystal emitted (score ${(msg.data.score || 0).toFixed(2)})`);
-            addEventLine('monEventFeed', time, 'crystal', `crystal ${(msg.data.id || '').slice(0,8)} emitted`);
-            break;
-        case 'gate':
-            addEventLine('monEventFeed', time, 'gate', `gate ${msg.data.action || 'ACCEPT'} d=${(msg.data.d || 0).toFixed(2)} q=${(msg.data.q || 0).toFixed(2)}`);
-            break;
-        case 'alert':
-            addEventLine('dashEventFeed', time, 'alert', msg.data.message || 'alert');
-            addEventLine('monEventFeed', time, 'alert', msg.data.message || 'alert');
-            break;
-        case 'metric':
-            if (msg.data.name && msg.data.value !== undefined) {
-                const key = msg.data.name;
-                if (chartData[key]) {
-                    chartData[key].push(msg.data.value);
-                    if (chartData[key].length > 100) chartData[key].shift();
-                }
-            }
-            break;
-        case 'forge_progress':
-            updateForgeProgress(msg.data);
-            break;
-        case 'foundry_progress':
-            updateFoundryProgress(msg.data);
-            break;
-    }
-}
-
-function addEventLine(feedId, time, type, text) {
-    const feed = document.getElementById(feedId);
-    if (!feed) return;
-    const line = document.createElement('div');
-    line.className = 'event-line';
-    line.innerHTML = `<span class="time">${time}</span><span class="tag tag-${type}">${type}</span>${escapeHtml(text)}`;
-    feed.prepend(line);
-    while (feed.children.length > 100) feed.lastChild.remove();
-}
-
-// ─── REST API ────────────────────────────────────────────────────────────
-async function fetchJson(url, opts) {
-    try {
-        const resp = await fetch(url, opts);
-        if (!resp.ok) return null;
-        return await resp.json();
-    } catch { return null; }
-}
-
-async function loadDashboard() {
-    const d = await fetchJson('/api/dashboard');
-    if (!d) return;
-    document.getElementById('dashHealth').textContent = d.health;
-    document.getElementById('dashCrystals').textContent = d.crystal_count;
-    document.getElementById('dashEntities').textContent = d.entity_count;
-    document.getElementById('dashUptime').textContent = formatUptime(d.uptime_secs);
-    document.getElementById('dashTests').textContent = d.test_count;
-    document.getElementById('dashDrift').textContent = d.drift;
-    document.getElementById('sidebarUptime').textContent = formatUptime(d.uptime_secs);
-    document.getElementById('sidebarCrystals').textContent = d.crystal_count;
-    document.getElementById('sbUptime').textContent = 'Uptime: ' + formatUptime(d.uptime_secs);
-
-    if (d.metrics) {
-        document.getElementById('metIngestion').textContent = Math.round(d.metrics.ingestion_rate || 0);
-        document.getElementById('metReplay').textContent = Math.round(d.metrics.replay_steps_per_sec || 0);
-        document.getElementById('metEvidence').textContent = Math.round(d.metrics.evidence_verify_us || 0);
-        document.getElementById('metMemory').textContent = (d.metrics.memory_mb || 0).toFixed(2);
-        document.getElementById('metAutonomy').textContent = Math.round((d.metrics.autonomy_ratio || 0) * 100) + '%';
-    }
-
-    const tbody = document.querySelector('#scenarioTable tbody');
-    tbody.innerHTML = '';
-    (d.scenarios || []).forEach(s => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${escapeHtml(s.name)}</td><td>${s.crystals}</td><td style="color:var(--success)">${escapeHtml(s.pass_rate)}</td>`;
-        tbody.appendChild(tr);
-    });
-
-    if (d.genesis) {
-        document.getElementById('dashConstitution').innerHTML =
-            `Genesis: ${escapeHtml(d.genesis.hash)} &nbsp; ${escapeHtml(d.genesis.conformance_class)} &nbsp; ${d.genesis.constraints_pass}/${d.genesis.constraints_total} &nbsp; Drift: <span style="color:var(--success)">${escapeHtml(d.genesis.drift)}</span>`;
-    }
-}
-
-async function loadCrystals() {
-    const scale = document.getElementById('explorerFilter').value;
-    const search = document.getElementById('explorerSearch').value;
-    let url = '/crystals?limit=50';
-    if (scale) url += '&scale=' + encodeURIComponent(scale);
-    if (search) url += '&search=' + encodeURIComponent(search);
-    const list = await fetchJson(url);
-    if (!list) return;
-    const tbody = document.getElementById('crystalTableBody');
-    tbody.innerHTML = '';
-    list.forEach(c => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${escapeHtml(c.id.slice(0,10))}...</td><td>${c.tick}</td><td>${c.score.toFixed(2)}</td><td>${escapeHtml(c.scale)}</td><td>${escapeHtml(c.checks)}</td>`;
-        tr.onclick = () => showCrystalDetail(c);
-        tbody.appendChild(tr);
-    });
-}
-
-function showCrystalDetail(c) {
-    selectedCrystalId = c.id;
-    const panel = document.getElementById('crystalDetail');
-    panel.classList.add('open');
-    document.getElementById('crystalDetailContent').innerHTML = `
-        <div class="detail-row"><span class="detail-label">Crystal:</span><span class="detail-value">${escapeHtml(c.id)}</span></div>
-        <div class="detail-row"><span class="detail-label">Created:</span><span class="detail-value">tick ${c.tick}</span></div>
-        <div class="detail-row"><span class="detail-label">Scale:</span><span class="detail-value">${escapeHtml(c.scale)}</span></div>
-        <div class="detail-row"><span class="detail-label">Stability:</span><span class="detail-value">${c.stability.toFixed(2)}</span></div>
-        <div class="detail-row"><span class="detail-label">Free Energy:</span><span class="detail-value">${c.free_energy.toFixed(2)}</span></div>
-        <div class="detail-row"><span class="detail-label">Constraints:</span><span class="detail-value">${c.constraint_count}</span></div>
-        <div class="detail-row"><span class="detail-label">Topology:</span><span class="detail-value">spectral_gap=${c.topology.spectral_gap.toFixed(3)}, kuramoto_r=${c.topology.kuramoto_r.toFixed(3)}</span></div>
-        <div class="detail-row"><span class="detail-label">Evidence:</span><span class="detail-value">${c.evidence_count} entries, hash-verified</span></div>
-    `;
-}
-
-// ─── Forge ───────────────────────────────────────────────────────────────
-async function startForge() {
-    const body = {
-        intent: document.getElementById('forgeIntent').value,
-        domain: document.getElementById('forgeDomain').value,
-        template: document.getElementById('forgeTemplate').value,
-        strategy: document.getElementById('forgeStrategy').value,
-        max_atoms: parseInt(document.getElementById('forgeMaxAtoms').value) || 20,
-    };
-    document.getElementById('forgeProgressCard').style.display = '';
-    document.getElementById('forgeProgressText').textContent = 'Starting forge...';
-    await fetchJson('/forge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-}
-
-function updateForgeProgress(d) {
-    document.getElementById('forgeProgressCard').style.display = '';
-    if (d.total > 0) {
-        const pct = Math.round((d.index / d.total) * 100);
-        document.getElementById('forgeProgressBar').style.width = pct + '%';
-        document.getElementById('forgeProgressText').textContent =
-            `${d.status}: ${d.atom_name || ''} (${d.index}/${d.total})`;
-    }
-}
-
-// ─── Foundry ─────────────────────────────────────────────────────────────
-async function startFoundry() {
-    const body = {
-        intent: document.getElementById('foundryIntent').value,
-        operation: document.getElementById('foundryOp').value,
-        output_dir: document.getElementById('foundryOutput').value,
-    };
-    document.getElementById('foundryProgressCard').style.display = '';
-    document.getElementById('foundryLog').textContent = 'Starting fabrication...\n';
-    await fetchJson('/api/foundry/fabricate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-    });
-}
-
-function updateFoundryProgress(d) {
-    document.getElementById('foundryProgressCard').style.display = '';
-    if (d.max > 0) {
-        const pct = Math.round((d.attempt / d.max) * 100);
-        document.getElementById('foundryProgressBar').style.width = pct + '%';
-    }
-    document.getElementById('foundryProgressText').textContent =
-        `${d.phase}: ${d.status} (attempt ${d.attempt}/${d.max})`;
-    if (d.error) {
-        document.getElementById('foundryLog').textContent += `> ${d.error}\n`;
-    }
-}
-
-// ─── Engine Controls ─────────────────────────────────────────────────────
-async function engineStart() {
-    await fetchJson('/engine/start', { method: 'POST' });
-    document.getElementById('monEngineState').textContent = 'RUNNING';
-    document.getElementById('monEngineState').style.color = 'var(--success)';
-}
-
-async function engineStop() {
-    await fetchJson('/engine/stop', { method: 'POST' });
-    document.getElementById('monEngineState').textContent = 'STOPPED';
-    document.getElementById('monEngineState').style.color = 'var(--text-dim)';
-}
-
-async function engineStep() {
-    const d = await fetchJson('/engine/step', { method: 'POST' });
-    if (d && d.tick !== undefined) document.getElementById('monTick').textContent = d.tick;
-}
-
-// ─── Command Palette ─────────────────────────────────────────────────────
-async function apiCommand(cmd) {
-    await fetchJson('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ command: cmd }),
-    });
-}
-
-function openCmdPalette() {
-    document.getElementById('cmdPalette').classList.add('open');
-    const input = document.getElementById('cmdInput');
-    input.value = '';
-    input.focus();
-    renderCmdResults('');
-}
-
-function closeCmdPalette() {
-    document.getElementById('cmdPalette').classList.remove('open');
-}
-
-function renderCmdResults(query) {
-    const results = document.getElementById('cmdResults');
-    const q = query.toLowerCase();
-    const filtered = commands.filter(c => c.label.toLowerCase().includes(q));
-    results.innerHTML = '';
-    filtered.forEach((c, i) => {
-        const div = document.createElement('div');
-        div.className = 'cmd-result' + (i === 0 ? ' selected' : '');
-        div.innerHTML = `${escapeHtml(c.label)}<span class="cmd-key">${c.keys}</span>`;
-        div.onclick = () => { c.action(); closeCmdPalette(); };
-        results.appendChild(div);
-    });
-}
-
-document.getElementById('cmdInput').addEventListener('input', (e) => {
-    renderCmdResults(e.target.value);
-});
-
-document.getElementById('cmdInput').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-        const sel = document.querySelector('.cmd-result.selected');
-        if (sel) sel.click();
-    } else if (e.key === 'Escape') {
-        closeCmdPalette();
-    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        const items = [...document.querySelectorAll('.cmd-result')];
-        const idx = items.findIndex(i => i.classList.contains('selected'));
-        items.forEach(i => i.classList.remove('selected'));
-        const next = e.key === 'ArrowDown' ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
-        if (items[next]) items[next].classList.add('selected');
-    }
-});
-
-document.getElementById('cmdPalette').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget) closeCmdPalette();
-});
-
-// ─── Explorer actions ────────────────────────────────────────────────────
-function validateCrystal() { if (selectedCrystalId) apiCommand('validate crystal ' + selectedCrystalId); }
-function replayCrystal() { if (selectedCrystalId) apiCommand('replay crystal ' + selectedCrystalId); }
-function exportCrystal() { if (selectedCrystalId) apiCommand('export crystal ' + selectedCrystalId); }
-function forgeFromCrystal() {
-    if (!selectedCrystalId) return;
-    switchView('forge');
-    document.getElementById('forgeIntent').value = 'Forge from crystal: ' + selectedCrystalId;
-}
-
-// ─── Constitution ────────────────────────────────────────────────────────
-const gcConstraints = [
-    ['GC-01', 'Axiom 2.0.1', 'State Boundedness'],
-    ['GC-02', 'Axiom 2.0.2', 'Typed Operations'],
-    ['GC-03', 'Axiom 2.0.3', 'Trace Discipline'],
-    ['GC-04', 'Axiom 2.0.4', 'Content Addressing'],
-    ['GC-05', 'Axiom 2.0.5', 'Acyclicity'],
-    ['GC-06', 'Sec 5', 'Observation Integrity'],
-    ['GC-07', 'Sec 6', 'Persistence Guarantee'],
-    ['GC-08', 'Sec 7', 'Constraint Soundness'],
-    ['GC-09', 'Sec 8', 'Crystal Validity'],
-    ['GC-10', 'Sec 9', 'Consensus Protocol'],
-    ['GC-11', 'Sec 10', 'Topology Invariants'],
-    ['GC-12', 'Sec 11', 'Carrier Geometry'],
-    ['GC-13', 'Sec 12', 'Multi-Scale Coherence'],
-    ['GC-14', 'Sec 13', 'Archive Immutability'],
-    ['GC-15', 'Sec 14', 'Scheduler Fairness'],
-    ['GC-16', 'Sec 15', 'Capsule Security'],
-    ['GC-17', 'Sec 16', 'Store Integrity'],
-    ['GC-18', 'Sec 17', 'Manifest Completeness'],
-    ['GC-19', 'Sec 18', 'Gateway Conformance'],
-    ['GC-20', 'Sec 19', 'Forge Determinism'],
-    ['GC-21', 'Sec 20', 'Human Override'],
-];
-
-function renderConstraints() {
-    const el = document.getElementById('constraintList');
-    el.innerHTML = '';
-    gcConstraints.forEach(([id, axiom, name]) => {
-        const row = document.createElement('div');
-        row.className = 'constraint-row';
-        row.innerHTML = `<span class="constraint-id">${id}</span><span style="color:var(--text-dim);width:90px">${axiom}</span><span class="constraint-name">${name}</span><span class="constraint-status pass">PASS</span>`;
-        el.appendChild(row);
-    });
-}
-
-function validateGenesis() { apiCommand('validate genesis'); }
-function exportCertificate() { apiCommand('export certificate'); }
-
-// ─── Charts (Canvas) ─────────────────────────────────────────────────────
-function drawLineChart(canvasId, data, opts = {}) {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const w = canvas.width;
-    const h = canvas.height;
-    const color = opts.color || '#3b82f6';
-
-    ctx.clearRect(0, 0, w, h);
-
-    if (data.length < 2) {
-        ctx.fillStyle = '#64748b';
-        ctx.font = '11px system-ui';
-        ctx.fillText('Waiting for data...', 10, h / 2);
-        return;
-    }
-
-    const max = Math.max(...data);
-    const min = Math.min(...data);
-    const range = max - min || 1;
-
-    // Grid
-    ctx.strokeStyle = '#2a2a4a';
-    ctx.lineWidth = 0.5;
-    for (let i = 0; i < 4; i++) {
-        const y = (i / 3) * h;
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-    }
-
-    // Line
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    data.forEach((v, i) => {
-        const x = (i / (data.length - 1)) * w;
-        const y = h - ((v - min) / range) * (h - 4) - 2;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-
-    // Value label
-    ctx.fillStyle = color;
-    ctx.font = 'bold 11px monospace';
-    ctx.fillText(data[data.length - 1].toFixed(3), 4, 12);
-}
-
-function updateCharts() {
-    drawLineChart('chartCoherence', chartData.coherence, { color: '#3b82f6' });
-    drawLineChart('chartGate', chartData.gate, { color: '#22c55e' });
-    drawLineChart('chartCrystal', chartData.crystal, { color: '#d4a843' });
-    drawLineChart('chartSpectral', chartData.spectral, { color: '#8b5cf6' });
-    drawLineChart('chartKuramoto', chartData.kuramoto, { color: '#ef4444' });
-    drawLineChart('chartAutonomy', chartData.autonomy, { color: '#d4a843' });
-}
-
-// ─── Tab Switching ───────────────────────────────────────────────────────
-document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        btn.parentElement.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-    });
-});
-
-// ─── Filter Buttons ──────────────────────────────────────────────────────
-document.querySelectorAll('.filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        btn.parentElement.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-    });
-});
-
-// ─── Explorer search/filter ──────────────────────────────────────────────
-document.getElementById('explorerSearch').addEventListener('input', () => loadCrystals());
-document.getElementById('explorerFilter').addEventListener('change', () => loadCrystals());
-
-// ─── Keyboard Shortcuts ──────────────────────────────────────────────────
-document.addEventListener('keydown', (e) => {
-    // Ctrl+K — command palette
-    if (e.ctrlKey && e.key === 'k') { e.preventDefault(); openCmdPalette(); return; }
-
-    // Escape — close modals
-    if (e.key === 'Escape') { closeCmdPalette(); return; }
-
-    // Ctrl+1..9 — switch views
-    if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
-        e.preventDefault();
-        const views = ['dashboard', 'forge', 'explorer', 'monitor', 'foundry', 'oracle', 'constitution', 'navigator', 'agent'];
-        switchView(views[parseInt(e.key) - 1]);
-        return;
-    }
-
-    // Ctrl+Enter — primary action
-    if (e.ctrlKey && e.key === 'Enter') {
-        e.preventDefault();
-        if (currentView === 'forge') startForge();
-        else if (currentView === 'foundry') startFoundry();
-        return;
-    }
-
-    // Ctrl+S — start/stop engine
-    if (e.ctrlKey && e.key === 's') {
-        e.preventDefault();
-        const state = document.getElementById('monEngineState').textContent;
-        if (state === 'RUNNING') engineStop(); else engineStart();
-        return;
-    }
-
-    // Ctrl+E — explorer
-    if (e.ctrlKey && e.key === 'e') { e.preventDefault(); switchView('explorer'); return; }
-
-    // / — focus search
-    if (e.key === '/' && !e.ctrlKey && !e.metaKey && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
-        e.preventDefault();
-        if (currentView === 'explorer') document.getElementById('explorerSearch').focus();
-        else if (currentView === 'oracle') document.getElementById('patternSearch').focus();
-    }
-});
-
-// ─── Utilities ───────────────────────────────────────────────────────────
-function formatUptime(secs) {
-    const d = Math.floor(secs / 86400);
-    const h = Math.floor((secs % 86400) / 3600);
-    const m = Math.floor((secs % 3600) / 60);
-    if (d > 0) return d + 'd ' + h + 'h';
-    if (h > 0) return h + 'h ' + m + 'm';
-    return m + 'm';
-}
-
-function escapeHtml(s) {
-    if (!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-// ─── Navigator (C29) ─────────────────────────────────────────────────────
-function navigatorRefresh() {
-    fetch('/navigate/status')
-        .then(r => r.json())
-        .then(data => {
-            const s = data.state;
-            if (!s) {
-                document.getElementById('navRunLog').textContent =
-                    'No state yet. Click RUN to start exploring.';
-                return;
-            }
-            document.getElementById('navVertices').textContent =
-                s.mesh ? (s.mesh.vertices || []).length : '—';
-            document.getElementById('navEdges').textContent =
-                s.mesh ? (s.mesh.edges || []).length : '—';
-            document.getElementById('navSimplices').textContent =
-                s.mesh ? (s.mesh.simplices || []).length : '—';
-            document.getElementById('navBestRes').textContent =
-                s.best_resonance != null ? s.best_resonance.toFixed(4) : '—';
-            document.getElementById('navBestResFull').textContent =
-                s.best_resonance != null ? s.best_resonance.toFixed(6) : '—';
-            document.getElementById('navStepsRun').textContent = s.steps_run || '—';
-            document.getElementById('navModeDisplay').textContent = s.mode || '—';
-            if (s.best_point) {
-                document.getElementById('navBestPoint').textContent =
-                    '[' + s.best_point.map(x => x.toFixed(3)).join(', ') + ']';
-            }
-            // Singularity feed (placeholder from mesh data)
-            renderNavSingularities(s.mesh);
-        })
-        .catch(() => {
-            document.getElementById('navRunLog').textContent = 'Gateway not reachable.';
-        });
-}
-
-function navigatorStep() {
-    const steps = parseInt(document.getElementById('navSteps').value) || 20;
-    const mode = document.getElementById('navMode').value;
-    document.getElementById('navRunLog').textContent = `Running ${steps} steps (${mode})...`;
-    fetch(`/navigate/step?steps=${steps}&mode=${mode}`, { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok) {
-                document.getElementById('navRunLog').textContent =
-                    `Done. Steps: ${data.steps_run} | Vertices: ${data.vertices} | ` +
-                    `Edges: ${data.edges} | Best: ${(data.best_resonance || 0).toFixed(4)} | ` +
-                    `Singularities: ${data.singularities}`;
-                navigatorRefresh();
-            } else {
-                document.getElementById('navRunLog').textContent = 'Error: ' + (data.message || 'unknown');
-            }
-        })
-        .catch(() => {
-            document.getElementById('navRunLog').textContent = 'Navigator step failed.';
-        });
-}
-
-function navigatorExportMesh() {
-    fetch('/navigate/export-mesh')
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok && data.mesh) {
-                const blob = new Blob([JSON.stringify(data.mesh, null, 2)], {type: 'application/json'});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'navigator-mesh.json';
-                a.click();
-                URL.revokeObjectURL(url);
-            } else {
-                document.getElementById('navRunLog').textContent =
-                    'No mesh to export. Run the navigator first.';
-            }
-        });
-}
-
-function renderNavSingularities(mesh) {
-    const el = document.getElementById('navSingularities');
-    if (!mesh || !mesh.vertices || mesh.vertices.length === 0) {
-        el.innerHTML = '<span style="color:var(--text-dim)">No singularities detected yet.</span>';
-        return;
-    }
-    // Compute singularities client-side: resonance > mean + 2*sigma of neighborhood
-    // For display purposes we show top 5 high-resonance vertices
-    const sorted = [...mesh.vertices].sort((a, b) => (b.resonance || 0) - (a.resonance || 0));
-    const top = sorted.slice(0, 5);
-    el.innerHTML = top.map((v, i) =>
-        `<div style="padding:6px 0;border-bottom:1px solid var(--border)">` +
-        `<span style="color:var(--accent)">★ Vertex ${v.id}</span>` +
-        ` resonance <strong style="color:var(--gold,#f4c542)">${(v.resonance || 0).toFixed(4)}</strong>` +
-        ` &nbsp;point: [${(v.point || []).map(x => x.toFixed(3)).join(', ')}]` +
-        `</div>`
-    ).join('') || '<span style="color:var(--text-dim)">No vertices yet.</span>';
-}
-
-// ─── Agent (C30) ─────────────────────────────────────────────────────────
-let agConstraints = [];
-
-function agentAddConstraint() {
-    const input = document.getElementById('agConstraint');
-    const val = input.value.trim();
-    if (!val) return;
-    agConstraints.push(val);
-    input.value = '';
-    renderAgConstraints();
-}
-
-function renderAgConstraints() {
-    const el = document.getElementById('agConstraintList');
-    el.innerHTML = agConstraints.map((c, i) =>
-        `<span style="background:var(--bg-tertiary);border:1px solid var(--border);border-radius:3px;padding:2px 8px;cursor:pointer"
-            onclick="agConstraints.splice(${i},1);renderAgConstraints()">${escapeHtml(c)} ×</span>`
-    ).join('');
-}
-
-function agentRunGoal() {
-    const intent = document.getElementById('agIntent').value.trim();
-    if (!intent) { document.getElementById('agRunLog').textContent = 'Enter a goal intent first.'; return; }
-    const domain = document.getElementById('agDomain').value.trim() || undefined;
-    const confidence = parseFloat(document.getElementById('agConfidence').value) || 0.75;
-
-    document.getElementById('agRunLog').textContent = 'Running agent…';
-    fetch('/agent/goal', {
-        method: 'POST',
-        headers: {'content-type': 'application/json'},
-        body: JSON.stringify({ intent, domain, constraints: agConstraints, confidence }),
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.ok) {
-            document.getElementById('agRunLog').textContent =
-                `Done. Steps: ${data.steps_run} | Score: ${(data.best_score||0).toFixed(4)} | Complete: ${data.complete}`;
-            agentRefresh();
-        } else {
-            document.getElementById('agRunLog').textContent = 'Error: ' + (data.message || 'unknown');
-        }
-    })
-    .catch(() => { document.getElementById('agRunLog').textContent = 'Agent goal request failed.'; });
-}
-
-function agentStepOne() {
-    document.getElementById('agRunLog').textContent = 'Executing one step…';
-    fetch('/agent/step', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok) {
-                document.getElementById('agRunLog').textContent =
-                    data.message || `Step ${data.step_id}: ${data.action} → ${data.outcome} (score=${(data.score||0).toFixed(4)})`;
-                agentRefresh();
-            } else {
-                document.getElementById('agRunLog').textContent = 'Error: ' + (data.message || 'unknown');
-            }
-        })
-        .catch(() => { document.getElementById('agRunLog').textContent = 'Step request failed.'; });
-}
-
-function agentRefresh() {
-    fetch('/agent/status')
-        .then(r => r.json())
-        .then(data => {
-            const s = data.state;
-            if (!s) {
-                document.getElementById('agRunLog').textContent =
-                    document.getElementById('agRunLog').textContent || 'No agent state yet. Run a goal first.';
-                return;
-            }
-            document.getElementById('agStepsRun').textContent  = s.steps_run || 0;
-            document.getElementById('agBestScore').textContent = (s.best_score || 0).toFixed(4);
-            document.getElementById('agPlanSize').textContent  = s.plan ? s.plan.actions.length : '—';
-            const complete = s.complete ? 'YES' : 'NO';
-            document.getElementById('agComplete').textContent  = complete;
-            document.getElementById('agComplete').style.color  = s.complete ? 'var(--success)' : '';
-            document.getElementById('agIntent2').textContent   = s.goal ? s.goal.intent : '—';
-            document.getElementById('agDomain2').textContent   = (s.goal && s.goal.domain) ? s.goal.domain : 'general';
-            document.getElementById('agMode').textContent      = s.mode || '—';
-            document.getElementById('agPlanIdx').textContent   = s.plan ? s.plan.current_idx : '—';
-            document.getElementById('agConfidence2').textContent = s.goal ? (s.goal.confidence_target * 100).toFixed(0) + '%' : '—';
-            document.getElementById('agConstraints2').textContent =
-                (s.goal && s.goal.constraints && s.goal.constraints.length)
-                    ? s.goal.constraints.join(' | ') : '—';
-        });
-
-    fetch('/agent/history')
-        .then(r => r.json())
-        .then(data => {
-            const count = data.steps || 0;
-            document.getElementById('agHistoryCount').textContent = count ? `(${count})` : '';
-            const hist = data.history;
-            if (!hist || !hist.length) {
-                document.getElementById('agHistoryFeed').innerHTML =
-                    '<span style="color:var(--text-dim)">No history yet.</span>';
-                return;
-            }
-            document.getElementById('agHistoryFeed').innerHTML = hist.map(s =>
-                `<div style="padding:4px 0;border-bottom:1px solid var(--border)">` +
-                `<span style="color:var(--accent)">[${s.step_id}]</span> ` +
-                `<strong>${s.action ? s.action.action_type.kind || s.action.action_type : '?'}</strong> ` +
-                `<span style="color:var(--text-dim)">${escapeHtml(s.outcome)}</span> ` +
-                `<span style="color:var(--gold,#f4c542)">${(s.score||0).toFixed(3)}</span>` +
-                `</div>`
-            ).join('');
-        });
-}
-
-// ─── Chat (v3.2 norm-aware wiring) ───────────────────────────────────────
-let chatJobId = null;
-let chatPolling = null;
-let renderedEventCount = 0;
-let chatTotalRequests = 0, chatMemoryHits = 0, chatOracleCost = 0, chatPatterns = 0;
-let lastPlanId = null;
-let activatedNormIds = [];
-
-function sendChat() {
-    const input = document.getElementById('chat-input');
-    const message = input.value.trim();
-    if (!message) return;
-    input.value = '';
-    appendChatMsg('user', message);
-
-    // Use norm-aware /api/chat endpoint (v3.2)
-    fetch('/api/chat', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({message}),
-    })
-    .then(r => r.json())
-    .then(data => {
-        appendChatMsg('agent', data.message || 'No response', 'analysis');
-
-        // Store plan_id for forge action
-        if (data.plan_id) {
-            lastPlanId = data.plan_id;
-        }
-
-        // Track activated norms
-        if (data.norms_activated && data.norms_activated.length > 0) {
-            activatedNormIds = data.norms_activated;
-            appendChatMsg('agent',
-                data.norms_activated.length + ' Norms aktiviert: ' + data.norms_activated.join(', '),
-                'progress');
-            updateNormExplorer(data.norms_activated);
-        }
-
-        // Show plan description
-        if (data.plan_description) {
-            appendChatMsg('agent', data.plan_description, 'analysis');
-        }
-
-        // Render action buttons
-        if (data.action_buttons && data.action_buttons.length > 0) {
-            renderActionButtons(data.action_buttons);
-        }
-    })
-    .catch(err => appendChatMsg('agent', 'Network error: ' + err, 'error'));
-}
-
-function renderActionButtons(buttons) {
-    const msgs = document.getElementById('chat-messages');
-    if (!msgs) return;
-    const div = document.createElement('div');
-    div.style.cssText = 'padding:8px 0;display:flex;gap:8px';
-    buttons.forEach(btn => {
-        const el = document.createElement('button');
-        el.className = 'btn';
-        el.textContent = btn.label;
-        el.style.cssText = btn.style === 'primary'
-            ? 'background:var(--accent);color:#fff;padding:6px 16px;font-size:13px;cursor:pointer;border:none;border-radius:4px'
-            : 'background:var(--bg-tertiary);color:var(--text-primary);padding:6px 16px;font-size:13px;cursor:pointer;border:1px solid var(--border);border-radius:4px';
-        el.onclick = () => handleAction(btn.action);
-        div.appendChild(el);
-    });
-    msgs.appendChild(div);
-    msgs.scrollTop = msgs.scrollHeight;
-}
-
-function handleAction(action) {
-    if (action === 'forge' && lastPlanId) {
-        appendChatMsg('agent', 'Starte Generierung...', 'progress');
-        const apiKey = localStorage.getItem('isls-api-key') || null;
-        fetch('/api/projects/forge', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({plan_id: lastPlanId, api_key: apiKey}),
-        })
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok) {
-                appendChatMsg('agent',
-                    'Generierung abgeschlossen!\n' +
-                    '  Dateien: ' + data.files_generated + '\n' +
-                    '  Zeilen: ' + data.total_loc + '\n' +
-                    '  Tokens: ' + data.total_tokens + '\n' +
-                    '  Kompilierung: ' + data.compile_status + '\n' +
-                    '  Projekt-ID: ' + data.project_id,
-                    'complete');
-                // Offer to browse files
-                const msgs = document.getElementById('chat-messages');
-                const browseDiv = document.createElement('div');
-                browseDiv.style.cssText = 'padding:8px 0';
-                const browseBtn = document.createElement('button');
-                browseBtn.className = 'btn';
-                browseBtn.textContent = 'Dateien durchsuchen';
-                browseBtn.style.cssText = 'background:var(--bg-tertiary);color:var(--text-primary);padding:6px 16px;font-size:13px;cursor:pointer;border:1px solid var(--border);border-radius:4px';
-                browseBtn.onclick = () => viewProjectFiles(data.project_id);
-                browseDiv.appendChild(browseBtn);
-                msgs.appendChild(browseDiv);
-                // Refresh projects list
-                loadProjects();
-            } else {
-                appendChatMsg('agent', 'Fehler: ' + (data.error || 'unknown'), 'error');
-            }
-        })
-        .catch(err => appendChatMsg('agent', 'Network error: ' + err, 'error'));
-    } else if (action === 'customize') {
-        appendChatMsg('agent', 'Beschreibe deine Anpassungen — z.B. "Füge ein barcode-Feld zu Product hinzu" oder "Entferne die Supplier-Entität".', 'analysis');
-    }
-}
-
-function viewProjectFiles(projectId) {
-    fetch('/api/projects/' + encodeURIComponent(projectId) + '/files')
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok && data.files) {
-                let tree = 'Generierte Dateien (' + data.count + '):\n';
-                data.files.sort((a, b) => a.path.localeCompare(b.path));
-                data.files.forEach(f => {
-                    const icon = f.is_rust ? '🦀' : '📄';
-                    tree += '  ' + icon + ' ' + f.path + ' (' + f.size + ' bytes)\n';
-                });
-                appendChatMsg('agent', tree, 'analysis');
-
-                // Show clickable file links
-                const msgs = document.getElementById('chat-messages');
-                const fileDiv = document.createElement('div');
-                fileDiv.style.cssText = 'padding:4px 0;font-size:12px';
-                data.files.slice(0, 20).forEach(f => {
-                    const link = document.createElement('a');
-                    link.href = '#';
-                    link.textContent = f.path;
-                    link.style.cssText = 'display:block;color:var(--accent);padding:2px 0;cursor:pointer;text-decoration:none';
-                    link.onclick = (e) => { e.preventDefault(); showFileContent(projectId, f.path); };
-                    fileDiv.appendChild(link);
-                });
-                msgs.appendChild(fileDiv);
-                msgs.scrollTop = msgs.scrollHeight;
-            }
-        });
-}
-
-function showFileContent(projectId, path) {
-    fetch('/api/projects/' + encodeURIComponent(projectId) + '/file?path=' + encodeURIComponent(path))
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok) {
-                appendChatMsg('agent', '── ' + path + ' ──\n' + data.content, 'analysis');
-            } else {
-                appendChatMsg('agent', 'Fehler beim Laden: ' + (data.error || path), 'error');
-            }
-        });
-}
-
-// Legacy agent/chat support (backward compatible)
-function sendChatLegacy() {
-    const input = document.getElementById('chat-input');
-    const project = (document.getElementById('chatProject').value || '').trim() || null;
-    const message = input.value.trim();
-    if (!message) return;
-    input.value = '';
-    appendChatMsg('user', message);
-    renderedEventCount = 0;
-
-    fetch('/agent/chat', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({message, project}),
-    })
-    .then(r => r.json())
-    .then(data => {
-        if (data.ok) {
-            if (chatPolling) { clearInterval(chatPolling); chatPolling = null; }
-            chatPolling = setInterval(() => pollChatEvents(data.job_id), 500);
-        } else {
-            appendChatMsg('agent', 'Error: ' + (data.error || 'unknown'), 'error');
-        }
-    })
-    .catch(err => appendChatMsg('agent', 'Network error: ' + err, 'error'));
-}
-
-function pollChatEvents(jobId) {
-    fetch('/agent/chat/' + jobId + '/events')
-        .then(r => r.json())
-        .then(data => {
-            if (data.ok) {
-                renderChatEvents(data.events || []);
-                if (data.complete) {
-                    if (chatPolling) { clearInterval(chatPolling); chatPolling = null; }
-                }
-            }
-        })
-        .catch(() => {});
-}
-
-function renderChatEvents(events) {
-    const newEvents = events.slice(renderedEventCount);
-    renderedEventCount = events.length;
-    for (const evt of newEvents) {
-        switch (evt.kind || evt.type) {
-            // ── New no-code operator events (C30 upgrade) ──
-            case 'features_identified':
-                const feats = (evt.features || []);
-                appendChatMsg('agent',
-                    feats.length + ' Funktionen erkannt:\n' +
-                    feats.map(f => '  • ' + f).join('\n'),
-                    'analysis');
-                break;
-            case 'plan_ready':
-                appendChatMsg('agent',
-                    'Plane ' + (evt.component_count || 0) + ' Bausteine. Geschätzte Kosten: $' +
-                    (evt.estimated_cost || 0).toFixed(2),
-                    'analysis');
-                break;
-            case 'component_done':
-                appendChatMsg('agent',
-                    '[' + evt.index + '/' + evt.total + '] ' + evt.feature + ' ✓ (' + evt.source + ')',
-                    'progress');
-                if (evt.source === 'neu erzeugt') { chatTotalRequests++; chatOracleCost += 0.003; }
-                else if (evt.source === 'bekannt') { chatTotalRequests++; chatMemoryHits++; }
-                chatPatterns = Math.max(chatPatterns, chatMemoryHits);
-                updateAccumBar();
-                break;
-            case 'test_result':
-                const allPassed = evt.passed === evt.total;
-                appendChatMsg('agent',
-                    'Überprüfung: ' + evt.passed + '/' + evt.total + ' Tests bestanden' + (allPassed ? ' ✓' : ''),
-                    allPassed ? 'success' : 'warning');
-                break;
-            case 'complete':
-                chatOracleCost += evt.cost_usd || 0;
-                const caps = (evt.capabilities || []);
-                let summary = evt.summary || 'Fertig!';
-                if (caps.length > 0) {
-                    summary += '\n\nDas kann die App:\n' + caps.map(c => '  • ' + c).join('\n');
-                }
-                if (evt.patterns_learned > 0) {
-                    summary += '\n\n' + evt.patterns_learned + ' neue Muster gelernt';
-                }
-                appendChatMsg('agent', summary, 'complete');
-                updateAccumBar();
-                break;
-            case 'problem':
-                appendChatMsg('agent', evt.message || 'Es gab ein Problem.', 'error');
-                break;
-            case 'ask_follow_up':
-                appendChatMsg('agent', evt.question || 'Was soll die App noch können?', 'analysis');
-                break;
-            // ── Legacy events (backward compatible) ──
-            case 'analysis':
-                appendChatMsg('agent',
-                    'Projekt: ' + (evt.summary || '') + '\n' +
-                    (evt.plan ? 'Plan: ' + evt.plan.join(' → ') : ''),
-                    'analysis');
-                break;
-            case 'progress':
-                appendChatMsg('agent',
-                    '[' + evt.step + '/' + evt.total + '] ' + (evt.feature || evt.file || '') +
-                    ' (' + evt.source + ')',
-                    'progress');
-                if (evt.source === 'oracle') { chatTotalRequests++; chatOracleCost += 0; }
-                else if (evt.source === 'memory') { chatTotalRequests++; chatMemoryHits++; }
-                updateAccumBar();
-                break;
-            case 'tool_result':
-                appendChatMsg('agent',
-                    (evt.success ? '✓' : '✗') + ' ' + (evt.output || '').slice(0, 200),
-                    evt.success ? 'success' : 'error');
-                break;
-            case 'error':
-                appendChatMsg('agent', evt.message || 'Unbekannter Fehler', 'error');
-                break;
-        }
-    }
-}
-
-function appendChatMsg(role, text, kind) {
-    const msgs = document.getElementById('chat-messages');
-    if (!msgs) return;
-    const div = document.createElement('div');
-    const colorMap = {
-        user: 'var(--text-dim)',
-        analysis: 'var(--accent)',
-        progress: 'var(--text-secondary)',
-        success: 'var(--success,#22c55e)',
-        error: 'var(--danger,#ef4444)',
-        warning: 'var(--gold,#f4c542)',
-        complete: 'var(--gold,#f4c542)',
-    };
-    const color = colorMap[kind || role] || 'var(--text-primary)';
-    div.style.cssText = 'padding:5px 0;border-bottom:1px solid var(--border);color:' + color +
-        ';white-space:pre-wrap;font-size:12px;line-height:1.5';
-    div.textContent = (role === 'user' ? '> ' : '  ') + text;
-    msgs.appendChild(div);
-    msgs.scrollTop = msgs.scrollHeight;
-}
-
-function bindProject() {
-    const project = (document.getElementById('chatProject').value || '').trim();
-    if (!project) return;
-    fetch('/agent/bind', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({project}),
-    })
-    .then(r => r.json())
-    .then(d => {
-        const status = d.exists ? 'bound' : 'bound (path not found)';
-        document.getElementById('chatBindStatus').textContent = status;
-        appendChatMsg('agent', 'Bound to: ' + project, 'analysis');
-    })
-    .catch(() => { document.getElementById('chatBindStatus').textContent = 'error'; });
-}
-
-function updateAccumBar() {
-    const bar = document.getElementById('chatAccumBar');
-    const autoSpan = document.getElementById('chat-autonomy');
-    if (!bar) return;
-    const ratio = chatTotalRequests > 0 ? chatMemoryHits / chatTotalRequests : 0;
-    const saved = chatMemoryHits * (chatTotalRequests > 0 ? chatOracleCost / chatTotalRequests : 0);
-    const text = 'Autonomie: ' + Math.round(ratio * 100) + '%' +
-        ' | Muster: ' + chatPatterns +
-        ' | $' + chatOracleCost.toFixed(4) +
-        ' | Gespart: $' + saved.toFixed(2);
-    bar.textContent = text;
-    if (autoSpan) autoSpan.textContent = text;
-}
-
-// ─── Norm Explorer ────────────────────────────────────────────────────────
-let allNorms = [];
-
-function loadNorms() {
-    Promise.all([
-        fetch('/api/norms').then(r => r.json()),
-        fetch('/api/norms/candidates').then(r => r.json()),
-    ]).then(([nd, cd]) => {
-        allNorms = nd.norms || [];
-        renderNormsTable(allNorms);
-        renderCandidatesTable(cd.candidates || []);
-    }).catch(() => {
-        document.getElementById('normsBody').innerHTML =
-            '<tr><td colspan="4" style="color:var(--danger,#ef4444)">Failed to load norms.</td></tr>';
-    });
-}
-
-function filterNorms() {
-    const q = (document.getElementById('norm-search').value || '').toLowerCase();
-    const lv = document.getElementById('norm-level-filter').value;
-    const filtered = allNorms.filter(n =>
-        (!q || n.name.toLowerCase().includes(q) || n.id.toLowerCase().includes(q)) &&
-        (!lv || n.level === lv)
-    );
-    renderNormsTable(filtered);
-}
-
-function renderNormsTable(norms) {
-    const levelColor = { Atom: '#60a5fa', Molecule: '#34d399', Organism: '#f59e0b', Ecosystem: '#a78bfa' };
-    const tbody = document.getElementById('normsBody');
-    if (!norms.length) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim)">No norms match.</td></tr>';
-        return;
-    }
-    tbody.innerHTML = norms.map(n => {
-        const isActive = activatedNormIds.includes(n.id);
-        const bg = isActive ? 'background:rgba(34,197,94,0.15);' : '';
-        const indicator = isActive ? '<span style="color:var(--success,#22c55e)" title="Activated">●</span> ' : '';
-        return `<tr style="cursor:pointer;${bg}" onclick="showNormDetail('${n.id}')">
-            <td style="font-family:monospace;font-size:11px">${indicator}${n.id}</td>
-            <td>${n.name}</td>
-            <td><span style="color:${levelColor[n.level]||'var(--text-primary)'}">${n.level}</span></td>
-            <td style="font-size:11px;color:var(--text-dim)">${n.description || ''}</td>
-        </tr>`;
-    }).join('');
-}
-
-function updateNormExplorer(normIds) {
-    activatedNormIds = normIds || [];
-    if (allNorms.length > 0) {
-        renderNormsTable(allNorms);
+function updateEmptyState() {
+    const ph = placeholders[currentMode];
+    const hasMsg = hasMessages[currentMode];
+
+    if (hasMsg) {
+        $empty.classList.add('hidden');
     } else {
-        loadNorms();
-    }
-}
-
-function showNormDetail(id) {
-    fetch('/api/norms/' + encodeURIComponent(id))
-        .then(r => r.json())
-        .then(d => {
-            const panel = document.getElementById('norm-detail');
-            document.getElementById('norm-detail-title').textContent = d.norm ? d.norm.name : id;
-            document.getElementById('norm-detail-json').textContent = JSON.stringify(d.norm || d, null, 2);
-            panel.style.display = 'block';
+        $empty.classList.remove('hidden');
+        $title.textContent = ph.title;
+        $sugg.innerHTML = '';
+        ph.suggestions.forEach(function(s) {
+            var el = document.createElement('span');
+            el.className = 'suggestion';
+            el.textContent = s;
+            el.onclick = function() { fillInput(s); };
+            $sugg.appendChild(el);
         });
-}
-
-function renderCandidatesTable(candidates) {
-    const tbody = document.getElementById('candidatesBody');
-    if (!candidates.length) {
-        tbody.innerHTML = '<tr><td colspan="4" style="color:var(--text-dim)">No candidates yet.</td></tr>';
-        return;
     }
-    const statusColor = { Observing: 'var(--text-dim)', Eligible: 'var(--gold,#f4c542)', Promoted: 'var(--success,#22c55e)', Rejected: 'var(--danger,#ef4444)' };
-    tbody.innerHTML = candidates.map(c => `
-        <tr>
-            <td style="font-family:monospace;font-size:11px">${c.id}</td>
-            <td>${c.observations}</td>
-            <td>${(c.consistency * 100).toFixed(0)}%</td>
-            <td><span style="color:${statusColor[c.status]||'var(--text-primary)'}">${c.status}</span></td>
-        </tr>`).join('');
 }
 
-// ─── Projects ─────────────────────────────────────────────────────────────
-
-function loadProjects() {
-    fetch('/api/projects').then(r => r.json()).then(d => {
-        renderProjectsTable(d.projects || []);
-    }).catch(() => {
-        document.getElementById('projectsBody').innerHTML =
-            '<tr><td colspan="6" style="color:var(--danger,#ef4444)">Failed to load projects.</td></tr>';
+// ── Message Rendering ──────────────────────────────────────────────
+function renderAllMessages() {
+    $conv.innerHTML = '';
+    messages[currentMode].forEach(function(m) {
+        appendMessageDOM(m);
     });
+    scrollToBottom();
+    updateEmptyState();
 }
 
-function renderProjectsTable(projects) {
-    const tbody = document.getElementById('projectsBody');
-    if (!projects.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-dim)">No projects yet. Use Chat to create one.</td></tr>';
-        return;
+function appendMessageDOM(msg) {
+    var el = document.createElement('div');
+    el.className = 'msg ' + (msg.role || 'system');
+    el.textContent = msg.content;
+    $conv.appendChild(el);
+}
+
+function renderMessage(msg) {
+    messages[currentMode].push(msg);
+    hasMessages[currentMode] = true;
+    $empty.classList.add('hidden');
+    appendMessageDOM(msg);
+    scrollToBottom();
+}
+
+function scrollToBottom() {
+    $conv.scrollTop = $conv.scrollHeight;
+}
+
+// ── Send Message ───────────────────────────────────────────────────
+function sendMessage() {
+    var text = $input.value.trim();
+    if (!text) return;
+
+    renderMessage({ role: 'user', content: text });
+    $input.value = '';
+    autoResize();
+
+    // Stub: in S1b this will call the backend
+    setTimeout(function() {
+        renderMessage({ role: 'system', content: 'Verbindung wird in S1b verdrahtet.' });
+    }, 300);
+}
+
+// ── Input Helpers ──────────────────────────────────────────────────
+function fillInput(text) {
+    $input.value = text;
+    $input.focus();
+    autoResize();
+}
+
+function autoResize() {
+    $input.style.height = 'auto';
+    $input.style.height = Math.min($input.scrollHeight, 160) + 'px';
+}
+
+// ── Readiness Ring (Stub) ──────────────────────────────────────────
+function updateReadiness(score) {
+    var circumference = 37.7; // 2 * PI * 6
+    var offset = circumference - (circumference * Math.min(score, 100) / 100);
+    document.getElementById('ring-fill').style.strokeDashoffset = offset;
+    $ring.title = 'Readiness: ' + Math.round(score) + '%';
+    $ring.classList.toggle('full', score >= 100);
+}
+
+// ── Keyboard ───────────────────────────────────────────────────────
+$input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
     }
-    const statusColor = { created: 'var(--text-dim)', generating: 'var(--accent)', completed: 'var(--success,#22c55e)', failed: 'var(--danger,#ef4444)' };
-    tbody.innerHTML = projects.map(p => {
-        const stats = p.stats ? `${p.stats.files_generated} files, ${p.stats.total_loc} LOC` : '—';
-        const norms = (p.norms_used || []).length > 0 ? p.norms_used.length + ' norms' : '—';
-        const browseBtn = p.status === 'completed' && p.output_dir
-            ? `<button class="btn" style="font-size:11px;padding:2px 8px;margin-right:4px" onclick="viewProjectFiles('${p.id}')">Browse</button>`
-            : '';
-        return `<tr>
-            <td style="font-family:monospace;font-size:11px">${p.id}</td>
-            <td>${p.name}</td>
-            <td style="font-size:11px;color:var(--text-dim)">${stats}</td>
-            <td><span style="color:${statusColor[p.status]||'var(--text-primary)'}">${p.status}</span></td>
-            <td style="font-size:11px;color:var(--text-dim)">${norms}</td>
-            <td>${browseBtn}<button class="btn" style="font-size:11px;padding:2px 8px" onclick="deleteProject('${p.id}')">Delete</button></td>
-        </tr>`;
-    }).join('');
-}
+});
 
-function showCreateProjectModal() {
-    const modal = document.getElementById('createProjectModal');
-    modal.style.display = 'flex';
-}
+$input.addEventListener('input', autoResize);
 
-function hideCreateProjectModal() {
-    document.getElementById('createProjectModal').style.display = 'none';
-}
-
-function createProject() {
-    const name = document.getElementById('proj-name').value.trim();
-    const toml_content = document.getElementById('proj-toml').value.trim();
-    const domain = document.getElementById('proj-domain').value.trim() || null;
-    if (!name || !toml_content) { alert('Name and TOML are required.'); return; }
-    fetch('/api/projects', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ name, toml_content, domain }),
-    }).then(r => r.json()).then(d => {
-        if (d.ok) {
-            hideCreateProjectModal();
-            loadProjects();
-        } else {
-            alert('Error: ' + (d.error || 'unknown'));
+// ── Touch Swipe (mobile mode switch) ───────────────────────────────
+(function() {
+    var startX = 0;
+    document.addEventListener('touchstart', function(e) {
+        startX = e.touches[0].clientX;
+    }, { passive: true });
+    document.addEventListener('touchend', function(e) {
+        var dx = e.changedTouches[0].clientX - startX;
+        if (Math.abs(dx) > 80) {
+            switchMode(dx > 0 ? 'create' : 'discover');
         }
-    });
-}
+    }, { passive: true });
+})();
 
-function deleteProject(id) {
-    if (!confirm('Delete project ' + id + '?')) return;
-    fetch('/api/projects/' + encodeURIComponent(id), { method: 'DELETE' })
-        .then(r => r.json())
-        .then(() => loadProjects());
-}
-
-// ─── Init ────────────────────────────────────────────────────────────────
-function init() {
-    // Restore last view; default to 'chat' when no preference is saved
-    const saved = localStorage.getItem('isls-studio-view');
-    if (saved && viewTitles[saved]) switchView(saved);
-    else switchView('chat');
-
-    // Render constitution constraints
-    renderConstraints();
-
-    // Detect platform
-    const platform = navigator.platform || navigator.userAgent;
-    document.getElementById('constPlatform').textContent =
-        platform.includes('Win') ? 'windows' : platform.includes('Mac') ? 'macos' : 'linux';
-
-    // Connect WebSocket
-    connectWs();
-
-    // Load initial data
-    loadDashboard();
-    loadCrystals();
-
-    // Periodic refresh
-    setInterval(() => {
-        loadDashboard();
-        updateCharts();
-    }, 5000);
-
-    setInterval(() => {
-        if (currentView === 'explorer') loadCrystals();
-        if (currentView === 'navigator') navigatorRefresh();
-        if (currentView === 'agent') agentRefresh();
-    }, 10000);
-}
-
-// ─── D7: Architect Mode ─────────────────────────────────────────────────
-let archSessionId = null;
-let archForging = false;
-
-async function archCreateSession() {
-    try {
-        const r = await fetch('/api/session', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ api_key: null }),
-        });
-        const d = await r.json();
-        if (d.ok) {
-            archSessionId = d.session_id;
-        }
-    } catch(e) { console.error('session create failed', e); }
-}
-
-async function archSendMessage() {
-    const input = document.getElementById('archInput');
-    const msg = input.value.trim();
-    if (!msg || archForging) return;
-
-    if (!archSessionId) await archCreateSession();
-    if (!archSessionId) return;
-
-    // Show user message
-    const chat = document.getElementById('archChat');
-    chat.innerHTML += `<div style="align-self:flex-end;background:var(--accent);color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:75%;font-size:13px">${escHtml(msg)}</div>`;
-    input.value = '';
-    input.disabled = true;
-    document.getElementById('archSendBtn').disabled = true;
-    chat.scrollTop = chat.scrollHeight;
-
-    try {
-        const r = await fetch(`/api/session/${archSessionId}/message`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ message: msg }),
-        });
-        const d = await r.json();
-        if (d.ok) {
-            // Show assistant message
-            chat.innerHTML += `<div style="align-self:flex-start;background:var(--bg-tertiary);color:var(--text-primary);padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:75%;font-size:13px">${escHtml(d.message)}</div>`;
-            chat.scrollTop = chat.scrollHeight;
-            // Update readiness
-            if (d.readiness) archUpdateReadiness(d.readiness);
-            // Update entities
-            if (d.spec) archUpdateEntities(d.spec);
-        }
-    } catch(e) {
-        chat.innerHTML += `<div style="color:var(--error);font-size:12px;padding:4px 8px">Error: ${e.message}</div>`;
-    }
-    input.disabled = false;
-    document.getElementById('archSendBtn').disabled = false;
-    input.focus();
-}
-
-function archUpdateReadiness(r) {
-    const scoreEl = document.getElementById('archReadinessScore');
-    scoreEl.textContent = r.score + '%';
-    scoreEl.style.color = r.ready ? 'var(--success)' : (r.score > 30 ? 'var(--warning)' : 'var(--text-dim)');
-
-    // Criteria list
-    const list = document.getElementById('archCriteriaList');
-    list.innerHTML = '';
-    if (r.criteria) {
-        for (const [key, val] of Object.entries(r.criteria)) {
-            const icon = val.met ? '<span style="color:var(--success)">&#10003;</span>' : '<span style="color:var(--error)">&#10007;</span>';
-            const detail = val.detail ? ` <span style="color:var(--text-dim)">(${escHtml(val.detail)})</span>` : '';
-            const score = val.score !== undefined && val.score !== null ? ` <span style="color:var(--text-dim)">+${val.score}%</span>` : '';
-            list.innerHTML += `<div>${icon} ${escHtml(key)}${detail}${score}</div>`;
-        }
-    }
-
-    // Suggestions
-    const sugDiv = document.getElementById('archSuggestions');
-    const sugList = document.getElementById('archSuggestionList');
-    if (r.suggestions && r.suggestions.length > 0) {
-        sugDiv.style.display = '';
-        sugList.innerHTML = r.suggestions.map(s => `<div style="color:var(--warning)">&#9888; ${escHtml(s)}</div>`).join('');
-    } else {
-        sugDiv.style.display = 'none';
-    }
-
-    // Forge button
-    const btn = document.getElementById('archForgeBtn');
-    if (r.ready) {
-        btn.disabled = false;
-        btn.style.background = 'var(--success)';
-        btn.style.color = '#fff';
-        btn.style.borderColor = 'var(--success)';
-        btn.style.cursor = 'pointer';
-    } else {
-        btn.disabled = true;
-        btn.style.background = 'var(--bg-tertiary)';
-        btn.style.color = 'var(--text-dim)';
-        btn.style.borderColor = 'var(--border)';
-        btn.style.cursor = 'not-allowed';
-    }
-}
-
-function archUpdateEntities(spec) {
-    const list = document.getElementById('archEntityList');
-    if (!spec.entities || spec.entities.length === 0) {
-        list.innerHTML = '<div style="color:var(--text-dim)">No entities yet</div>';
-        return;
-    }
-    list.innerHTML = spec.entities.map(e => {
-        const fields = e.fields ? e.fields.map(f => `${f.name}: ${f.type}`).join(', ') : '';
-        return `<div style="padding:4px 6px;background:var(--bg-primary);border-radius:4px"><strong>${escHtml(e.name)}</strong> <span style="color:var(--text-dim);font-size:11px">${e.field_count || 0} fields</span><div style="color:var(--text-dim);font-size:10px;margin-top:2px">${escHtml(fields)}</div></div>`;
-    }).join('');
-}
-
-async function archStartForge() {
-    if (!archSessionId || archForging) return;
-    archForging = true;
-    document.getElementById('archForgeBtn').disabled = true;
-    document.getElementById('archProgress').style.display = '';
-    document.getElementById('archResult').style.display = 'none';
-    document.getElementById('archProgressStatus').textContent = 'Starting forge...';
-    document.getElementById('archProgressFill').style.width = '10%';
-
-    try {
-        const r = await fetch(`/api/session/${archSessionId}/forge`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({}),
-        });
-        const d = await r.json();
-        if (d.ok) {
-            document.getElementById('archProgressStatus').textContent = 'Forge running... Watch for WebSocket events.';
-            document.getElementById('archProgressFill').style.width = '50%';
-            // Poll session until forge_result appears
-            archPollResult();
-        } else {
-            document.getElementById('archProgressStatus').textContent = 'Error: ' + (d.error || 'unknown');
-            archForging = false;
-        }
-    } catch(e) {
-        document.getElementById('archProgressStatus').textContent = 'Error: ' + e.message;
-        archForging = false;
-    }
-}
-
-async function archPollResult() {
-    for (let i = 0; i < 120; i++) { // max 2 minutes
-        await new Promise(r => setTimeout(r, 1000));
-        try {
-            const r = await fetch(`/api/session/${archSessionId}`);
-            const d = await r.json();
-            if (d.ok && d.session && d.session.forge_result) {
-                const fr = d.session.forge_result;
-                document.getElementById('archProgressFill').style.width = '100%';
-                document.getElementById('archProgressStatus').textContent = fr.success ? 'Complete!' : 'Failed';
-                document.getElementById('archResult').style.display = '';
-                document.getElementById('archResultInfo').innerHTML = `
-                    <div>Files: <strong>${fr.files_generated}</strong></div>
-                    <div>LOC: <strong>${fr.total_loc}</strong></div>
-                    <div>Tokens: <strong>${fr.total_tokens}</strong></div>
-                    <div>Duration: <strong>${fr.duration_secs.toFixed(1)}s</strong></div>
-                    <div>Output: <code style="font-size:11px">${escHtml(fr.output_dir)}</code></div>
-                `;
-                archForging = false;
-                return;
-            }
-        } catch(e) { /* retry */ }
-    }
-    document.getElementById('archProgressStatus').textContent = 'Timed out waiting for result';
-    archForging = false;
-}
-
-function escHtml(s) {
-    if (!s) return '';
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-init();
+// ── Init ───────────────────────────────────────────────────────────
+updateEmptyState();
 </script>
 </body>
 </html>
