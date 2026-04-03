@@ -453,6 +453,131 @@ html, body {
     text-decoration: underline;
 }
 
+/* ── Repo Cards (Entdecken) ─────────────────────────────────────── */
+.repo-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 6px 0;
+}
+
+.repo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+}
+
+.repo-name {
+    color: var(--accent-info);
+    font-size: 14px;
+}
+
+.repo-stars {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.repo-desc {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+.repo-meta {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.repo-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.repo-action {
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 2px 0;
+}
+
+.repo-action:hover {
+    text-decoration: underline;
+}
+
+.repo-action:disabled {
+    color: var(--text-dim);
+    cursor: default;
+    text-decoration: none;
+}
+
+/* ── Gap Cards (Entdecken) ──────────────────────────────────────── */
+.gap-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gap-area {
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.gap-count {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.gap-search {
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.gap-search:hover {
+    text-decoration: underline;
+}
+
+.covered-item {
+    color: var(--accent-success);
+    font-size: 13px;
+    padding: 2px 0;
+}
+
+/* ── Drag-Drop Overlay ──────────────────────────────────────────── */
+#drop-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(13, 17, 23, 0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--accent);
+    border: 3px dashed var(--accent);
+    margin: 16px;
+    border-radius: 16px;
+}
+
+#drop-overlay.active {
+    display: flex;
+}
+
 /* ── Responsive: Mobile ─────────────────────────────────────────── */
 @media (max-width: 768px) {
     #app {
@@ -510,6 +635,7 @@ html, body {
 </head>
 <body>
 
+<div id="drop-overlay">Keywords-Datei hier ablegen</div>
 <div id="app">
     <!-- Mode Strip -->
     <nav id="mode-strip">
@@ -820,8 +946,7 @@ async function sendMessage() {
     if (currentMode === 'create') {
         await sendCreateMessage(text);
     } else {
-        // Discover mode stub — will be wired in S1c
-        renderMessage({ role: 'system', content: 'Entdecken-Modus wird in S1c verdrahtet.' });
+        await sendDiscoverMessage(text);
     }
 }
 
@@ -902,6 +1027,289 @@ async function triggerForge() {
     }
 }
 
+// ── Entdecken Mode ─────────────────────────────────────────────────
+async function sendDiscoverMessage(text) {
+    sending = true;
+    var lower = text.toLowerCase().trim();
+    try {
+        // "was fehlt mir?" handler
+        if (lower.indexOf('was fehlt') >= 0) {
+            await discoverGaps();
+        }
+        // Norm genealogy handler
+        else if (lower.match(/isls-(?:norm|cand)-(?:auto-)?\d+/i)) {
+            var match = lower.match(/(isls-(?:norm|cand)-(?:auto-)?\d+)/i);
+            if (match) await discoverGenealogy(match[1].toUpperCase());
+        }
+        // Mass-scrape: "scrape diese keywords: X, Y, Z"
+        else if (lower.indexOf('scrape diese keywords') >= 0 || lower.indexOf('scrape keywords') >= 0) {
+            var afterColon = text.split(':').slice(1).join(':');
+            var kws = afterColon.split(',').map(function(k) { return k.trim(); }).filter(Boolean);
+            if (kws.length > 0) await discoverMassScrape(kws);
+            else renderMessage({ role: 'error', content: 'Keine Keywords gefunden. Format: scrape diese keywords: X, Y, Z' });
+        }
+        // Default: GitHub search
+        else {
+            await discoverSearch(text);
+        }
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Fehler: ' + err.message });
+    }
+    sending = false;
+}
+
+async function discoverSearch(query) {
+    renderMessage({ role: 'process', content: 'Suche auf GitHub: "' + query + '"...' });
+    var resp = await fetch('/api/discover/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query, max_results: 8 })
+    });
+    var data = await resp.json();
+    if (!data.ok) {
+        renderMessage({ role: 'error', content: data.error || 'Suche fehlgeschlagen.' });
+        return;
+    }
+    var repos = (data.data && data.data.repos) || [];
+    var total = data.data && data.data.total_count;
+    if (repos.length === 0) {
+        renderMessage({ role: 'system', content: 'Keine Repos gefunden.' });
+        return;
+    }
+    renderMessage({ role: 'system', content: repos.length + ' Repos gefunden' + (total ? ' (von ' + total + ' gesamt)' : '') + ':' });
+    // Render repo cards
+    var el = document.createElement('div');
+    el.className = 'msg system';
+    repos.forEach(function(r) { el.appendChild(createRepoCard(r)); });
+    messages[currentMode].push({ role: 'repos', _dom: true });
+    hasMessages[currentMode] = true;
+    $conv.appendChild(el);
+    smartScroll();
+}
+
+function createRepoCard(repo) {
+    var card = document.createElement('div');
+    card.className = 'repo-card';
+
+    var stars = repo.stargazers_count || 0;
+    var starsStr = stars >= 1000 ? (stars / 1000).toFixed(1) + 'k' : stars;
+
+    card.innerHTML =
+        '<div class="repo-header"><span class="repo-name">' + escHtml(repo.full_name || '') +
+        '</span><span class="repo-stars">' + starsStr + ' \u2B50</span></div>' +
+        '<div class="repo-desc">' + escHtml(repo.description || 'No description') + '</div>' +
+        '<div class="repo-meta">' + escHtml(repo.language || 'Unknown') + '</div>' +
+        '<div class="repo-actions">' +
+        '<button class="repo-action" data-action="xray">R\u00f6ntgen</button>' +
+        '<button class="repo-action" data-action="scrape">Scrape</button>' +
+        '</div>';
+
+    var cloneUrl = repo.clone_url || repo.html_url;
+    var fullName = repo.full_name || '';
+
+    card.querySelector('[data-action="xray"]').onclick = function() {
+        this.disabled = true;
+        this.textContent = '...';
+        discoverXray(cloneUrl, fullName, card);
+    };
+    card.querySelector('[data-action="scrape"]').onclick = function() {
+        this.disabled = true;
+        this.textContent = '...';
+        discoverScrapeRepo(cloneUrl, fullName, card);
+    };
+
+    return card;
+}
+
+async function discoverXray(url, name, cardEl) {
+    renderMessage({ role: 'process', content: 'R\u00f6ntgen: ' + name + ' ...' });
+    try {
+        var resp = await fetch('/api/discover/xray', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: 'X-Ray fehlgeschlagen: ' + (data.error || '') });
+            return;
+        }
+        var d = data.data || {};
+        var topo = d.topology || {};
+        var langs = topo.language_breakdown || {};
+        var langStr = Object.keys(langs).map(function(k) { return k + ' (' + langs[k] + ' LOC)'; }).join(', ');
+        var layers = (topo.layers || []).join(', ');
+        var lines = [
+            'Topologie: ' + name,
+            '  Sprachen: ' + (langStr || 'unknown'),
+            '  ' + (d.fn_count || 0) + ' Functions, ' + (d.struct_count || 0) + ' Structs, ' + (d.table_count || 0) + ' Tables',
+            '  Layers: ' + (layers || 'none'),
+            '  Connectivity: ' + ((topo.connectivity || 0).toFixed(3)),
+            '  LOC: ' + (d.total_loc || 0),
+        ];
+        renderMessage({ role: 'process', content: lines.join('\n') });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'X-Ray Fehler: ' + err.message });
+    }
+}
+
+async function discoverScrapeRepo(url, name, cardEl) {
+    renderMessage({ role: 'process', content: 'Scrape: ' + name + ' ...' });
+    try {
+        var resp = await fetch('/api/discover/scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: 'Scrape fehlgeschlagen: ' + (data.error || '') });
+            return;
+        }
+        var d = data.data || {};
+        var norms = d.norms || {};
+        var line = '\u2713 ' + name + ' gescrapt \u2014 ' + (d.artifact_count || 0) + ' Artifacts, ' +
+            Object.keys(d.layers || {}).length + ' Layers';
+        if (norms.new_candidates) line += '\nNeue Candidates: ' + norms.new_candidates;
+        if (norms.new_norms) line += '\nNeue Auto-Norms: ' + norms.new_norms;
+        renderMessage({ role: 'system', content: line });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Scrape Fehler: ' + err.message });
+    }
+}
+
+async function discoverGaps() {
+    renderMessage({ role: 'process', content: 'Analysiere Norm-Katalog...' });
+    try {
+        var resp = await fetch('/api/discover/gaps');
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Gap-Analyse fehlgeschlagen.' });
+            return;
+        }
+        var summary = 'Dein Norm-Katalog: ' + data.total_norms + ' Norms (' +
+            data.builtin + ' builtin, ' + data.auto + ' auto)\nCandidates: ' + data.candidates;
+        renderMessage({ role: 'system', content: summary });
+
+        // Render gaps as cards
+        var gaps = data.gaps || [];
+        if (gaps.length > 0) {
+            renderMessage({ role: 'system', content: 'Schwach abgedeckte Bereiche:' });
+            var el = document.createElement('div');
+            el.className = 'msg system';
+            gaps.forEach(function(g) {
+                var card = document.createElement('div');
+                card.className = 'gap-card';
+                card.innerHTML =
+                    '<div><span class="gap-area">' + escHtml(g.area) + '</span> ' +
+                    '<span class="gap-count">' + g.norm_count + ' Norms</span></div>' +
+                    '<button class="gap-search">[Suchen]</button>';
+                card.querySelector('.gap-search').onclick = function() {
+                    fillInput(g.suggested_query);
+                    sendMessage();
+                };
+                el.appendChild(card);
+            });
+            messages[currentMode].push({ role: 'gaps', _dom: true });
+            hasMessages[currentMode] = true;
+            $conv.appendChild(el);
+            smartScroll();
+        }
+
+        // Show covered areas
+        var covered = data.covered || [];
+        if (covered.length > 0) {
+            var covLines = 'Gut abgedeckt:\n' + covered.map(function(c) {
+                return '  \u2713 ' + c.area + ' (' + c.keyword_matches + ' Treffer)';
+            }).join('\n');
+            renderMessage({ role: 'system', content: covLines });
+        }
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Gap-Analyse Fehler: ' + err.message });
+    }
+}
+
+async function discoverGenealogy(normId) {
+    renderMessage({ role: 'process', content: 'Lade Abstammung: ' + normId + '...' });
+    try {
+        var resp = await fetch('/api/discover/genealogy/' + encodeURIComponent(normId));
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Norm nicht gefunden.' });
+            return;
+        }
+        var lines = [data.id + ' "' + (data.name || '') + '"'];
+        if (data.level) lines.push('Level: ' + data.level);
+        if (data.evidence) {
+            lines.push('Builtin: ' + (data.evidence.builtin ? 'Ja' : 'Nein'));
+            if (data.evidence.domains_used && data.evidence.domains_used.length)
+                lines.push('Domains: ' + data.evidence.domains_used.join(', '));
+            if (data.evidence.signature)
+                lines.push('Signatur: ' + data.evidence.signature.substring(0, 16) + '...');
+        }
+        if (data.candidate) {
+            var c = data.candidate;
+            lines.push('\nAbstammung:');
+            lines.push('  Observations: ' + c.observation_count);
+            lines.push('  Domains: ' + (c.domains || []).join(', '));
+            lines.push('  Consistency: ' + (c.consistency || 0).toFixed(2));
+            if (c.consistent_layers) lines.push('  Layers: ' + c.consistent_layers.join(', '));
+            (c.observations || []).forEach(function(o) {
+                lines.push('  - ' + o.entity + ' (' + o.domain + ', ' + o.run_id + ')');
+            });
+        }
+        // Also handle candidate-type responses
+        if (data.type === 'candidate') {
+            lines = [data.id + ' (Candidate)'];
+            lines.push('Status: ' + (data.status || ''));
+            lines.push('Observations: ' + (data.observation_count || 0));
+            lines.push('Domains: ' + (data.domains || []).join(', '));
+            lines.push('Consistency: ' + (data.consistency || 0).toFixed(2));
+        }
+        renderMessage({ role: 'system', content: lines.join('\n') });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Genealogie-Fehler: ' + err.message });
+    }
+}
+
+async function discoverMassScrape(keywords) {
+    renderMessage({ role: 'process', content: keywords.length + ' Keywords. Starte Massen-Scraping (Top 3 pro Keyword)...' });
+    try {
+        var resp = await fetch('/api/discover/mass-scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keywords: keywords, results_per_keyword: 3 })
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Mass-Scrape fehlgeschlagen.' });
+            return;
+        }
+        renderMessage({ role: 'process', content: 'Job gestartet: ' + data.job_id + '\nProgress kommt via WebSocket...' });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Mass-Scrape Fehler: ' + err.message });
+    }
+}
+
+async function discoverUploadKeywords(text) {
+    renderMessage({ role: 'process', content: 'Keywords werden hochgeladen...' });
+    try {
+        var resp = await fetch('/api/discover/upload-keywords', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: text
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Upload fehlgeschlagen.' });
+            return;
+        }
+        renderMessage({ role: 'process', content: data.keywords + ' Keywords geladen. Job: ' + data.job_id });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Upload-Fehler: ' + err.message });
+    }
+}
+
 // ── WebSocket ──────────────────────────────────────────────────────
 function connectWs() {
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -911,8 +1319,7 @@ function connectWs() {
     } catch (e) { return; }
 
     ws.onopen = function() {
-        // Subscribe to forge progress
-        ws.send(JSON.stringify({ subscribe: ['forge_progress'] }));
+        ws.send(JSON.stringify({ subscribe: ['forge_progress', 'discover_keyword', 'discover_repo', 'discover_complete'] }));
     };
 
     ws.onmessage = function(evt) {
@@ -934,9 +1341,16 @@ function connectWs() {
 }
 
 function handleWsEvent(event) {
-    if (event.type !== 'forge_progress') return;
     var d = event.data || {};
     var evType = d.type || '';
+
+    // Discover events
+    if (event.type === 'discover_keyword' || event.type === 'discover_repo' || event.type === 'discover_complete') {
+        handleDiscoverWsEvent(event);
+        return;
+    }
+
+    if (event.type !== 'forge_progress') return;
 
     if (evType === 'forge:start') {
         renderMessage({ role: 'process', content: 'HDAG wird aufgebaut...' });
@@ -1004,6 +1418,74 @@ $input.addEventListener('input', autoResize);
             switchMode(dx > 0 ? 'create' : 'discover');
         }
     }, { passive: true });
+})();
+
+// ── Discover WebSocket Events ──────────────────────────────────────
+function handleDiscoverWsEvent(event) {
+    var d = event.data || {};
+    var evType = d.type || '';
+
+    if (evType === 'discover:keyword') {
+        renderMessage({ role: 'process', content: '[' + d.index + '/' + d.total + '] "' + (d.keyword || '') + '"' });
+    } else if (evType === 'discover:repo') {
+        var line = '  ' + (d.repo || '') + ' \u2192 ' + (d.artifacts || 0) + ' artifacts';
+        renderMessage({ role: 'process', content: line });
+    } else if (evType === 'discover:complete') {
+        var summary = 'Massen-Scraping abgeschlossen.\n' +
+            (d.repos_scraped || 0) + ' Repos gescrapt, ' + (d.repos_failed || 0) + ' fehlgeschlagen.\n' +
+            'Neue Candidates: ' + (d.new_candidates || 0) + '\n' +
+            'Neue Auto-Norms: ' + (d.new_norms || 0);
+        renderMessage({ role: 'system', content: summary });
+    }
+}
+
+// ── Drag & Drop Keyword Upload ────────────────────────────────────
+(function() {
+    var $drop = document.getElementById('drop-overlay');
+    var dragCounter = 0;
+
+    document.addEventListener('dragenter', function(e) {
+        e.preventDefault();
+        dragCounter++;
+        if (currentMode === 'discover') $drop.classList.add('active');
+    });
+
+    document.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) { dragCounter = 0; $drop.classList.remove('active'); }
+    });
+
+    document.addEventListener('dragover', function(e) {
+        e.preventDefault();
+    });
+
+    document.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dragCounter = 0;
+        $drop.classList.remove('active');
+
+        if (currentMode !== 'discover') return;
+
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+
+        var file = files[0];
+        if (!file.name.endsWith('.txt')) {
+            renderMessage({ role: 'error', content: 'Nur .txt Dateien werden unterstuetzt.' });
+            return;
+        }
+
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            var text = ev.target.result;
+            var lines = text.split('\n').map(function(l) { return l.trim(); })
+                .filter(function(l) { return l && !l.startsWith('#'); });
+            renderMessage({ role: 'user', content: '[Upload: ' + file.name + ' \u2014 ' + lines.length + ' Keywords]' });
+            discoverUploadKeywords(text);
+        };
+        reader.readAsText(file);
+    });
 })();
 
 // ── Init ───────────────────────────────────────────────────────────
