@@ -50,7 +50,7 @@ pub mod structural;
 pub mod type_context;
 
 pub use forge::{ForgeLlmError, LlmForge, Result};
-pub use oracle::{estimate_tokens, MockOracle, OpenAiOracle, Oracle};
+pub use oracle::{estimate_tokens, MockOracle, OllamaOracle, OpenAiOracle, Oracle};
 pub use type_context::TypeContext;
 
 use isls_hypercube::domain::FieldDef;

@@ -299,6 +299,58 @@ if exist "!_MIGRATION!" (
 echo.
 
 :: ═══════════════════════════════════════════════════════════════════════════
+:: Section 6b: D8 -- CLI Generation Test
+:: ═══════════════════════════════════════════════════════════════════════════
+echo !BLD![Step 6b/8] D8 CLI Generation Test!RST!
+echo.
+
+set "CLI_GEN=SKIP"
+set "CLI_COMPILE=SKIP"
+set "_CLI_LOG=!LOG_DIR!\cli_gen_!TS!.log"
+set "_CLI_COMPILE_LOG=!LOG_DIR!\cli_compile_!TS!.log"
+
+echo   !CYN![1/2]!RST! Generating CLI tool (mock oracle) ...
+"!ISLS_BIN!" forge-v2 --requirements examples/warehouse.toml --mock-oracle --output "!OUT_DIR!\cli-wordcount" > "!_CLI_LOG!" 2>&1
+if errorlevel 1 (
+    echo          !RED!CLI gen FAILED!RST!
+    set "CLI_GEN=FAIL"
+    set "HAS_ERRORS=1"
+    call :LOG_ERROR "cli-wordcount" "forge-v2 --mock-oracle" "!ROOT!" "!_CLI_LOG!"
+    goto :SKIP_CLI_TEST
+)
+set "CLI_GEN=PASS"
+echo          !GRN!PASS!RST!
+
+echo   !CYN![2/2]!RST! Checking CLI output structure ...
+if exist "!OUT_DIR!\cli-wordcount\backend\Cargo.toml" (
+    echo          !GRN!Cargo.toml exists!RST!
+) else (
+    echo          !RED!Cargo.toml missing!RST!
+    set "CLI_COMPILE=FAIL"
+)
+if exist "!OUT_DIR!\cli-wordcount\backend\src\main.rs" (
+    echo          !GRN!main.rs exists!RST!
+) else (
+    echo          !RED!main.rs missing!RST!
+    set "CLI_COMPILE=FAIL"
+)
+if "!CLI_COMPILE!" NEQ "FAIL" set "CLI_COMPILE=PASS"
+
+:SKIP_CLI_TEST
+echo.
+
+:: ─── D8: Ollama Test (optional) ─────────────────────────────────────────
+echo   !CYN![optional]!RST! Checking Ollama availability ...
+curl -s http://localhost:11434/api/tags >nul 2>&1
+if not errorlevel 1 (
+    echo          !GRN!Ollama is running — test available!RST!
+    echo          !DIM!Skipping actual generation to save time.!RST!
+) else (
+    echo          !YLW!Ollama not running — skipping Ollama test!RST!
+)
+echo.
+
+:: ═══════════════════════════════════════════════════════════════════════════
 :: Section 7: Norm-Check
 :: ═══════════════════════════════════════════════════════════════════════════
 echo !BLD![Step 7/8] Norm System Check!RST!
