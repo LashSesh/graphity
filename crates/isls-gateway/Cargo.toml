@@ -13,6 +13,8 @@ isls-types = { path = "../isls-types" }
 isls-agent = { path = "../isls-agent" }
 isls-forge-llm = { path = "../isls-forge-llm" }
 isls-hypercube = { path = "../isls-hypercube" }
+isls-reader    = { path = "../isls-reader" }
+isls-code-topo = { path = "../isls-code-topo" }
 
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -23,6 +25,7 @@ axum = { workspace = true }
 tower-http = { workspace = true }
 futures = { workspace = true }
 sha2 = { workspace = true }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 tower = { workspace = true }

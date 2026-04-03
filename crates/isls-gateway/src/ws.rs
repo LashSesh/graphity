@@ -16,6 +16,9 @@ pub enum EventType {
     ForgeProgress,
     FoundryProgress,
     Heartbeat,
+    DiscoverKeyword,
+    DiscoverRepo,
+    DiscoverComplete,
 }
 
 /// A WebSocket event message
