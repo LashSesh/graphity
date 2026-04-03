@@ -1,0 +1,16 @@
+[package]
+name = "isls-merkaba"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "MERKABA Orbitkern — Backend-agnostic Ophanim Swarm with resonance consensus for code generation"
+
+[dependencies]
+isls-forge-llm = { path = "../isls-forge-llm" }
+isls-reader    = { path = "../isls-reader" }
+serde          = { workspace = true }
+serde_json     = { workspace = true }
+tracing        = { workspace = true }
+# NO reqwest — inner Oracle handles all HTTP
+# NO tokio — pure consensus engine

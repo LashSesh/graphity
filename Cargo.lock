@@ -738,6 +738,7 @@ dependencies = [
  "isls-forge-llm",
  "isls-gateway",
  "isls-hypercube",
+ "isls-merkaba",
  "isls-norms",
  "isls-reader",
  "serde",
@@ -808,6 +809,17 @@ dependencies = [
  "sha2",
  "thiserror",
  "toml",
+]
+
+[[package]]
+name = "isls-merkaba"
+version = "1.0.0"
+dependencies = [
+ "isls-forge-llm",
+ "isls-reader",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

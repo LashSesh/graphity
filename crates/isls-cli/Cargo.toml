@@ -18,6 +18,7 @@ isls-chat      = { path = "../isls-chat" }
 isls-norms     = { path = "../isls-norms" }
 isls-reader    = { path = "../isls-reader" }
 isls-code-topo = { path = "../isls-code-topo" }
+isls-merkaba   = { path = "../isls-merkaba" }
 
 serde_json = { workspace = true }
 serde      = { workspace = true }
