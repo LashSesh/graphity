@@ -1,0 +1,1008 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+\lstdefinestyle{rust}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,BTreeMap,Result,Option,
+    f64,f32,usize,bool,u32,u64,i64,Box,dyn,Arc},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS I1 Spec --- Infogenetik-Kern}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v1.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS I1 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} Infogenetik-Kern}\\[0.3cm]
+{\large\color{isls-gray} 5D Codematrix, Multiskalen-Gate,\\
+Resonite-Observables, Fitness-R\"uckkopplung}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}       & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}      & v6.0 (I1) \\
+\textbf{Author:}       & Sebastian Klemm \\
+\textbf{Date:}         & \today \\
+\textbf{Status:}       & Specification \\
+\textbf{Depends:}      & S1 (complete), M1 (complete) \\
+\textbf{Branch:}       & \texttt{claude/implement-isls-i1-spec} \\
+\textbf{References:}   & 5D Language v1.0.7, Infogenetik: Spektrale \\
+                        & Zielsignaturen, TIMES Universal Layer, \\
+                        & PSP Schnitt 1.2 SRI-MERKABA v3.0 \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+License: MIT
+}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+After D8, M1, and S1, ISLS generates code, measures consensus 
+(Ophanim Swarm), and feeds a self-learning norm pipeline. But 
+the measurement is crude: binary (compiles/doesn't) at project 
+level, Jaccard similarity at file level. The system has no 
+\emph{dimensional} understanding of code quality.
+
+I1 installs the \textbf{Infogenetik-Kern}: a formal measurement 
+and feedback layer based on the 5D Codematrix (from the 5D 
+Language Specification), Resonite observables (from the TIMES 
+Universal Layer), Multiskalen-Gating (from the Infogenetik 
+Spektrale Zielsignaturen), and evolutionary fitness tracking.
+
+This is the nervous system upgrade. The pipeline stops being 
+blind between ``LLM returned something'' and ``cargo check 
+says yes/no.'' Every generated file gets a 5D fingerprint. 
+Every layer gets a gate. Every generation feeds fitness back 
+to the norms that caused it.
+
+\subsection{What I1 Installs}
+
+\begin{enumerate}[nosep]
+\item \textbf{5D Codematrix:} Every generated Rust file is 
+      measured on 5 axes: Relationality, Functional Cohesion, 
+      Topology, Symmetry, Entropy. Result: a \texttt{[f64; 5]} 
+      fingerprint per file.
+\item \textbf{Resonites:} Formal observable primitives extracted 
+      from code --- functions, structs, imports, layers, 
+      connectivity --- each typed and measured. The atoms of 
+      the infogenetik.
+\item \textbf{Multiskalen-Gate:} Three gate levels inserted 
+      into the StagedClosure pipeline: Mikro (per file), 
+      Meso (per module), Makro (cargo check). Errors caught 
+      earlier $=$ fewer Coagula cycles.
+\item \textbf{Fitness-R\"uckkopplung:} Every norm that was 
+      activated in a generation receives a fitness update 
+      based on the outcome. Norms that consistently lead to 
+      clean compiles get higher confidence. Norms that 
+      consistently fail get suppressed.
+\item \textbf{Kontraktivit\"ats-Monitor:} Each Coagula cycle 
+      logs error count. If $\text{errors}(k+1) \geq 
+      \text{errors}(k)$: non-contractive flag. The system 
+      knows when it is not converging.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{The 5D Codematrix}
+\label{sec:codematrix}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{The Five Axes}
+
+From the 5D Language Specification v1.0.7, adapted for 
+code-generation context:
+
+\begin{longtable}{clp{7cm}}
+\toprule
+\textbf{Axis} & \textbf{Symbol} & \textbf{What It Measures} \\
+\midrule
+Relationality & $R$ 
+  & How connected is this file to others? Import count, 
+    FK references, cross-module dependencies. High $R$: 
+    hub file (main.rs, mod.rs). Low $R$: isolated utility. \\
+Functional Cohesion & $F$ 
+  & How focused is this file? Does it do one thing (high $F$) 
+    or many unrelated things (low $F$)? Measured by the ratio 
+    of internal references to external references. \\
+Topology & $T$ 
+  & Does the file's structure match its expected position in 
+    the HDAG layer? A Layer-4 query file should look like a 
+    query file, not like an API handler. \\
+Symmetry & $S$ 
+  & How consistent is naming? Do function names follow the 
+    \texttt{get\_/list\_/create\_/update\_/delete\_} pattern? 
+    Are types consistently used? \\
+Entropy & $E$ 
+  & Code complexity. Low entropy $=$ boilerplate 
+    (models, config). High entropy $=$ algorithmic content 
+    (queries, business logic). Neither extreme is bad --- but 
+    it should match expectation for the file type. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Measurement Functions}
+
+\begin{lstlisting}[style=rust]
+/// 5D Codematrix point for a single generated file.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Codematrix {
+    pub r: f64,  // Relationality [0, 1]
+    pub f: f64,  // Functional Cohesion [0, 1]
+    pub t: f64,  // Topology conformance [0, 1]
+    pub s: f64,  // Symmetry [0, 1]
+    pub e: f64,  // Entropy [0, 1]
+}
+
+impl Codematrix {
+    /// Resonance product (from PSP Schnitt 1.2 Eq. 1).
+    pub fn resonance(&self) -> f64 {
+        (self.r * self.f * self.t * self.s * self.e).powf(0.2)
+    }
+    
+    /// Distance between two codematrix points.
+    pub fn distance(&self, other: &Codematrix) -> f64 {
+        ((self.r - other.r).powi(2)
+         + (self.f - other.f).powi(2)
+         + (self.t - other.t).powi(2)
+         + (self.s - other.s).powi(2)
+         + (self.e - other.e).powi(2))
+        .sqrt()
+    }
+}
+\end{lstlisting}
+
+\subsection{Computing Each Axis}
+
+All computations use \texttt{isls\_reader::parse\_string()} 
+to extract structure. No heuristics --- deterministic formulas.
+
+\subsubsection{R: Relationality}
+
+\begin{equation}
+R = \min\!\left(1.0,\;\frac{|\text{imports}| + |\text{FKs}|}{R_\text{max}}\right)
+\end{equation}
+
+where $R_\text{max} = 15$ (calibration constant: a file with 
+15+ imports/FKs is maximally relational).
+
+\subsubsection{F: Functional Cohesion}
+
+\begin{equation}
+F = \frac{|\text{internal\_calls}|}{|\text{internal\_calls}| + |\text{external\_calls}| + \epsilon}
+\end{equation}
+
+Internal calls: function calls to functions defined in the 
+same file. External calls: function calls to imported functions. 
+A file where everything calls everything else internally: $F \to 1$.
+
+Approximation (when call-graph is not available): 
+$F = 1 - \frac{|\text{imports}|}{|\text{imports}| + |\text{functions}| + \epsilon}$.
+
+\subsubsection{T: Topology Conformance}
+
+\begin{equation}
+T = \text{sim}(\text{resonites}(f), \text{expected\_resonites}(\text{layer}(f)))
+\end{equation}
+
+where \texttt{expected\_resonites(layer)} is the norm-derived 
+expectation for files in that HDAG layer. Example: Layer 4 
+(database queries) should have: \texttt{sqlx::query\_as}, 
+\texttt{PgPool}, \texttt{AppError}, 5 CRUD functions. 
+$T$ measures how well the actual file matches this expectation.
+
+\subsubsection{S: Symmetry}
+
+\begin{equation}
+S = \frac{|\text{conforming\_names}|}{|\text{all\_names}|}
+\end{equation}
+
+Conforming names: functions that follow the ISLS naming 
+convention (\texttt{get\_\{e\}}, \texttt{list\_\{es\}}, 
+\texttt{create\_\{e\}}, \texttt{update\_\{e\}}, 
+\texttt{delete\_\{e\}}) and structs that follow PascalCase 
+with matching snake\_case modules.
+
+\subsubsection{E: Entropy}
+
+\begin{equation}
+E = \frac{H(\text{token\_distribution})}{H_\text{max}}
+\end{equation}
+
+where $H$ is Shannon entropy over the distribution of 
+Rust keywords and identifiers. Normalized by $H_\text{max} = 
+\log_2(|\text{vocabulary}|)$.
+
+Low $E$ ($< 0.3$): highly repetitive (struct definitions, config). 
+High $E$ ($> 0.7$): complex logic (algorithms, queries). 
+The measurement does not judge --- it characterizes.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Resonites: Observable Primitives}
+\label{sec:resonites}
+% ══════════════════════════════════════════════════════════════════════════════
+
+From the TIMES Universal Layer Specification, operationalized 
+for Rust code:
+
+\begin{lstlisting}[style=rust]
+/// Atomic observable extracted from Rust source code.
+/// The building blocks of the Infogenetik.
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub enum Resonite {
+    /// A function signature.
+    Fn {
+        name: String,
+        arity: usize,
+        return_type: String,
+        is_pub: bool,
+        is_async: bool,
+    },
+    /// A struct or enum definition.
+    Type {
+        name: String,
+        kind: TypeKind,  // Struct, Enum, Trait
+        field_count: usize,
+        derive_count: usize,
+    },
+    /// An import statement.
+    Import {
+        path: String,
+        is_external: bool,  // true = from dependency, false = crate::
+    },
+    /// A layer assignment (from HDAG node position).
+    Layer {
+        depth: u8,
+        artifact_type: ArtifactType,  // Model, Query, Service, Api, ...
+    },
+    /// A relationship (FK, trait impl, module dependency).
+    Relation {
+        source: String,
+        target: String,
+        kind: RelationKind,  // ForeignKey, Implements, Uses
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub enum TypeKind { Struct, Enum, Trait }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub enum ArtifactType {
+    Model, Query, Service, Api, Config, Auth, Migration,
+    Frontend, Test, Static,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub enum RelationKind { ForeignKey, Implements, Uses, Contains }
+\end{lstlisting}
+
+\subsection{Extraction}
+
+\begin{lstlisting}[style=rust]
+/// Extract all Resonites from a Rust source string.
+pub fn extract_resonites(
+    code: &str, 
+    file_path: &str
+) -> Vec<Resonite> {
+    let parsed = isls_reader::parse_string(code, Language::Rust);
+    let mut resonites = Vec::new();
+    
+    // Functions
+    for func in &parsed.functions {
+        resonites.push(Resonite::Fn {
+            name: func.name.clone(),
+            arity: func.params.len(),
+            return_type: func.return_type.clone()
+                .unwrap_or_default(),
+            is_pub: func.is_pub,
+            is_async: func.is_async,
+        });
+    }
+    
+    // Types
+    for typ in &parsed.types {
+        resonites.push(Resonite::Type {
+            name: typ.name.clone(),
+            kind: match typ.kind {
+                "struct" => TypeKind::Struct,
+                "enum" => TypeKind::Enum,
+                "trait" => TypeKind::Trait,
+                _ => TypeKind::Struct,
+            },
+            field_count: typ.fields.len(),
+            derive_count: typ.derives.len(),
+        });
+    }
+    
+    // Imports
+    for import in &parsed.imports {
+        resonites.push(Resonite::Import {
+            path: import.path.clone(),
+            is_external: !import.path.starts_with("crate::"),
+        });
+    }
+    
+    // Layer (inferred from file path)
+    if let Some(artifact_type) = infer_artifact_type(file_path) {
+        resonites.push(Resonite::Layer {
+            depth: infer_layer_depth(file_path),
+            artifact_type,
+        });
+    }
+    
+    resonites
+}
+\end{lstlisting}
+
+\subsection{Resonite Vectors}
+
+A file's Resonite set is its \textbf{infogenetische Signatur} --- 
+the atomic description of what the file \emph{is}, independent of 
+its textual content. Two files with identical Resonite sets are 
+structurally identical even if their code differs.
+
+The Codematrix (Section~\ref{sec:codematrix}) is computed FROM 
+the Resonite set. Resonites are the atoms. The Codematrix is 
+the measurement.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Multiskalen-Gate}
+\label{sec:gates}
+% ══════════════════════════════════════════════════════════════════════════════
+
+From the Infogenetik Spektrale Zielsignaturen \S4: three scales 
+of gating inserted into the StagedClosure pipeline.
+
+\subsection{Gate Architecture}
+
+\begin{lstlisting}[style=bash]
+S4 Solve (topological traversal):
+  For each node:
+    generate content (structural or LLM/Swarm)
+    |
+    +-- MIKRO-GATE: check this file in isolation
+    |     Pass -> write file, continue
+    |     Fail -> Swarm-Coagula or skip with warning
+    |
+  After each completed layer (all nodes of same depth):
+    |
+    +-- MESO-GATE: check cross-file consistency in layer
+    |     Pass -> continue to next layer
+    |     Fail -> identify inconsistent files, re-generate
+    |
+S5 Gate (existing):
+  |
+  +-- MAKRO-GATE: cargo check
+       Pass -> S7 Emit
+       Fail -> S6 Coagula (unchanged)
+\end{lstlisting}
+
+\subsection{Mikro-Gate: Per-File Validation}
+
+Applied immediately after LLM/Swarm generates a file, before 
+writing to disk.
+
+\begin{lstlisting}[style=rust]
+pub struct MikroGateResult {
+    pub pass: bool,
+    pub codematrix: Codematrix,
+    pub violations: Vec<MikroViolation>,
+}
+
+pub enum MikroViolation {
+    /// File has zero functions (likely garbage output).
+    EmptyContent,
+    /// Import references a symbol not in ProvidedSymbols.
+    UnknownImport(String),
+    /// Function name violates naming convention (Rule 3).
+    NamingViolation { name: String, expected_pattern: String },
+    /// File has no `use` statements (isolated, probably wrong).
+    NoImports,
+    /// Topology mismatch: file type doesn't match HDAG layer.
+    TopologyMismatch { expected: ArtifactType, actual: ArtifactType },
+    /// Resonance below threshold.
+    LowResonance { value: f64, threshold: f64 },
+}
+
+pub fn mikro_gate(
+    code: &str,
+    node: &HdagNode,
+    provided_symbols: &[ProvidedSymbol],
+    threshold: f64,
+) -> MikroGateResult {
+    let resonites = extract_resonites(code, &node.path);
+    let codematrix = compute_codematrix(&resonites, node);
+    let mut violations = Vec::new();
+    
+    // Check 1: Non-empty content
+    let fn_count = resonites.iter()
+        .filter(|r| matches!(r, Resonite::Fn { .. }))
+        .count();
+    if fn_count == 0 && node.node_type == NodeType::Llm {
+        violations.push(MikroViolation::EmptyContent);
+    }
+    
+    // Check 2: All imports resolve to ProvidedSymbols
+    for r in &resonites {
+        if let Resonite::Import { path, is_external: false } = r {
+            if !provided_symbols.iter().any(|ps| 
+                path.contains(&ps.import_path)) {
+                violations.push(
+                    MikroViolation::UnknownImport(path.clone())
+                );
+            }
+        }
+    }
+    
+    // Check 3: Naming convention (Rule 3)
+    // ... (entity-specific naming checks)
+    
+    // Check 4: Codematrix resonance
+    let res = codematrix.resonance();
+    if res < threshold {
+        violations.push(MikroViolation::LowResonance {
+            value: res, threshold,
+        });
+    }
+    
+    MikroGateResult {
+        pass: violations.is_empty(),
+        codematrix,
+        violations,
+    }
+}
+\end{lstlisting}
+
+Default Mikro-Gate threshold: $\tau_\text{mikro} = 0.15$ 
+(very permissive --- only catches obvious garbage).
+
+\textbf{On failure:} If the Swarm produced the answer, try the 
+second-best Mandorla candidate. If single-oracle, log a warning 
+and write the file anyway (the Makro-Gate will catch it).
+
+\subsection{Meso-Gate: Cross-File Consistency}
+
+Applied after all nodes of a given HDAG layer are processed.
+
+\begin{lstlisting}[style=rust]
+pub struct MesoGateResult {
+    pub pass: bool,
+    pub layer: u8,
+    pub file_count: usize,
+    pub consistency_score: f64,
+    pub violations: Vec<MesoViolation>,
+}
+
+pub enum MesoViolation {
+    /// Two files in the same layer define the same function.
+    DuplicateFunction { name: String, files: Vec<String> },
+    /// A service calls a query function that doesn't exist.
+    MissingDependency { caller: String, callee: String },
+    /// Naming inconsistency across files in the layer.
+    InconsistentNaming { files: Vec<String>, pattern: String },
+    /// Codematrix variance too high within the layer.
+    HighVariance { axis: String, variance: f64 },
+}
+
+pub fn meso_gate(
+    layer_files: &[(String, String, Codematrix)], // (path, code, cm)
+    provided: &[ProvidedSymbol],
+) -> MesoGateResult {
+    let mut violations = Vec::new();
+    
+    // Check 1: No duplicate function definitions
+    let mut all_fns: HashMap<String, Vec<String>> = HashMap::new();
+    for (path, code, _) in layer_files {
+        let resonites = extract_resonites(code, path);
+        for r in &resonites {
+            if let Resonite::Fn { name, .. } = r {
+                all_fns.entry(name.clone())
+                    .or_default()
+                    .push(path.clone());
+            }
+        }
+    }
+    for (name, files) in &all_fns {
+        if files.len() > 1 {
+            violations.push(MesoViolation::DuplicateFunction {
+                name: name.clone(),
+                files: files.clone(),
+            });
+        }
+    }
+    
+    // Check 2: Codematrix variance within layer
+    if layer_files.len() >= 2 {
+        let cms: Vec<&Codematrix> = layer_files.iter()
+            .map(|(_, _, cm)| cm).collect();
+        for (axis_name, extractor) in &[
+            ("R", |cm: &Codematrix| cm.r),
+            ("F", |cm: &Codematrix| cm.f),
+            ("S", |cm: &Codematrix| cm.s),
+        ] {
+            let values: Vec<f64> = cms.iter()
+                .map(|cm| extractor(cm)).collect();
+            let mean = values.iter().sum::<f64>() / values.len() as f64;
+            let var = values.iter()
+                .map(|v| (v - mean).powi(2))
+                .sum::<f64>() / values.len() as f64;
+            if var > 0.15 {
+                violations.push(MesoViolation::HighVariance {
+                    axis: axis_name.to_string(),
+                    variance: var,
+                });
+            }
+        }
+    }
+    
+    let consistency = 1.0 - (violations.len() as f64 * 0.2)
+        .min(1.0);
+    
+    MesoGateResult {
+        pass: violations.is_empty(),
+        layer: layer_files.first()
+            .map(|(p, _, _)| infer_layer_depth(p))
+            .unwrap_or(0),
+        file_count: layer_files.len(),
+        consistency_score: consistency,
+        violations,
+    }
+}
+\end{lstlisting}
+
+\textbf{On failure:} Log violations. Do NOT re-generate 
+(too expensive). Proceed to Makro-Gate. The Meso violations 
+are informational in I1 --- they feed the metrics and fitness 
+system but don't block emission. In I2 they become blocking.
+
+\subsection{Makro-Gate: Unchanged}
+
+\texttt{cargo check} in S5. No changes. But now it receives 
+files that already passed Mikro-Gate, so the failure rate drops.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Fitness-R\"uckkopplung}
+\label{sec:fitness}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Norm Fitness}
+
+Every norm in the catalog gets a fitness value:
+
+\begin{lstlisting}[style=rust]
+/// Extended norm with fitness tracking.
+pub struct NormFitness {
+    pub norm_id: String,
+    pub fitness: f64,           // [0, 1], default 0.5
+    pub activation_count: u64,
+    pub success_count: u64,     // Makro-Gate passed
+    pub failure_count: u64,     // Makro-Gate failed
+    pub last_activated: String,
+    pub avg_codematrix: Option<Codematrix>,  // mean 5D of files
+                                             // generated under this norm
+}
+\end{lstlisting}
+
+\subsection{Update Rule}
+
+After every generation (CLI or Cockpit or Swarm):
+
+\begin{equation}
+\phi_{t+1}(n) = \alpha \cdot \phi_t(n) + (1 - \alpha) \cdot r_t
+\label{eq:fitness}
+\end{equation}
+
+where $r_t = 1$ if Makro-Gate passed, $r_t = 0$ if failed, 
+$\alpha = 0.9$ (exponential smoothing, recent results matter 
+more).
+
+\subsection{Fitness-Weighted Activation}
+
+When \texttt{match\_description()} activates norms, the 
+confidence score is multiplied by fitness:
+
+\begin{equation}
+\text{score}_\text{adjusted}(n) = \text{score}_\text{keyword}(n) \cdot \phi(n)
+\end{equation}
+
+A norm with $\phi = 0.3$ (mostly fails) gets suppressed even 
+if the keyword match is strong. A norm with $\phi = 0.95$ 
+(almost always succeeds) gets boosted.
+
+\subsection{Storage}
+
+Fitness data stored in \texttt{\textasciitilde/.isls/fitness.json}, 
+alongside \texttt{norms.json}. Updated after every generation. 
+Loaded at startup by \texttt{NormRegistry}.
+
+\subsection{CLI Inspection}
+
+\begin{lstlisting}[style=bash]
+isls norms fitness
+
+ISLS Norm Fitness Report
+---
+ISLS-NORM-0042 (CRUD-Entity):     0.95  (19/20 success)
+ISLS-NORM-0088 (JWT-Auth):        0.90  (18/20)
+ISLS-NORM-0096 (Pagination):      0.95  (19/20)
+ISLS-NORM-INFRA-WEB:              0.92  (12/13)
+ISLS-NORM-AUTO-0001 (Auto-Pattern): 0.85  (6/7)
+
+Weakest:
+ISLS-NORM-0112 (Inventory):       0.50  (1/2) -- insufficient data
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Kontraktivit\"ats-Monitor}
+\label{sec:contraction}
+% ══════════════════════════════════════════════════════════════════════════════
+
+From Infogenetik Spektrale Zielsignaturen \S3: the Solve-Coagula 
+stack is provably convergent if the operator is contractive 
+(Lipschitz $L < 1$). In practice: each Coagula cycle should 
+reduce the error count.
+
+\begin{lstlisting}[style=rust]
+pub struct ContractionMonitor {
+    pub error_counts: Vec<usize>,  // per Coagula cycle
+    pub is_contractive: bool,
+}
+
+impl ContractionMonitor {
+    pub fn record_cycle(&mut self, errors: usize) {
+        self.error_counts.push(errors);
+        if self.error_counts.len() >= 2 {
+            let prev = self.error_counts[self.error_counts.len() - 2];
+            let curr = self.error_counts[self.error_counts.len() - 1];
+            self.is_contractive = curr < prev;
+        }
+    }
+    
+    /// Contraction ratio: < 1.0 means converging.
+    pub fn contraction_ratio(&self) -> Option<f64> {
+        if self.error_counts.len() >= 2 {
+            let prev = self.error_counts[self.error_counts.len() - 2] as f64;
+            let curr = self.error_counts[self.error_counts.len() - 1] as f64;
+            if prev > 0.0 {
+                Some(curr / prev)
+            } else {
+                Some(0.0) // No errors = converged
+            }
+        } else {
+            None
+        }
+    }
+}
+\end{lstlisting}
+
+Logged in \texttt{GenerationMetrics}:
+
+\begin{lstlisting}[style=rust]
+pub struct GenerationMetrics {
+    // ... existing fields ...
+    pub contraction_ratios: Vec<f64>,
+    pub was_contractive: bool,
+    pub codematrix_avg: Option<Codematrix>,
+    pub mikro_gate_pass_rate: f64,
+    pub meso_gate_pass_rate: f64,
+}
+\end{lstlisting}
+
+Displayed in Studio (Erschaffen mode) after forge:
+
+\begin{lstlisting}[style=bash]
+  | Kontraktivitaet: 
+  |   Cycle 1: 12 errors (initial)
+  |   Cycle 2: 3 errors  (ratio: 0.25 -- contractive)
+  |   Cycle 3: 0 errors  (converged)
+  |
+  | 5D Codematrix (project average):
+  |   R=0.62  F=0.78  T=0.91  S=0.88  E=0.55
+  |   Resonance: 0.74
+\end{lstlisting}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Work Packages}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{W1: Resonite + Codematrix Module}
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-forge-llm/src/codematrix.rs}
+  & \texttt{Codematrix} struct, 5 axis computation functions, 
+    \texttt{Resonite} enum, \texttt{extract\_resonites()}, 
+    \texttt{compute\_codematrix()}. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Dependencies}
+
+Uses \texttt{isls\_reader::parse\_string()} for code parsing. 
+No new external dependencies.
+
+\subsubsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item Unit test: extract resonites from a known Rust file, 
+      verify function/struct/import counts.
+\item Unit test: compute codematrix for a query file, verify 
+      axes are in $[0, 1]$.
+\item Unit test: codematrix distance between identical files $= 0$.
+\item Unit test: codematrix resonance for a well-formed file $> 0.5$.
+\end{enumerate}
+
+
+\subsection{W2: Mikro-Gate + Meso-Gate}
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-forge-llm/src/gates.rs}
+  & \texttt{mikro\_gate()}, \texttt{meso\_gate()}, violation 
+    types, gate result structs. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & After each LLM node: call \texttt{mikro\_gate()}. 
+    After each completed layer: call \texttt{meso\_gate()}. 
+    Log results. Store codematrix per file. \\
+\texttt{isls-forge-llm/src/lib.rs}
+  & \texttt{pub mod codematrix; pub mod gates;} \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W2 Verification}
+
+\begin{enumerate}[nosep]
+\item Run \texttt{isls forge-chat -m "Pet shop"} --- verify 
+      Mikro-Gate log lines appear for each LLM node.
+\item Verify Meso-Gate log lines appear after each layer.
+\item All 6 D4 pipeline apps still compile (backward compat).
+\end{enumerate}
+
+
+\subsection{W3: Fitness-R\"uckkopplung}
+
+\subsubsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-norms/src/fitness.rs}
+  & \texttt{NormFitness}, \texttt{FitnessStore}, 
+    \texttt{update\_fitness()}, \texttt{load/save\_fitness()},
+    fitness-weighted activation. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-norms/src/lib.rs}
+  & \texttt{pub mod fitness;} Integrate fitness into 
+    \texttt{match\_description()} scoring. \\
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & After S7 Emit or S6 exhaustion: call 
+    \texttt{update\_fitness(norm\_ids, success)}. \\
+\texttt{isls-cli/src/cmd\_norms.rs}
+  & Add \texttt{isls norms fitness} subcommand. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W3 Verification}
+
+\begin{enumerate}[nosep]
+\item Run 3 successful generations. Check 
+      \texttt{\textasciitilde/.isls/fitness.json} has entries 
+      with $\phi > 0.5$.
+\item Manually set a norm's fitness to 0.1. Verify it is 
+      suppressed in \texttt{match\_description()} output.
+\item \texttt{isls norms fitness} shows the fitness table.
+\end{enumerate}
+
+
+\subsection{W4: Kontraktivit\"ats-Monitor + Metrics}
+
+\subsubsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & Track error count per Coagula cycle. Log contraction 
+    ratio. \\
+\texttt{isls-forge-llm/src/metrics.rs}
+  & Add \texttt{contraction\_ratios}, 
+    \texttt{was\_contractive}, \texttt{codematrix\_avg}, 
+    \texttt{mikro\_gate\_pass\_rate}, 
+    \texttt{meso\_gate\_pass\_rate} to 
+    \texttt{GenerationMetrics}. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection{W4 Verification}
+
+\begin{enumerate}[nosep]
+\item Trigger a Coagula-producing generation. Verify 
+      contraction ratios logged in metrics.jsonl.
+\item \texttt{isls metrics --last 1} shows 5D codematrix 
+      and contraction data.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{Resonite extraction} uses \texttt{isls\_reader::parse\_string()}. 
+      Do NOT reimplement Rust parsing.
+\item \textbf{Codematrix values} MUST be in $[0, 1]$. Clamp all results.
+\item \textbf{Mikro-Gate failures are warnings}, not errors. They 
+      do NOT prevent file writing in I1. They feed metrics.
+\item \textbf{Meso-Gate failures are informational} in I1. 
+      They log but don't block.
+\item \textbf{Fitness persistence} uses \texttt{\textasciitilde/.isls/fitness.json}. 
+      Same directory as \texttt{norms.json}. Same 
+      \texttt{dirs\_path()} with USERPROFILE fallback.
+\item \textbf{Fitness default} for new norms: $\phi = 0.5$ 
+      (neutral, neither boosted nor suppressed).
+\item \textbf{Do not modify} isls-merkaba, isls-gateway, isls-chat, 
+      isls-reader, isls-code-topo, isls-hypercube, isls-types.
+\item \textbf{All existing tests MUST pass.}
+\item Branch: \texttt{claude/implement-isls-i1-spec}.
+\item Commit format: \texttt{I1/W\{n\}: <description>}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Dependency Graph}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{verbatim}
+W1 (Resonite + Codematrix)
+  |
+  +---> W2 (Mikro-Gate + Meso-Gate)
+  |
+  +---> W3 (Fitness-Rueckkopplung)
+          |
+          v
+        W4 (Kontraktivitaets-Monitor + Metrics)
+\end{verbatim}
+
+W1 first (foundation). W2 and W3 depend on W1 independently. 
+W4 integrates both into metrics.
+
+Recommended: W1 $\to$ W2 $\to$ W3 $\to$ W4.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Acceptance Criteria}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Pass} & \textbf{Criterion} \\
+\midrule
+1 & & \texttt{cargo build --workspace} compiles. \\
+2 & & \texttt{cargo test --workspace} passes. \\
+3 & & Codematrix unit tests pass (4+ tests). \\
+4 & & Mikro-Gate log lines visible in forge output. \\
+5 & & Meso-Gate log lines visible after layer completion. \\
+6 & & \texttt{fitness.json} created after first generation. \\
+7 & & \texttt{isls norms fitness} shows fitness table. \\
+8 & & Contraction ratios in \texttt{metrics.jsonl}. \\
+9 & & Pipeline bat: 6/6 PASS (backward compat). \\
+\bottomrule
+\end{longtable}
+
+I1 is passed when criteria 1--3, 6, and 9 are fulfilled. 
+Criteria 4--5 and 7--8 require a generation run with LLM.
+
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of I1 Specification.\\[0.3em]
+Die Norm ist nicht der Code.\\
+Die Norm ist die Erkenntnis \"uber Code.\\
+Und jetzt messen wir die Erkenntnis in f\"unf Dimensionen.}
+\end{center}
+
+\end{document}
