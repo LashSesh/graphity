@@ -130,6 +130,12 @@ echo.
 :: Browser oeffnen (BEVOR der Server startet, da serve blockiert)
 start "" "http://localhost:!PORT!/studio"
 
+:: D8/W4: Ensure API key is set as both env var AND CLI argument
+:: (The server reads OPENAI_API_KEY for downstream forge calls)
+if "!OPENAI_API_KEY!" NEQ "" (
+    set "OPENAI_API_KEY=!OPENAI_API_KEY!"
+)
+
 :: Server im Vordergrund starten (blockiert bis CTRL+C)
 if "!OPENAI_API_KEY!"=="" (
     "!ISLS_BIN!" serve --port !PORT!

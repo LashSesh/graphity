@@ -20,6 +20,8 @@ enum Command {
         mock_oracle: bool,
         api_key: Option<String>,
         model: String,
+        ollama: bool,
+        ollama_url: String,
     },
     /// D3: Chat-to-App — natural language to compiled application.
     ForgeChat {
@@ -27,6 +29,8 @@ enum Command {
         output: String,
         api_key: Option<String>,
         model: String,
+        ollama: bool,
+        ollama_url: String,
     },
     /// D4: Norm catalog inspection and management.
     Norms { subcmd: NormsSubcmd },
@@ -45,6 +49,8 @@ enum Command {
         mock_oracle: bool,
         api_key: Option<String>,
         model: String,
+        ollama: bool,
+        ollama_url: String,
     },
     /// D7: Generation metrics inspection.
     Metrics { compare: bool, last: Option<usize> },
@@ -93,7 +99,12 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
                 .unwrap_or_else(|| "gpt-4o".to_string());
-            Command::ForgeV2 { requirements, output, mock_oracle, api_key, model }
+            let ollama = args.contains(&"--ollama".to_string());
+            let ollama_url = args.iter().position(|a| a == "--ollama-url")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            Command::ForgeV2 { requirements, output, mock_oracle, api_key, model, ollama, ollama_url }
         }
         "forge-chat" => {
             let message = args.iter().position(|a| a == "--message" || a == "-m")
@@ -115,7 +126,12 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
                 .unwrap_or_else(|| "gpt-4o".to_string());
-            Command::ForgeChat { message, output, api_key, model }
+            let ollama = args.contains(&"--ollama".to_string());
+            let ollama_url = args.iter().position(|a| a == "--ollama-url")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            Command::ForgeChat { message, output, api_key, model, ollama, ollama_url }
         }
         "norms" => {
             let subcmd = args.get(2).map(|s| s.as_str()).unwrap_or("list");
@@ -179,7 +195,12 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
                 .unwrap_or_else(|| "gpt-4o".to_string());
-            Command::ForgeSelf { output, mock_oracle, api_key, model }
+            let ollama = args.contains(&"--ollama".to_string());
+            let ollama_url = args.iter().position(|a| a == "--ollama-url")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            Command::ForgeSelf { output, mock_oracle, api_key, model, ollama, ollama_url }
         }
         "metrics" => {
             let compare = args.contains(&"--compare".to_string());
@@ -211,13 +232,15 @@ fn cmd_forge_v2(
     mock_oracle: bool,
     api_key: Option<String>,
     model: &str,
+    ollama: bool,
+    ollama_url: &str,
 ) {
     use isls_hypercube::{
         DimState, DimValue,
         domain::DomainRegistry,
     };
     use isls_forge_llm::{ForgePlan, forge::LlmForge};
-    use isls_forge_llm::oracle::{MockOracle, OpenAiOracle};
+    use isls_forge_llm::oracle::{MockOracle, OllamaOracle, OpenAiOracle};
 
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║     ISLS v3.4 HDAG Staged Closure Pipeline           ║");
@@ -235,11 +258,14 @@ fn cmd_forge_v2(
     // Load .env if present (best-effort)
     let _ = dotenv::dotenv();
 
+    // D8: Oracle selection priority: mock > ollama > openai > mock fallback
     let use_mock = mock_oracle
-        || (api_key.is_none() && std::env::var("OPENAI_API_KEY").is_err());
+        || (!ollama && api_key.is_none() && std::env::var("OPENAI_API_KEY").is_err());
 
     if use_mock {
         println!("[Mode] Mock oracle — no LLM calls (compilable output)");
+    } else if ollama {
+        println!("[Mode] Ollama oracle — {} at {}", model, ollama_url);
     } else {
         println!("[Mode] LLM oracle — {}", model);
     }
@@ -314,9 +340,23 @@ fn cmd_forge_v2(
     let mut plan = plan;
     plan.blueprint = isls_forge_llm::blueprint::derive_blueprint_from_description(&plan.spec.description);
 
-    // 5. Create oracle
+    // 5. Create oracle (D8: mock > ollama > openai > mock fallback)
     let oracle: Box<dyn isls_forge_llm::oracle::Oracle> = if use_mock {
         Box::new(MockOracle)
+    } else if ollama {
+        // D8/W2: Ollama oracle — check availability, then create
+        match OllamaOracle::check_availability(ollama_url) {
+            Ok(()) => {
+                if let Err(e) = OllamaOracle::check_model(ollama_url, model) {
+                    eprintln!("[WARN] {e}");
+                }
+                Box::new(OllamaOracle::new(model, ollama_url))
+            }
+            Err(e) => {
+                eprintln!("[WARN] {e}; falling back to mock oracle");
+                Box::new(MockOracle)
+            }
+        }
     } else {
         match OpenAiOracle::new(api_key, Some(model.to_string())) {
             Ok(o) => Box::new(o),
@@ -375,8 +415,10 @@ fn cmd_forge_chat(
     output: &str,
     api_key: Option<String>,
     model: &str,
+    ollama: bool,
+    ollama_url: &str,
 ) {
-    use isls_forge_llm::oracle::OpenAiOracle;
+    use isls_forge_llm::oracle::{OllamaOracle, OpenAiOracle};
 
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║     ISLS D3 — Chat to App                            ║");
@@ -390,8 +432,8 @@ fn cmd_forge_chat(
     let resolved_key = api_key.clone()
         .or_else(|| std::env::var("OPENAI_API_KEY").ok());
 
-    if resolved_key.is_none() {
-        eprintln!("[ERROR] --api-key or OPENAI_API_KEY required for forge-chat");
+    if !ollama && resolved_key.is_none() {
+        eprintln!("[ERROR] --api-key, OPENAI_API_KEY, or --ollama required for forge-chat");
         std::process::exit(1);
     }
 
@@ -399,16 +441,26 @@ fn cmd_forge_chat(
     let prompt = isls_chat::build_extraction_prompt(message);
     println!("[Chat] Extracting entities from: \"{}\"", message);
 
-    // 2. Call LLM (single call)
-    let oracle = match OpenAiOracle::new(resolved_key, Some(model.to_string())) {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("[ERROR] Oracle init failed: {}", e);
-            std::process::exit(1);
+    // 2. Call LLM (single call) — D8: support Ollama oracle
+    let extraction_oracle: Box<dyn isls_forge_llm::Oracle> = if ollama {
+        match OllamaOracle::check_availability(ollama_url) {
+            Ok(()) => Box::new(OllamaOracle::new(model, ollama_url)),
+            Err(e) => {
+                eprintln!("[ERROR] {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match OpenAiOracle::new(resolved_key.clone(), Some(model.to_string())) {
+            Ok(o) => Box::new(o),
+            Err(e) => {
+                eprintln!("[ERROR] Oracle init failed: {}", e);
+                std::process::exit(1);
+            }
         }
     };
 
-    let json_str = match isls_forge_llm::Oracle::call(&oracle, &prompt, 4096) {
+    let json_str = match isls_forge_llm::Oracle::call(extraction_oracle.as_ref(), &prompt, 4096) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("[ERROR] LLM extraction failed: {}", e);
@@ -477,6 +529,8 @@ fn cmd_forge_chat(
         false,
         api_key.or_else(|| std::env::var("OPENAI_API_KEY").ok()),
         model,
+        ollama,
+        ollama_url,
     );
 }
 
@@ -487,6 +541,8 @@ fn cmd_forge_self(
     mock_oracle: bool,
     api_key: Option<String>,
     model: &str,
+    ollama: bool,
+    ollama_url: &str,
 ) {
     println!("╔══════════════════════════════════════════════════════╗");
     println!("║  D6 Möbius — Generating ISLS Studio                   ║");
@@ -495,7 +551,7 @@ fn cmd_forge_self(
     println!();
 
     let requirements = "examples/isls_studio.toml";
-    cmd_forge_v2(requirements, output, mock_oracle, api_key.clone(), model);
+    cmd_forge_v2(requirements, output, mock_oracle, api_key.clone(), model, ollama, ollama_url);
 
     // D6: Self-observation — feed generated artifacts into D4 norm learning
     let output_dir = Path::new(output);
@@ -572,18 +628,24 @@ fn print_help() {
     println!("  --mock-oracle          Use mock oracle (no LLM calls, compilable output)");
     println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
     println!("  --model <model>        LLM model name (default: gpt-4o)");
+    println!("  --ollama               Use local Ollama instance instead of OpenAI");
+    println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
     println!();
     println!("forge-self options:");
     println!("  --output <path>        Output directory (default: ./output/isls-studio)");
     println!("  --mock-oracle          Use mock oracle (no LLM calls)");
     println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
     println!("  --model <model>        LLM model name (default: gpt-4o)");
+    println!("  --ollama               Use local Ollama instance instead of OpenAI");
+    println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
     println!();
     println!("forge-chat options:");
     println!("  --message / -m <text>  Application description in natural language (required)");
     println!("  --output <path>        Output directory (default: ./output)");
     println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
     println!("  --model <model>        LLM model name (default: gpt-4o)");
+    println!("  --ollama               Use local Ollama instance instead of OpenAI");
+    println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
     println!();
     println!("norms subcommands:");
     println!("  list [--auto-only]     List all norms (builtin + auto-discovered)");
@@ -619,14 +681,14 @@ fn main() {
     let cmd = parse_args(&args);
 
     match cmd {
-        Command::ForgeV2 { requirements, output, mock_oracle, api_key, model } => {
-            cmd_forge_v2(&requirements, &output, mock_oracle, api_key, &model);
+        Command::ForgeV2 { requirements, output, mock_oracle, api_key, model, ollama, ollama_url } => {
+            cmd_forge_v2(&requirements, &output, mock_oracle, api_key, &model, ollama, &ollama_url);
         }
-        Command::ForgeChat { message, output, api_key, model } => {
-            cmd_forge_chat(&message, &output, api_key, &model);
+        Command::ForgeChat { message, output, api_key, model, ollama, ollama_url } => {
+            cmd_forge_chat(&message, &output, api_key, &model, ollama, &ollama_url);
         }
-        Command::ForgeSelf { output, mock_oracle, api_key, model } => {
-            cmd_forge_self(&output, mock_oracle, api_key, &model);
+        Command::ForgeSelf { output, mock_oracle, api_key, model, ollama, ollama_url } => {
+            cmd_forge_self(&output, mock_oracle, api_key, &model, ollama, &ollama_url);
         }
         Command::Scrape { path, url, manifest, domain, max_size_mb, timeout_secs } => {
             cmd_scrape::cmd_scrape(cmd_scrape::ScrapeOpts {
@@ -674,11 +736,13 @@ mod tests {
     fn test_parse_forge_v2_defaults() {
         let cmd = parse_args(&args(&["isls", "forge-v2"]));
         match cmd {
-            Command::ForgeV2 { requirements, output, mock_oracle, model, .. } => {
+            Command::ForgeV2 { requirements, output, mock_oracle, model, ollama, ollama_url, .. } => {
                 assert_eq!(requirements, "examples/warehouse.toml");
                 assert_eq!(output, "./output-v2");
                 assert!(!mock_oracle);
                 assert_eq!(model, "gpt-4o");
+                assert!(!ollama);
+                assert_eq!(ollama_url, "http://localhost:11434");
             }
             _ => panic!("expected ForgeV2"),
         }
@@ -691,6 +755,19 @@ mod tests {
             Command::ForgeV2 { mock_oracle, output, .. } => {
                 assert!(mock_oracle);
                 assert_eq!(output, "/tmp/out");
+            }
+            _ => panic!("expected ForgeV2"),
+        }
+    }
+
+    #[test]
+    fn test_parse_forge_v2_ollama() {
+        let cmd = parse_args(&args(&["isls", "forge-v2", "--ollama", "--model", "mistral:7b", "--ollama-url", "http://myhost:11434"]));
+        match cmd {
+            Command::ForgeV2 { ollama, model, ollama_url, .. } => {
+                assert!(ollama);
+                assert_eq!(model, "mistral:7b");
+                assert_eq!(ollama_url, "http://myhost:11434");
             }
             _ => panic!("expected ForgeV2"),
         }
@@ -722,10 +799,11 @@ mod tests {
             "--output", "/tmp/restaurant",
         ]));
         match cmd {
-            Command::ForgeChat { message, output, model, .. } => {
+            Command::ForgeChat { message, output, model, ollama, .. } => {
                 assert_eq!(message, "Restaurant with reservations");
                 assert_eq!(output, "/tmp/restaurant");
                 assert_eq!(model, "gpt-4o");
+                assert!(!ollama);
             }
             _ => panic!("expected ForgeChat"),
         }
@@ -750,13 +828,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_forge_chat_ollama() {
+        let cmd = parse_args(&args(&[
+            "isls", "forge-chat",
+            "-m", "CLI tool for CSV conversion",
+            "--ollama",
+            "--model", "codellama:7b",
+        ]));
+        match cmd {
+            Command::ForgeChat { message, ollama, model, .. } => {
+                assert_eq!(message, "CLI tool for CSV conversion");
+                assert!(ollama);
+                assert_eq!(model, "codellama:7b");
+            }
+            _ => panic!("expected ForgeChat"),
+        }
+    }
+
+    #[test]
     fn test_parse_forge_self_defaults() {
         let cmd = parse_args(&args(&["isls", "forge-self"]));
         match cmd {
-            Command::ForgeSelf { output, mock_oracle, model, .. } => {
+            Command::ForgeSelf { output, mock_oracle, model, ollama, .. } => {
                 assert_eq!(output, "./output/isls-studio");
                 assert!(!mock_oracle);
                 assert_eq!(model, "gpt-4o");
+                assert!(!ollama);
             }
             _ => panic!("expected ForgeSelf"),
         }

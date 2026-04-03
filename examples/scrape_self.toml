@@ -1,0 +1,27 @@
+# ISLS D8 Self-Scraping Manifest
+# Mithra's own repositories — the corpus no one else has.
+#
+# Usage: isls scrape --manifest examples/scrape_self.toml
+#
+# Repos that are not present locally are skipped gracefully.
+# Relative paths assume repos are siblings of the graphity directory.
+
+[[repo]]
+path = "../fsr-engine"
+domain = "fsr-trading"
+
+[[repo]]
+path = "../babylon-compiler"
+domain = "babylon-cuneiform"
+
+[[repo]]
+path = "../tablet-forge"
+domain = "tablet-forge"
+
+[[repo]]
+path = "../pse-core"
+domain = "pse-parser"
+
+[[repo]]
+url = "https://github.com/LashSesh/graphity.git"
+domain = "graphity-isls"

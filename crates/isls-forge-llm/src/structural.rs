@@ -18,6 +18,7 @@
 //! - Frontend: `index.html`, `style.css`, `src/api/client.js`, `src/pages/{entity}.js`
 
 use crate::{AppSpec, EntityDef, pluralize};
+use crate::blueprint::InfraBlueprint;
 use isls_hypercube::domain::FieldDef;
 
 // ─── Layer 0 structural generators ───────────────────────────────────────────
@@ -1284,30 +1285,330 @@ pub fn auth_routes(cfg: &mut web::ServiceConfig) {
     .into()
 }
 
+// ─── D8/W1: CLI structural generators ────────────────────────────────────────
+
+/// Generate `backend/src/main.rs` for a CLI-only application.
+///
+/// Uses Clap `Parser` derive with one subcommand per entity. No async runtime,
+/// no database pool, no web server. The LLM surface moves to `services/*.rs`.
+pub fn generate_cli_main_rs(spec: &AppSpec) -> String {
+    let app = &spec.app_name;
+    let desc = &spec.description;
+
+    let non_user: Vec<&EntityDef> = spec.entities.iter().filter(|e| e.name != "User").collect();
+
+    // Build Commands enum variants
+    let mut variants = String::new();
+    for entity in &non_user {
+        let name = &entity.name;
+        let sn = &entity.snake_name;
+        variants.push_str(&format!(
+            "    /// List all {sn}s\n    List{name},\n    /// Get a {sn} by ID\n    Get{name} {{ id: i64 }},\n",
+            name = name, sn = sn
+        ));
+    }
+
+    // Build match arms
+    let mut arms = String::new();
+    for entity in &non_user {
+        let name = &entity.name;
+        let sn = &entity.snake_name;
+        arms.push_str(&format!(
+            "        Commands::List{name} => {{\n\
+             \x20           match services::{sn}::list_{sn}s() {{\n\
+             \x20               Ok(items) => println!(\"{{}}\", serde_json::to_string_pretty(&items).unwrap_or_default()),\n\
+             \x20               Err(e) => {{ eprintln!(\"Error: {{}}\", e); std::process::exit(1); }}\n\
+             \x20           }}\n\
+             \x20       }}\n",
+            name = name, sn = sn
+        ));
+        arms.push_str(&format!(
+            "        Commands::Get{name} {{ id }} => {{\n\
+             \x20           match services::{sn}::get_{sn}(id) {{\n\
+             \x20               Ok(item) => println!(\"{{}}\", serde_json::to_string_pretty(&item).unwrap_or_default()),\n\
+             \x20               Err(e) => {{ eprintln!(\"Error: {{}}\", e); std::process::exit(1); }}\n\
+             \x20           }}\n\
+             \x20       }}\n",
+            name = name, sn = sn
+        ));
+    }
+
+    format!(
+        r#"// Copyright (c) 2026 Sebastian Klemm — ISLS D8 CLI structural generated
+mod errors;
+mod models;
+mod services;
+
+use clap::Parser;
+
+#[derive(Parser)]
+#[command(name = "{app}")]
+#[command(about = "{desc}")]
+struct Cli {{
+    #[command(subcommand)]
+    command: Commands,
+}}
+
+#[derive(clap::Subcommand)]
+enum Commands {{
+{variants}    /// Show version info
+    Version,
+}}
+
+fn main() {{
+    tracing_subscriber::fmt::init();
+    let cli = Cli::parse();
+
+    match cli.command {{
+{arms}        Commands::Version => {{
+            println!("{app} v0.1.0");
+        }}
+    }}
+}}
+"#,
+        app = app,
+        desc = desc,
+        variants = variants,
+        arms = arms,
+    )
+}
+
+/// Generate `backend/src/errors.rs` for a CLI-only application.
+///
+/// No actix-web dependency — uses thiserror for error types.
+pub fn generate_cli_errors_rs() -> String {
+    r#"use std::fmt;
+
+#[derive(Debug)]
+pub enum AppError {
+    NotFound(String),
+    InternalError(String),
+    ValidationError(Vec<String>),
+    IoError(String),
+}
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AppError::NotFound(msg) => write!(f, "Not found: {}", msg),
+            AppError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            AppError::ValidationError(msgs) => write!(f, "Validation: {}", msgs.join(", ")),
+            AppError::IoError(msg) => write!(f, "IO error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for AppError {}
+
+impl From<std::io::Error> for AppError {
+    fn from(e: std::io::Error) -> Self {
+        AppError::IoError(e.to_string())
+    }
+}
+"#
+    .to_string()
+}
+
+/// Generate `backend/src/models/{entity}.rs` for a CLI-only application.
+///
+/// Like `generate_model_rs` but without sqlx `FromRow` derive.
+pub fn generate_cli_model_rs(entity: &EntityDef) -> String {
+    let name = &entity.name;
+    let mut s = String::new();
+
+    s.push_str("use serde::{Serialize, Deserialize};\n");
+    s.push_str("use chrono::{DateTime, Utc};\n\n");
+
+    s.push_str("#[derive(Debug, Serialize, Deserialize, Clone)]\n");
+    s.push_str(&format!("pub struct {} {{\n", name));
+    s.push_str("    pub id: i64,\n");
+    for field in entity.fields.iter().filter(|f| {
+        f.name != "id" && f.name != "created_at" && f.name != "updated_at"
+    }) {
+        s.push_str(&format!("    pub {}: {},\n", field.name, model_field_type(field)));
+    }
+    s.push_str("    pub created_at: DateTime<Utc>,\n");
+    s.push_str("    pub updated_at: DateTime<Utc>,\n");
+    s.push_str("}\n\n");
+
+    s.push_str("#[derive(Debug, Deserialize, Clone)]\n");
+    s.push_str(&format!("pub struct Create{}Payload {{\n", name));
+    for field in entity.fields.iter().filter(|f| {
+        f.name != "id" && f.name != "created_at" && f.name != "updated_at"
+    }) {
+        s.push_str(&format!("    pub {}: {},\n", field.name, model_field_type(field)));
+    }
+    s.push_str("}\n\n");
+
+    s.push_str("#[derive(Debug, Deserialize, Clone)]\n");
+    s.push_str(&format!("pub struct Update{}Payload {{\n", name));
+    for field in entity.fields.iter().filter(|f| {
+        f.name != "id" && f.name != "created_at" && f.name != "updated_at"
+    }) {
+        s.push_str(&format!("    pub {}: Option<{}>,\n", field.name, model_field_base_type(field)));
+    }
+    s.push_str("}\n");
+
+    s
+}
+
+/// Generate `backend/src/services/{entity}.rs` for a CLI-only application.
+///
+/// Placeholder service with stub functions. This is the LLM surface for CLI
+/// apps — the actual business logic should be filled in by the LLM.
+pub fn generate_cli_service_rs(entity: &EntityDef) -> String {
+    let name = &entity.name;
+    let sn = &entity.snake_name;
+
+    format!(
+        r#"use crate::models::{{{name}, Create{name}Payload, Update{name}Payload}};
+use crate::errors::AppError;
+
+pub fn list_{sn}s() -> Result<Vec<{name}>, AppError> {{
+    // TODO: implement business logic
+    Ok(vec![])
+}}
+
+pub fn get_{sn}(id: i64) -> Result<{name}, AppError> {{
+    // TODO: implement business logic
+    Err(AppError::NotFound(format!("{name} with id {{}} not found", id)))
+}}
+
+pub fn create_{sn}(payload: Create{name}Payload) -> Result<{name}, AppError> {{
+    // TODO: implement business logic
+    Err(AppError::InternalError("not implemented".into()))
+}}
+
+pub fn update_{sn}(id: i64, payload: Update{name}Payload) -> Result<{name}, AppError> {{
+    // TODO: implement business logic
+    Err(AppError::NotFound(format!("{name} with id {{}} not found", id)))
+}}
+
+pub fn delete_{sn}(id: i64) -> Result<(), AppError> {{
+    // TODO: implement business logic
+    Err(AppError::NotFound(format!("{name} with id {{}} not found", id)))
+}}
+"#,
+        name = name,
+        sn = sn,
+    )
+}
+
+/// Generate `backend/src/services/mod.rs` for CLI-only apps (no User service).
+pub fn generate_cli_services_mod(spec: &AppSpec) -> String {
+    let non_user: Vec<&EntityDef> = spec.entities.iter().filter(|e| e.name != "User").collect();
+    let mut s = String::from("// Copyright (c) 2026 Sebastian Klemm — ISLS D8 CLI structural generated\n");
+    for entity in &non_user {
+        s.push_str(&format!("pub mod {};\n", entity.snake_name));
+    }
+    s.push('\n');
+    for entity in &non_user {
+        s.push_str(&format!("pub use {}::*;\n", entity.snake_name));
+    }
+    s
+}
+
+/// Generate `backend/src/models/mod.rs` for CLI-only apps (no User model).
+pub fn generate_cli_models_mod(spec: &AppSpec) -> String {
+    let non_user: Vec<&EntityDef> = spec.entities.iter().filter(|e| e.name != "User").collect();
+    let mut s = String::from("// Copyright (c) 2026 Sebastian Klemm — ISLS D8 CLI structural generated\n");
+    for entity in &non_user {
+        s.push_str(&format!("pub mod {};\n", entity.snake_name));
+    }
+    s.push('\n');
+    for entity in &non_user {
+        let pn = &entity.name;
+        s.push_str(&format!(
+            "pub use {}::{{{}, Create{}Payload, Update{}Payload}};\n",
+            entity.snake_name, pn, pn, pn
+        ));
+    }
+    s
+}
+
+/// Generate `backend/tests/cli_tests.rs` — placeholder CLI tests.
+pub fn generate_cli_tests(spec: &AppSpec) -> String {
+    let first_entity = spec
+        .entities
+        .iter()
+        .find(|e| e.name != "User")
+        .map(|e| e.snake_name.as_str())
+        .unwrap_or("item");
+
+    format!(
+        r#"// ISLS D8 structural generated CLI tests
+use std::process::Command;
+
+#[test]
+fn test_version_command() {{
+    let output = Command::new("cargo")
+        .args(["run", "--", "version"])
+        .output()
+        .expect("Failed to run binary");
+    assert!(output.status.success(), "version command should succeed");
+}}
+
+#[test]
+fn test_list_{first_entity}s_command() {{
+    let output = Command::new("cargo")
+        .args(["run", "--", "list-{first_entity}"])
+        .output()
+        .expect("Failed to run binary");
+    // Should succeed even with empty results
+    assert!(output.status.success(), "list command should succeed");
+}}
+"#,
+        first_entity = first_entity
+    )
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
-/// Dispatch structural generation by file path.
+/// Dispatch structural generation by file path (legacy — no blueprint).
+///
+/// Backward-compatible wrapper; assumes web-app blueprint.
+pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
+    generate_for_path_with_blueprint(path, spec, &crate::blueprint::default_web_blueprint())
+}
+
+/// D8: Dispatch structural generation by file path with blueprint awareness.
 ///
 /// Called by `StagedClosure` for every `NodeType::Structural` node whose path
 /// is not handled by the static-file generators (Cargo.toml, Dockerfile, etc.).
-pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
+///
+/// When `bp.has_cli && !bp.has_http_server`, dispatches to CLI-specific generators.
+pub fn generate_for_path_with_blueprint(path: &str, spec: &AppSpec, bp: &InfraBlueprint) -> String {
+    let is_cli_only = bp.has_cli && !bp.has_http_server;
+
     if path.ends_with("main.rs") {
-        return generate_main_rs(spec);
+        return if is_cli_only {
+            generate_cli_main_rs(spec)
+        } else {
+            generate_main_rs(spec)
+        };
     }
     // Layer 3: entity model files (deterministic from EntityDef)
     if path.contains("src/models/") && path.ends_with(".rs") && !path.ends_with("mod.rs") {
-        if path.ends_with("user.rs") {
+        if !is_cli_only && path.ends_with("user.rs") {
             return generate_user_model_rs();
         }
         for entity in spec.entities.iter().filter(|e| e.name != "User") {
             if path.ends_with(&format!("/{}.rs", entity.snake_name)) {
-                return generate_model_rs(entity);
+                return if is_cli_only {
+                    generate_cli_model_rs(entity)
+                } else {
+                    generate_model_rs(entity)
+                };
             }
         }
     }
     // Layer 1: foundation infrastructure (deterministic — must match ProvidedSymbol sigs)
     if path.ends_with("errors.rs") {
-        return generate_errors_rs();
+        return if is_cli_only {
+            generate_cli_errors_rs()
+        } else {
+            generate_errors_rs()
+        };
     }
     if path.ends_with("pagination.rs") {
         return generate_pagination_rs();
@@ -1322,18 +1623,29 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
         return generate_pool_rs();
     }
     if path.contains("models/mod.rs") {
-        return generate_models_mod(spec);
+        return if is_cli_only {
+            generate_cli_models_mod(spec)
+        } else {
+            generate_models_mod(spec)
+        };
     }
     if path.contains("database/mod.rs") {
         return generate_database_mod(spec);
     }
     if path.contains("services/mod.rs") {
-        return generate_services_mod(spec);
+        return if is_cli_only {
+            generate_cli_services_mod(spec)
+        } else {
+            generate_services_mod(spec)
+        };
     }
-    // Layer 6: entity service files (thin delegation wrappers — deterministic)
+    // Layer 5/6: entity service files
     if path.contains("services/") && path.ends_with(".rs") && !path.ends_with("mod.rs") {
         for entity in &spec.entities {
             if path.ends_with(&format!("/{}.rs", entity.snake_name)) {
+                if is_cli_only {
+                    return generate_cli_service_rs(entity);
+                }
                 return if entity.name == "User" {
                     generate_user_service_rs(entity)
                 } else {
@@ -1360,8 +1672,12 @@ pub fn generate_for_path(path: &str, spec: &AppSpec) -> String {
     if path.ends_with("001_initial.sql") {
         return generate_migration(spec);
     }
-    if path.ends_with("api_tests.rs") {
-        return generate_api_tests(spec);
+    if path.ends_with("api_tests.rs") || path.ends_with("cli_tests.rs") {
+        return if is_cli_only {
+            generate_cli_tests(spec)
+        } else {
+            generate_api_tests(spec)
+        };
     }
     if path.ends_with("index.html") {
         return generate_frontend_index(spec);

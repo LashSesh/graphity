@@ -477,7 +477,7 @@ impl StagedClosure {
             p if p.ends_with("nginx.conf") => {
                 static_files::NGINX_CONF.to_string()
             }
-            other => structural::generate_for_path(other, spec),
+            other => structural::generate_for_path_with_blueprint(other, spec, bp),
         }
     }
 

@@ -17,15 +17,19 @@ pub fn generate_cargo_toml(spec: &AppSpec, bp: &InfraBlueprint) -> String {
     let name = &spec.app_name;
     let mut deps = String::new();
 
-    // Always-included dependencies
-    deps.push_str("tokio           = { version = \"1\", features = [\"full\"] }\n");
+    // D8/W1: Core dependencies — always included regardless of mode
     deps.push_str("serde           = { version = \"1\", features = [\"derive\"] }\n");
     deps.push_str("serde_json      = \"1\"\n");
     deps.push_str("chrono          = { version = \"0.4\", features = [\"serde\"] }\n");
     deps.push_str("tracing         = \"0.1\"\n");
     deps.push_str("tracing-subscriber = { version = \"0.3\", features = [\"env-filter\"] }\n");
-    deps.push_str("dotenvy         = \"0.15\"\n");
     deps.push_str("thiserror       = \"1\"\n");
+
+    // Async runtime + env loading — only for server/database apps
+    if bp.has_http_server || bp.has_database {
+        deps.push_str("tokio           = { version = \"1\", features = [\"full\"] }\n");
+        deps.push_str("dotenvy         = \"0.15\"\n");
+    }
 
     if bp.has_http_server {
         deps.push_str("actix-web       = \"4\"\n");

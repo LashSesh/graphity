@@ -230,6 +230,152 @@ impl Oracle for OpenAiOracle {
     }
 }
 
+// ─── OllamaOracle ────────────────────────────────────────────────────────────
+
+/// Oracle implementation backed by a locally running Ollama instance.
+///
+/// Calls the Ollama HTTP API (`/api/generate`) with `stream: false`.
+/// Zero API cost — runs entirely on the local machine. Default model is
+/// `codellama:7b` with temperature 0.1 for deterministic code generation.
+///
+/// Requires Ollama to be running (`ollama serve`) and the model to be pulled
+/// (`ollama pull codellama:7b`).
+pub struct OllamaOracle {
+    model: String,
+    base_url: String,
+    client: reqwest::blocking::Client,
+}
+
+impl OllamaOracle {
+    /// Create a new Ollama oracle.
+    ///
+    /// - `model`: Ollama model name, e.g. `"codellama:7b"`.
+    /// - `base_url`: Ollama API base URL, e.g. `"http://localhost:11434"`.
+    pub fn new(model: &str, base_url: &str) -> Self {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(300))
+            .build()
+            .expect("failed to build HTTP client for Ollama");
+        Self {
+            model: model.to_string(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            client,
+        }
+    }
+
+    /// Check whether Ollama is running and reachable.
+    ///
+    /// Calls `GET {base_url}/api/tags` — if the request fails, Ollama is not
+    /// running. Returns `Ok(())` on success or an error message on failure.
+    pub fn check_availability(base_url: &str) -> std::result::Result<(), String> {
+        let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| format!("HTTP client error: {e}"))?;
+        client.get(&url).send()
+            .map_err(|_| format!(
+                "Ollama is not running. Start it with `ollama serve` \
+                 or install from https://ollama.com"
+            ))?;
+        Ok(())
+    }
+
+    /// Check whether a specific model is available in the local Ollama instance.
+    ///
+    /// Calls `GET {base_url}/api/tags` and checks if the model name appears
+    /// in the response. Returns `Ok(())` if found, or an error message.
+    pub fn check_model(base_url: &str, model: &str) -> std::result::Result<(), String> {
+        let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .map_err(|e| format!("HTTP client error: {e}"))?;
+        let resp = client.get(&url).send()
+            .map_err(|_| "Ollama is not running".to_string())?;
+        let json: serde_json::Value = resp.json()
+            .map_err(|e| format!("Failed to parse Ollama response: {e}"))?;
+        let models = json["models"].as_array()
+            .ok_or_else(|| "Unexpected Ollama response format".to_string())?;
+        let found = models.iter().any(|m| {
+            m["name"].as_str().map_or(false, |n| n == model || n.starts_with(&format!("{model}:")))
+                || m["model"].as_str().map_or(false, |n| n == model || n.starts_with(&format!("{model}:")))
+        });
+        if found {
+            Ok(())
+        } else {
+            Err(format!(
+                "Model '{model}' not found. Pull it with `ollama pull {model}`"
+            ))
+        }
+    }
+}
+
+impl Oracle for OllamaOracle {
+    fn call(&self, prompt: &str, max_tokens: u32) -> Result<String> {
+        let url = format!("{}/api/generate", self.base_url);
+        let body = json!({
+            "model": self.model,
+            "prompt": prompt,
+            "stream": false,
+            "options": {
+                "temperature": 0.1,
+                "num_predict": max_tokens
+            }
+        });
+
+        eprintln!("[Ollama] Calling {} ({} chars prompt, max_tokens={})...",
+            self.model, prompt.len(), max_tokens);
+
+        let resp = self.client
+            .post(&url)
+            .json(&body)
+            .send()
+            .map_err(|e| ForgeLlmError::Oracle(format!("Ollama request failed: {e}")))?;
+
+        let status = resp.status();
+        let text = resp.text()
+            .map_err(|e| ForgeLlmError::Oracle(format!("Failed to read Ollama response: {e}")))?;
+
+        eprintln!("[Ollama] Response status: {}, {} bytes", status, text.len());
+
+        if !status.is_success() {
+            return Err(ForgeLlmError::Oracle(
+                format!("Ollama API error {}: {}", status, text)
+            ));
+        }
+
+        let json: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|e| ForgeLlmError::Oracle(
+                format!("Failed to parse Ollama response: {e}: {text}")
+            ))?;
+
+        let response = json["response"].as_str()
+            .ok_or_else(|| ForgeLlmError::Oracle(
+                format!("No 'response' field in Ollama response: {text}")
+            ))?
+            .to_string();
+
+        Ok(strip_markdown_fences(&response))
+    }
+
+    fn call_json(&self, prompt: &str, max_tokens: u32) -> Result<serde_json::Value> {
+        let text = self.call(prompt, max_tokens)?;
+        serde_json::from_str(text.trim())
+            .map_err(|e| ForgeLlmError::Oracle(
+                format!("failed to parse Ollama JSON response: {e}: {text}")
+            ))
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn cost_per_1k_tokens(&self) -> f64 {
+        0.0
+    }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -301,5 +447,21 @@ mod tests {
     fn trailing_explanation_discarded() {
         let input = "```rust\nfn foo() {}\n```\nThis implements foo.";
         assert_eq!(strip_markdown_fences(input), "fn foo() {}");
+    }
+
+    #[test]
+    fn ollama_oracle_creation() {
+        use super::Oracle;
+        let oracle = super::OllamaOracle::new("codellama:7b", "http://localhost:11434");
+        assert_eq!(oracle.model, "codellama:7b");
+        assert_eq!(oracle.base_url, "http://localhost:11434");
+        assert_eq!(oracle.model_name(), "codellama:7b");
+        assert_eq!(oracle.cost_per_1k_tokens(), 0.0);
+    }
+
+    #[test]
+    fn ollama_oracle_trims_trailing_slash() {
+        let oracle = super::OllamaOracle::new("mistral:7b", "http://localhost:11434/");
+        assert_eq!(oracle.base_url, "http://localhost:11434");
     }
 }
