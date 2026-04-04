@@ -432,10 +432,34 @@ fn cmd_forge_v2(
         eprintln!("[ERROR] Cannot create output dir: {}", e);
         std::process::exit(1);
     }
+    // Snapshot data needed for metrics BEFORE plan is moved into forge
+    let metrics_description = plan.spec.description.clone();
+    let metrics_entity_count = plan.spec.entities.len();
+    let metrics_norm_ids = plan.norm_ids.clone();
+
     let mut forge = LlmForge::new(oracle, plan, output_dir.to_path_buf(), use_mock);
 
     let start = std::time::Instant::now();
-    match forge.generate() {
+    let forge_result = forge.generate();
+
+    // Always write a metrics entry, success or failure.
+    write_generation_metrics(
+        &forge.stats,
+        &metrics_description,
+        metrics_entity_count,
+        &metrics_norm_ids,
+        forge_result.is_ok(),
+        start.elapsed().as_secs_f64(),
+        forge_result.as_ref().map(|files| files.len()).unwrap_or(0),
+        forge_result.as_ref().map(|files| {
+            files.iter().filter(|f| f.generation_method == "structural").count()
+        }).unwrap_or(0),
+        forge_result.as_ref().map(|files| {
+            files.iter().filter(|f| f.generation_method == "llm").count()
+        }).unwrap_or(0),
+    );
+
+    match forge_result {
         Ok(generated_files) => {
             let stats = &forge.stats;
             let time_secs = start.elapsed().as_secs_f64();
@@ -465,6 +489,52 @@ fn cmd_forge_v2(
             eprintln!("[ERROR] V3.4 pipeline failed: {}", e);
             std::process::exit(1);
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_generation_metrics(
+    stats: &isls_forge_llm::ForgeStats,
+    description: &str,
+    entity_count: usize,
+    norm_ids: &[String],
+    compile_success: bool,
+    duration_secs: f64,
+    file_count: usize,
+    structural_files: usize,
+    llm_files: usize,
+) {
+    use isls_forge_llm::metrics::{append_metrics, GenerationMetrics, GenerationSource};
+    let id = {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::time::SystemTime::now().hash(&mut hasher);
+        format!("gen-{:08x}", hasher.finish() as u32)
+    };
+    let metrics = GenerationMetrics {
+        id,
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        source: GenerationSource::Cli,
+        description: description.to_string(),
+        entity_count,
+        file_count,
+        structural_files,
+        llm_files,
+        total_tokens: stats.total_tokens,
+        compile_success,
+        coagula_cycles: stats.compile_failures as u32,
+        duration_secs,
+        norms_activated: norm_ids.to_vec(),
+        conversation_turns: 1,
+        contraction_ratios: stats.i1_contraction_ratios.clone(),
+        was_contractive: stats.i1_was_contractive,
+        mikro_gate_pass_rate: stats.i1_mikro_gate_pass_rate,
+        meso_gate_pass_rate: stats.i1_meso_gate_pass_rate,
+    };
+    if let Err(e) = append_metrics(&metrics) {
+        eprintln!("[WARN] Could not write metrics.jsonl: {}", e);
+    } else {
+        eprintln!("[Metrics] Entry written to ~/.isls/metrics.jsonl");
     }
 }
 
