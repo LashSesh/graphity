@@ -10,6 +10,7 @@
 
 pub mod architect;
 pub mod chat;
+pub mod discover;
 pub mod session;
 pub mod ws;
 
@@ -94,6 +95,8 @@ pub struct AppState {
     pub projects_dir: PathBuf,
     /// D7: Architect sessions (multi-turn conversation state).
     pub session_store: session::SessionStore,
+    /// S1: Mass-scrape job tracking for Entdecken mode.
+    pub mass_scrape_jobs: discover::MassScrapeStore,
 }
 
 impl AppState {
@@ -114,6 +117,7 @@ impl AppState {
             pending_plans: Arc::new(RwLock::new(HashMap::new())),
             projects_dir,
             session_store: Arc::new(RwLock::new(HashMap::new())),
+            mass_scrape_jobs: discover::new_mass_scrape_store(),
         }
     }
 }
@@ -482,6 +486,16 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/session/{id}/message", post(session_message))
         .route("/api/session/{id}/readiness", get(session_readiness))
         .route("/api/session/{id}/forge", post(session_forge))
+        // S1: Entdecken (Discover) mode
+        .route("/api/discover/search", post(discover::discover_search))
+        .route("/api/discover/xray", post(discover::discover_xray))
+        .route("/api/discover/scrape", post(discover::discover_scrape))
+        .route("/api/discover/mass-scrape", post(discover::discover_mass_scrape))
+        .route("/api/discover/mass-scrape/{id}/status", get(discover::discover_mass_scrape_status))
+        .route("/api/discover/upload-keywords", post(discover::discover_upload_keywords))
+        .route("/api/discover/gaps", get(discover::discover_gaps))
+        .route("/api/discover/genealogy/{norm_id}", get(discover::discover_genealogy))
+        .route("/api/discover/similarity", get(discover::discover_similarity))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)

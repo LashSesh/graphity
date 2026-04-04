@@ -330,6 +330,254 @@ html, body {
     opacity: 0.85;
 }
 
+/* ── Entity Cards ───────────────────────────────────────────────── */
+.entity-card {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 6px 0;
+    overflow: hidden;
+}
+
+.entity-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 14px;
+}
+
+.entity-header:hover {
+    background: var(--bg-card);
+}
+
+.entity-name {
+    color: var(--accent);
+}
+
+.entity-toggle {
+    color: var(--text-dim);
+    font-size: 12px;
+    transition: transform 0.2s;
+}
+
+.entity-card.expanded .entity-toggle {
+    transform: rotate(180deg);
+}
+
+.entity-fields {
+    display: none;
+    padding: 0 12px 8px;
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+    font-size: 13px;
+}
+
+.entity-card.expanded .entity-fields {
+    display: block;
+}
+
+.entity-field {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+    color: var(--text-secondary);
+}
+
+.entity-field .f-name {
+    color: var(--text-primary);
+}
+
+.entity-field .f-type {
+    color: var(--text-dim);
+}
+
+/* ── Readiness Tooltip ──────────────────────────────────────────── */
+#readiness-tooltip {
+    display: none;
+    position: absolute;
+    bottom: 70px;
+    right: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    max-width: 320px;
+    z-index: 20;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+
+#readiness-tooltip.visible {
+    display: block;
+}
+
+.rt-title {
+    color: var(--accent);
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.rt-item {
+    padding: 2px 0;
+    color: var(--text-secondary);
+}
+
+.rt-item.met {
+    color: var(--accent-success);
+}
+
+.rt-item.unmet {
+    color: var(--text-dim);
+}
+
+.rt-suggestion {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    color: var(--accent-info);
+    font-size: 12px;
+}
+
+/* ── Forge Suggestion ───────────────────────────────────────────── */
+.forge-suggest {
+    display: inline-block;
+    color: var(--accent);
+    cursor: pointer;
+    font-style: italic;
+    margin-top: 4px;
+}
+
+.forge-suggest:hover {
+    text-decoration: underline;
+}
+
+/* ── Repo Cards (Entdecken) ─────────────────────────────────────── */
+.repo-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin: 6px 0;
+}
+
+.repo-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+}
+
+.repo-name {
+    color: var(--accent-info);
+    font-size: 14px;
+}
+
+.repo-stars {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.repo-desc {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+.repo-meta {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.repo-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+}
+
+.repo-action {
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+    padding: 2px 0;
+}
+
+.repo-action:hover {
+    text-decoration: underline;
+}
+
+.repo-action:disabled {
+    color: var(--text-dim);
+    cursor: default;
+    text-decoration: none;
+}
+
+/* ── Gap Cards (Entdecken) ──────────────────────────────────────── */
+.gap-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gap-area {
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.gap-count {
+    color: var(--text-dim);
+    font-size: 12px;
+}
+
+.gap-search {
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: inherit;
+}
+
+.gap-search:hover {
+    text-decoration: underline;
+}
+
+.covered-item {
+    color: var(--accent-success);
+    font-size: 13px;
+    padding: 2px 0;
+}
+
+/* ── Drag-Drop Overlay ──────────────────────────────────────────── */
+#drop-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(13, 17, 23, 0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: var(--accent);
+    border: 3px dashed var(--accent);
+    margin: 16px;
+    border-radius: 16px;
+}
+
+#drop-overlay.active {
+    display: flex;
+}
+
 /* ── Responsive: Mobile ─────────────────────────────────────────── */
 @media (max-width: 768px) {
     #app {
@@ -387,6 +635,7 @@ html, body {
 </head>
 <body>
 
+<div id="drop-overlay">Keywords-Datei hier ablegen</div>
 <div id="app">
     <!-- Mode Strip -->
     <nav id="mode-strip">
@@ -409,6 +658,9 @@ html, body {
         <!-- Conversation Stream -->
         <div id="conversation"></div>
 
+        <!-- Readiness Tooltip -->
+        <div id="readiness-tooltip"></div>
+
         <!-- Input Area -->
         <div id="input-area">
             <textarea id="chat-input" rows="1" placeholder="Nachricht eingeben..."></textarea>
@@ -428,16 +680,21 @@ html, body {
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════
-   S1a: JS Shell — Stubs + basic UI interaction
+   S1b: ISLS Studio — Erschaffen mode wired to D7 Session API
    ═══════════════════════════════════════════════════════════════════ */
 
 // ── State ──────────────────────────────────────────────────────────
-let currentMode = 'create';
-let hasMessages = { create: false, discover: false };
-let messages = { create: [], discover: [] };
+var currentMode = 'create';
+var hasMessages = { create: false, discover: false };
+var messages = { create: [], discover: [] };
+var sessionId = null;
+var readinessData = null;
+var userScrolledUp = false;
+var ws = null;
+var apiKey = null;
 
 // ── Placeholder Data ───────────────────────────────────────────────
-const placeholders = {
+var placeholders = {
     create: {
         title: 'Was soll entstehen?',
         suggestions: [
@@ -457,37 +714,43 @@ const placeholders = {
 };
 
 // ── DOM refs ───────────────────────────────────────────────────────
-const $conv    = document.getElementById('conversation');
-const $empty   = document.getElementById('empty-state');
-const $title   = document.getElementById('empty-title');
-const $sugg    = document.getElementById('suggestions');
-const $input   = document.getElementById('chat-input');
-const $ring    = document.getElementById('readiness-ring');
-const $btnC    = document.getElementById('btn-create');
-const $btnD    = document.getElementById('btn-discover');
+var $conv    = document.getElementById('conversation');
+var $empty   = document.getElementById('empty-state');
+var $title   = document.getElementById('empty-title');
+var $sugg    = document.getElementById('suggestions');
+var $input   = document.getElementById('chat-input');
+var $ring    = document.getElementById('readiness-ring');
+var $btnC    = document.getElementById('btn-create');
+var $btnD    = document.getElementById('btn-discover');
+var $tooltip = document.getElementById('readiness-tooltip');
+
+// ── API Key ────────────────────────────────────────────────────────
+function getApiKey() {
+    if (apiKey) return apiKey;
+    var params = new URLSearchParams(window.location.search);
+    apiKey = params.get('key') || null;
+    if (!apiKey) {
+        apiKey = prompt('OpenAI API Key (oder leer fuer manuellen Modus):');
+        if (apiKey === '') apiKey = null;
+    }
+    return apiKey;
+}
 
 // ── Mode Switching ─────────────────────────────────────────────────
 function switchMode(mode) {
     if (mode === currentMode) return;
     currentMode = mode;
-
     $btnC.classList.toggle('active', mode === 'create');
     $btnD.classList.toggle('active', mode === 'discover');
-
-    // Readiness ring only in create mode
     $ring.classList.toggle('hidden', mode !== 'create');
-
-    // Update placeholder
+    $tooltip.classList.remove('visible');
     updateEmptyState();
-
-    // Re-render messages for current mode
     renderAllMessages();
 }
 
 function updateEmptyState() {
-    const ph = placeholders[currentMode];
-    const hasMsg = hasMessages[currentMode];
-
+    var ph = placeholders[currentMode];
+    var hasMsg = hasMessages[currentMode];
     if (hasMsg) {
         $empty.classList.add('hidden');
     } else {
@@ -507,9 +770,7 @@ function updateEmptyState() {
 // ── Message Rendering ──────────────────────────────────────────────
 function renderAllMessages() {
     $conv.innerHTML = '';
-    messages[currentMode].forEach(function(m) {
-        appendMessageDOM(m);
-    });
+    messages[currentMode].forEach(function(m) { appendMessageDOM(m); });
     scrollToBottom();
     updateEmptyState();
 }
@@ -517,7 +778,19 @@ function renderAllMessages() {
 function appendMessageDOM(msg) {
     var el = document.createElement('div');
     el.className = 'msg ' + (msg.role || 'system');
-    el.textContent = msg.content;
+
+    if (msg.role === 'entities') {
+        el.className = 'msg system';
+        el.innerHTML = '';
+        msg.entities.forEach(function(ent) {
+            el.appendChild(createEntityCard(ent));
+        });
+    } else if (msg.html) {
+        el.innerHTML = msg.html;
+    } else {
+        el.textContent = msg.content || '';
+    }
+
     $conv.appendChild(el);
 }
 
@@ -526,26 +799,589 @@ function renderMessage(msg) {
     hasMessages[currentMode] = true;
     $empty.classList.add('hidden');
     appendMessageDOM(msg);
-    scrollToBottom();
+    smartScroll();
+}
+
+function smartScroll() {
+    if (!userScrolledUp) {
+        $conv.scrollTop = $conv.scrollHeight;
+    }
 }
 
 function scrollToBottom() {
+    userScrolledUp = false;
     $conv.scrollTop = $conv.scrollHeight;
 }
 
-// ── Send Message ───────────────────────────────────────────────────
-function sendMessage() {
-    var text = $input.value.trim();
-    if (!text) return;
+$conv.addEventListener('scroll', function() {
+    var atBottom = $conv.scrollHeight - $conv.scrollTop - $conv.clientHeight < 40;
+    userScrolledUp = !atBottom;
+});
 
-    renderMessage({ role: 'user', content: text });
+// ── Entity Cards ───────────────────────────────────────────────────
+function createEntityCard(ent) {
+    var card = document.createElement('div');
+    card.className = 'entity-card';
+
+    var header = document.createElement('div');
+    header.className = 'entity-header';
+    header.innerHTML = '<span class="entity-name">' + escHtml(ent.name) +
+        '</span> <span style="color:var(--text-dim)">(' + ent.field_count + ' fields)</span>' +
+        ' <span class="entity-toggle">&#9660;</span>';
+    header.onclick = function() { card.classList.toggle('expanded'); };
+
+    var fields = document.createElement('div');
+    fields.className = 'entity-fields';
+    (ent.fields || []).forEach(function(f) {
+        var row = document.createElement('div');
+        row.className = 'entity-field';
+        row.innerHTML = '<span class="f-name">' + escHtml(f.name) +
+            '</span><span class="f-type">' + escHtml(f.type || 'unknown') + '</span>';
+        fields.appendChild(row);
+    });
+
+    card.appendChild(header);
+    card.appendChild(fields);
+    return card;
+}
+
+function escHtml(s) {
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+// ── Readiness Ring ─────────────────────────────────────────────────
+function updateReadiness(data) {
+    readinessData = data;
+    var score = data.score || 0;
+    var circumference = 37.7;
+    var offset = circumference - (circumference * Math.min(score, 100) / 100);
+    document.getElementById('ring-fill').style.strokeDashoffset = offset;
+    $ring.title = 'Readiness: ' + Math.round(score) + '%';
+    $ring.classList.toggle('full', score >= 100);
+}
+
+function showReadinessTooltip() {
+    if (!readinessData) return;
+    var html = '<div class="rt-title">Readiness: ' + readinessData.score + '%</div>';
+
+    var criteria = readinessData.criteria || {};
+    Object.keys(criteria).forEach(function(key) {
+        var c = criteria[key];
+        var icon = c.met ? '\u2713' : '\u2717';
+        var cls = c.met ? 'met' : 'unmet';
+        var detail = c.detail ? ' (' + c.detail + ')' : '';
+        var scoreStr = c.score ? ' +' + c.score : '';
+        html += '<div class="rt-item ' + cls + '">[' + icon + '] ' +
+            escHtml(key) + detail + scoreStr + '</div>';
+    });
+
+    var suggestions = readinessData.suggestions || [];
+    if (suggestions.length > 0) {
+        html += '<div class="rt-suggestion">Tipp: ' + escHtml(suggestions[0]) + '</div>';
+    }
+
+    $tooltip.innerHTML = html;
+    $tooltip.classList.toggle('visible');
+}
+
+$ring.addEventListener('click', function() {
+    if (readinessData && readinessData.score >= 100) {
+        triggerForge();
+    } else {
+        showReadinessTooltip();
+    }
+});
+
+// Close tooltip on click outside
+document.addEventListener('click', function(e) {
+    if (!$ring.contains(e.target) && !$tooltip.contains(e.target)) {
+        $tooltip.classList.remove('visible');
+    }
+});
+
+// ── Session Management ─────────────────────────────────────────────
+async function ensureSession() {
+    if (sessionId) return sessionId;
+    try {
+        var body = {};
+        var key = getApiKey();
+        if (key) body.api_key = key;
+        var resp = await fetch('/api/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        var data = await resp.json();
+        if (data.ok) {
+            sessionId = data.session_id;
+            return sessionId;
+        }
+        throw new Error(data.error || 'Session creation failed');
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Session-Fehler: ' + err.message });
+        return null;
+    }
+}
+
+// ── Send Message ───────────────────────────────────────────────────
+var sending = false;
+
+async function sendMessage() {
+    var text = $input.value.trim();
+    if (!text || sending) return;
+
     $input.value = '';
     autoResize();
+    renderMessage({ role: 'user', content: text });
 
-    // Stub: in S1b this will call the backend
-    setTimeout(function() {
-        renderMessage({ role: 'system', content: 'Verbindung wird in S1b verdrahtet.' });
-    }, 300);
+    // Check for forge trigger words
+    var lower = text.toLowerCase();
+    if (currentMode === 'create' && (lower === 'forge' || lower === 'materialisieren' || lower === 'bauen')) {
+        triggerForge();
+        return;
+    }
+
+    if (currentMode === 'create') {
+        await sendCreateMessage(text);
+    } else {
+        await sendDiscoverMessage(text);
+    }
+}
+
+async function sendCreateMessage(text) {
+    sending = true;
+    try {
+        var sid = await ensureSession();
+        if (!sid) { sending = false; return; }
+
+        var resp = await fetch('/api/session/' + sid + '/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text })
+        });
+        var data = await resp.json();
+
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Fehler bei der Verarbeitung.' });
+            sending = false;
+            return;
+        }
+
+        // System response
+        renderMessage({ role: 'system', content: data.message });
+
+        // Entity cards if present
+        if (data.spec && data.spec.entities && data.spec.entities.length > 0) {
+            renderMessage({ role: 'entities', entities: data.spec.entities });
+        }
+
+        // Readiness
+        if (data.readiness) {
+            updateReadiness(data.readiness);
+
+            // Suggest forge if ready
+            if (data.readiness.score >= 100) {
+                renderMessage({
+                    role: 'system',
+                    html: 'Bereit zum Materialisieren. Tippe <span class="forge-suggest" onclick="triggerForge()">forge</span> oder dr\u00fcck den Ring.'
+                });
+            }
+        }
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Netzwerkfehler: ' + err.message });
+    }
+    sending = false;
+}
+
+// ── Forge ──────────────────────────────────────────────────────────
+var forging = false;
+
+async function triggerForge() {
+    if (forging || !sessionId) return;
+    forging = true;
+
+    renderMessage({ role: 'process', content: 'Materialisierung gestartet...' });
+
+    try {
+        var resp = await fetch('/api/session/' + sessionId + '/forge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        var data = await resp.json();
+
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Forge konnte nicht gestartet werden.' });
+            if (data.readiness) updateReadiness(data.readiness);
+            forging = false;
+            return;
+        }
+
+        renderMessage({ role: 'process', content: 'Forge gestartet. Output: ' + (data.output_dir || '...') });
+        // Progress comes via WebSocket
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Forge-Fehler: ' + err.message });
+        forging = false;
+    }
+}
+
+// ── Entdecken Mode ─────────────────────────────────────────────────
+async function sendDiscoverMessage(text) {
+    sending = true;
+    var lower = text.toLowerCase().trim();
+    try {
+        // "was fehlt mir?" handler
+        if (lower.indexOf('was fehlt') >= 0) {
+            await discoverGaps();
+        }
+        // Norm genealogy handler
+        else if (lower.match(/isls-(?:norm|cand)-(?:auto-)?\d+/i)) {
+            var match = lower.match(/(isls-(?:norm|cand)-(?:auto-)?\d+)/i);
+            if (match) await discoverGenealogy(match[1].toUpperCase());
+        }
+        // Mass-scrape: "scrape diese keywords: X, Y, Z"
+        else if (lower.indexOf('scrape diese keywords') >= 0 || lower.indexOf('scrape keywords') >= 0) {
+            var afterColon = text.split(':').slice(1).join(':');
+            var kws = afterColon.split(',').map(function(k) { return k.trim(); }).filter(Boolean);
+            if (kws.length > 0) await discoverMassScrape(kws);
+            else renderMessage({ role: 'error', content: 'Keine Keywords gefunden. Format: scrape diese keywords: X, Y, Z' });
+        }
+        // Default: GitHub search
+        else {
+            await discoverSearch(text);
+        }
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Fehler: ' + err.message });
+    }
+    sending = false;
+}
+
+async function discoverSearch(query) {
+    renderMessage({ role: 'process', content: 'Suche auf GitHub: "' + query + '"...' });
+    var resp = await fetch('/api/discover/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: query, max_results: 8 })
+    });
+    var data = await resp.json();
+    if (!data.ok) {
+        renderMessage({ role: 'error', content: data.error || 'Suche fehlgeschlagen.' });
+        return;
+    }
+    var repos = (data.data && data.data.repos) || [];
+    var total = data.data && data.data.total_count;
+    if (repos.length === 0) {
+        renderMessage({ role: 'system', content: 'Keine Repos gefunden.' });
+        return;
+    }
+    renderMessage({ role: 'system', content: repos.length + ' Repos gefunden' + (total ? ' (von ' + total + ' gesamt)' : '') + ':' });
+    // Render repo cards
+    var el = document.createElement('div');
+    el.className = 'msg system';
+    repos.forEach(function(r) { el.appendChild(createRepoCard(r)); });
+    messages[currentMode].push({ role: 'repos', _dom: true });
+    hasMessages[currentMode] = true;
+    $conv.appendChild(el);
+    smartScroll();
+}
+
+function createRepoCard(repo) {
+    var card = document.createElement('div');
+    card.className = 'repo-card';
+
+    var stars = repo.stargazers_count || 0;
+    var starsStr = stars >= 1000 ? (stars / 1000).toFixed(1) + 'k' : stars;
+
+    card.innerHTML =
+        '<div class="repo-header"><span class="repo-name">' + escHtml(repo.full_name || '') +
+        '</span><span class="repo-stars">' + starsStr + ' \u2B50</span></div>' +
+        '<div class="repo-desc">' + escHtml(repo.description || 'No description') + '</div>' +
+        '<div class="repo-meta">' + escHtml(repo.language || 'Unknown') + '</div>' +
+        '<div class="repo-actions">' +
+        '<button class="repo-action" data-action="xray">R\u00f6ntgen</button>' +
+        '<button class="repo-action" data-action="scrape">Scrape</button>' +
+        '</div>';
+
+    var cloneUrl = repo.clone_url || repo.html_url;
+    var fullName = repo.full_name || '';
+
+    card.querySelector('[data-action="xray"]').onclick = function() {
+        this.disabled = true;
+        this.textContent = '...';
+        discoverXray(cloneUrl, fullName, card);
+    };
+    card.querySelector('[data-action="scrape"]').onclick = function() {
+        this.disabled = true;
+        this.textContent = '...';
+        discoverScrapeRepo(cloneUrl, fullName, card);
+    };
+
+    return card;
+}
+
+async function discoverXray(url, name, cardEl) {
+    renderMessage({ role: 'process', content: 'R\u00f6ntgen: ' + name + ' ...' });
+    try {
+        var resp = await fetch('/api/discover/xray', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: 'X-Ray fehlgeschlagen: ' + (data.error || '') });
+            return;
+        }
+        var d = data.data || {};
+        var topo = d.topology || {};
+        var langs = topo.language_breakdown || {};
+        var langStr = Object.keys(langs).map(function(k) { return k + ' (' + langs[k] + ' LOC)'; }).join(', ');
+        var layers = (topo.layers || []).join(', ');
+        var lines = [
+            'Topologie: ' + name,
+            '  Sprachen: ' + (langStr || 'unknown'),
+            '  ' + (d.fn_count || 0) + ' Functions, ' + (d.struct_count || 0) + ' Structs, ' + (d.table_count || 0) + ' Tables',
+            '  Layers: ' + (layers || 'none'),
+            '  Connectivity: ' + ((topo.connectivity || 0).toFixed(3)),
+            '  LOC: ' + (d.total_loc || 0),
+        ];
+        renderMessage({ role: 'process', content: lines.join('\n') });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'X-Ray Fehler: ' + err.message });
+    }
+}
+
+async function discoverScrapeRepo(url, name, cardEl) {
+    renderMessage({ role: 'process', content: 'Scrape: ' + name + ' ...' });
+    try {
+        var resp = await fetch('/api/discover/scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url })
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: 'Scrape fehlgeschlagen: ' + (data.error || '') });
+            return;
+        }
+        var d = data.data || {};
+        var norms = d.norms || {};
+        var line = '\u2713 ' + name + ' gescrapt \u2014 ' + (d.artifact_count || 0) + ' Artifacts, ' +
+            Object.keys(d.layers || {}).length + ' Layers';
+        if (norms.new_candidates) line += '\nNeue Candidates: ' + norms.new_candidates;
+        if (norms.new_norms) line += '\nNeue Auto-Norms: ' + norms.new_norms;
+        renderMessage({ role: 'system', content: line });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Scrape Fehler: ' + err.message });
+    }
+}
+
+async function discoverGaps() {
+    renderMessage({ role: 'process', content: 'Analysiere Norm-Katalog...' });
+    try {
+        var resp = await fetch('/api/discover/gaps');
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Gap-Analyse fehlgeschlagen.' });
+            return;
+        }
+        var summary = 'Dein Norm-Katalog: ' + data.total_norms + ' Norms (' +
+            data.builtin + ' builtin, ' + data.auto + ' auto)\nCandidates: ' + data.candidates;
+        renderMessage({ role: 'system', content: summary });
+
+        // Render gaps as cards
+        var gaps = data.gaps || [];
+        if (gaps.length > 0) {
+            renderMessage({ role: 'system', content: 'Schwach abgedeckte Bereiche:' });
+            var el = document.createElement('div');
+            el.className = 'msg system';
+            gaps.forEach(function(g) {
+                var card = document.createElement('div');
+                card.className = 'gap-card';
+                card.innerHTML =
+                    '<div><span class="gap-area">' + escHtml(g.area) + '</span> ' +
+                    '<span class="gap-count">' + g.norm_count + ' Norms</span></div>' +
+                    '<button class="gap-search">[Suchen]</button>';
+                card.querySelector('.gap-search').onclick = function() {
+                    fillInput(g.suggested_query);
+                    sendMessage();
+                };
+                el.appendChild(card);
+            });
+            messages[currentMode].push({ role: 'gaps', _dom: true });
+            hasMessages[currentMode] = true;
+            $conv.appendChild(el);
+            smartScroll();
+        }
+
+        // Show covered areas
+        var covered = data.covered || [];
+        if (covered.length > 0) {
+            var covLines = 'Gut abgedeckt:\n' + covered.map(function(c) {
+                return '  \u2713 ' + c.area + ' (' + c.keyword_matches + ' Treffer)';
+            }).join('\n');
+            renderMessage({ role: 'system', content: covLines });
+        }
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Gap-Analyse Fehler: ' + err.message });
+    }
+}
+
+async function discoverGenealogy(normId) {
+    renderMessage({ role: 'process', content: 'Lade Abstammung: ' + normId + '...' });
+    try {
+        var resp = await fetch('/api/discover/genealogy/' + encodeURIComponent(normId));
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Norm nicht gefunden.' });
+            return;
+        }
+        var lines = [data.id + ' "' + (data.name || '') + '"'];
+        if (data.level) lines.push('Level: ' + data.level);
+        if (data.evidence) {
+            lines.push('Builtin: ' + (data.evidence.builtin ? 'Ja' : 'Nein'));
+            if (data.evidence.domains_used && data.evidence.domains_used.length)
+                lines.push('Domains: ' + data.evidence.domains_used.join(', '));
+            if (data.evidence.signature)
+                lines.push('Signatur: ' + data.evidence.signature.substring(0, 16) + '...');
+        }
+        if (data.candidate) {
+            var c = data.candidate;
+            lines.push('\nAbstammung:');
+            lines.push('  Observations: ' + c.observation_count);
+            lines.push('  Domains: ' + (c.domains || []).join(', '));
+            lines.push('  Consistency: ' + (c.consistency || 0).toFixed(2));
+            if (c.consistent_layers) lines.push('  Layers: ' + c.consistent_layers.join(', '));
+            (c.observations || []).forEach(function(o) {
+                lines.push('  - ' + o.entity + ' (' + o.domain + ', ' + o.run_id + ')');
+            });
+        }
+        // Also handle candidate-type responses
+        if (data.type === 'candidate') {
+            lines = [data.id + ' (Candidate)'];
+            lines.push('Status: ' + (data.status || ''));
+            lines.push('Observations: ' + (data.observation_count || 0));
+            lines.push('Domains: ' + (data.domains || []).join(', '));
+            lines.push('Consistency: ' + (data.consistency || 0).toFixed(2));
+        }
+        renderMessage({ role: 'system', content: lines.join('\n') });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Genealogie-Fehler: ' + err.message });
+    }
+}
+
+async function discoverMassScrape(keywords) {
+    renderMessage({ role: 'process', content: keywords.length + ' Keywords. Starte Massen-Scraping (Top 3 pro Keyword)...' });
+    try {
+        var resp = await fetch('/api/discover/mass-scrape', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keywords: keywords, results_per_keyword: 3 })
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Mass-Scrape fehlgeschlagen.' });
+            return;
+        }
+        renderMessage({ role: 'process', content: 'Job gestartet: ' + data.job_id + '\nProgress kommt via WebSocket...' });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Mass-Scrape Fehler: ' + err.message });
+    }
+}
+
+async function discoverUploadKeywords(text) {
+    renderMessage({ role: 'process', content: 'Keywords werden hochgeladen...' });
+    try {
+        var resp = await fetch('/api/discover/upload-keywords', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: text
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Upload fehlgeschlagen.' });
+            return;
+        }
+        renderMessage({ role: 'process', content: data.keywords + ' Keywords geladen. Job: ' + data.job_id });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Upload-Fehler: ' + err.message });
+    }
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────
+function connectWs() {
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var url = proto + '//' + location.host + '/events';
+    try {
+        ws = new WebSocket(url);
+    } catch (e) { return; }
+
+    ws.onopen = function() {
+        ws.send(JSON.stringify({ subscribe: ['forge_progress', 'discover_keyword', 'discover_repo', 'discover_complete'] }));
+    };
+
+    ws.onmessage = function(evt) {
+        try {
+            var event = JSON.parse(evt.data);
+            handleWsEvent(event);
+        } catch (e) {}
+    };
+
+    ws.onclose = function() {
+        ws = null;
+        // Reconnect after 3s
+        setTimeout(connectWs, 3000);
+    };
+
+    ws.onerror = function() {
+        if (ws) ws.close();
+    };
+}
+
+function handleWsEvent(event) {
+    var d = event.data || {};
+    var evType = d.type || '';
+
+    // Discover events
+    if (event.type === 'discover_keyword' || event.type === 'discover_repo' || event.type === 'discover_complete') {
+        handleDiscoverWsEvent(event);
+        return;
+    }
+
+    if (event.type !== 'forge_progress') return;
+
+    if (evType === 'forge:start') {
+        renderMessage({ role: 'process', content: 'HDAG wird aufgebaut...' });
+    } else if (evType === 'forge:node') {
+        var line = '[' + d.index + '/' + d.total + '] ' + (d.file || d.atom_name || '');
+        if (d.source) line += '  [' + d.source + ']';
+        renderMessage({ role: 'process', content: line });
+    } else if (evType === 'forge:compile') {
+        var status = d.status === 'passed' ? '\u2713 PASSED' : '\u2717 FAILED';
+        renderMessage({ role: 'process', content: 'cargo check: ' + status });
+    } else if (evType === 'forge:complete') {
+        forging = false;
+        if (d.success) {
+            var summary = 'Fertig. ' + (d.files || 0) + ' Dateien, ' +
+                (d.loc || 0) + ' LOC, ' + (d.duration_secs || 0).toFixed(1) + 's.';
+            if (d.output_dir) summary += '\nErgebnis: ' + d.output_dir;
+            renderMessage({ role: 'system', content: summary });
+        } else {
+            renderMessage({ role: 'error', content: 'Forge fehlgeschlagen: ' + (d.error || 'Unbekannter Fehler') });
+        }
+    } else {
+        // Generic forge progress
+        if (d.phase) {
+            var line = d.phase;
+            if (d.index !== undefined) line = '[' + d.index + '/' + (d.total || '?') + '] ' + line;
+            if (d.atom_name) line += ' ' + d.atom_name;
+            if (d.source) line += '  [' + d.source + ']';
+            if (d.status) line += ' — ' + d.status;
+            renderMessage({ role: 'process', content: line });
+        }
+    }
 }
 
 // ── Input Helpers ──────────────────────────────────────────────────
@@ -558,15 +1394,6 @@ function fillInput(text) {
 function autoResize() {
     $input.style.height = 'auto';
     $input.style.height = Math.min($input.scrollHeight, 160) + 'px';
-}
-
-// ── Readiness Ring (Stub) ──────────────────────────────────────────
-function updateReadiness(score) {
-    var circumference = 37.7; // 2 * PI * 6
-    var offset = circumference - (circumference * Math.min(score, 100) / 100);
-    document.getElementById('ring-fill').style.strokeDashoffset = offset;
-    $ring.title = 'Readiness: ' + Math.round(score) + '%';
-    $ring.classList.toggle('full', score >= 100);
 }
 
 // ── Keyboard ───────────────────────────────────────────────────────
@@ -593,8 +1420,77 @@ $input.addEventListener('input', autoResize);
     }, { passive: true });
 })();
 
+// ── Discover WebSocket Events ──────────────────────────────────────
+function handleDiscoverWsEvent(event) {
+    var d = event.data || {};
+    var evType = d.type || '';
+
+    if (evType === 'discover:keyword') {
+        renderMessage({ role: 'process', content: '[' + d.index + '/' + d.total + '] "' + (d.keyword || '') + '"' });
+    } else if (evType === 'discover:repo') {
+        var line = '  ' + (d.repo || '') + ' \u2192 ' + (d.artifacts || 0) + ' artifacts';
+        renderMessage({ role: 'process', content: line });
+    } else if (evType === 'discover:complete') {
+        var summary = 'Massen-Scraping abgeschlossen.\n' +
+            (d.repos_scraped || 0) + ' Repos gescrapt, ' + (d.repos_failed || 0) + ' fehlgeschlagen.\n' +
+            'Neue Candidates: ' + (d.new_candidates || 0) + '\n' +
+            'Neue Auto-Norms: ' + (d.new_norms || 0);
+        renderMessage({ role: 'system', content: summary });
+    }
+}
+
+// ── Drag & Drop Keyword Upload ────────────────────────────────────
+(function() {
+    var $drop = document.getElementById('drop-overlay');
+    var dragCounter = 0;
+
+    document.addEventListener('dragenter', function(e) {
+        e.preventDefault();
+        dragCounter++;
+        if (currentMode === 'discover') $drop.classList.add('active');
+    });
+
+    document.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) { dragCounter = 0; $drop.classList.remove('active'); }
+    });
+
+    document.addEventListener('dragover', function(e) {
+        e.preventDefault();
+    });
+
+    document.addEventListener('drop', function(e) {
+        e.preventDefault();
+        dragCounter = 0;
+        $drop.classList.remove('active');
+
+        if (currentMode !== 'discover') return;
+
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+
+        var file = files[0];
+        if (!file.name.endsWith('.txt')) {
+            renderMessage({ role: 'error', content: 'Nur .txt Dateien werden unterstuetzt.' });
+            return;
+        }
+
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            var text = ev.target.result;
+            var lines = text.split('\n').map(function(l) { return l.trim(); })
+                .filter(function(l) { return l && !l.startsWith('#'); });
+            renderMessage({ role: 'user', content: '[Upload: ' + file.name + ' \u2014 ' + lines.length + ' Keywords]' });
+            discoverUploadKeywords(text);
+        };
+        reader.readAsText(file);
+    });
+})();
+
 // ── Init ───────────────────────────────────────────────────────────
 updateEmptyState();
+connectWs();
 </script>
 </body>
 </html>

@@ -25,6 +25,7 @@
 
 pub mod catalog;
 pub mod composition;
+pub mod fitness;
 pub mod learning;
 pub mod types;
 
