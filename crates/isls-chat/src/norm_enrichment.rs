@@ -101,44 +101,65 @@ pub fn build_norm_hints(composed: &ComposedPlan) -> String {
 
 /// Additively merge norm-derived fields into entity JSON.
 ///
-/// For each model in the composed plan, find matching entities in the JSON
-/// and add any fields that the LLM didn't produce. Never removes or
-/// overrides existing fields.
+/// Only fields from the `{Entity}` template model are applied to all entities.
+/// Fields from concrete-name models (e.g. `PaginationParams`, `AppError`,
+/// `Product`) are only merged into entities whose name matches exactly.
+/// Infrastructure models with generic parameters (e.g. `PaginatedResponse<T>`)
+/// are always skipped. Never removes or overrides existing fields.
 fn merge_norm_fields(entities_json: &mut serde_json::Value, plan: &ComposedPlan) {
     let entities = match entities_json["entities"].as_array_mut() {
         Some(arr) => arr,
         None => return,
     };
 
-    // Collect suggested fields from all model artifacts in the plan
-    // (These are template fields — they apply to any entity)
-    let mut suggested_fields: Vec<(&str, &str)> = Vec::new();
+    // Split models into: template (apply to all) vs. entity-specific (apply by name)
+    // Skip anything that looks like an infrastructure model or generic type.
+    let mut template_fields: Vec<(&str, &str)> = Vec::new();
+    let mut entity_specific: std::collections::HashMap<String, Vec<(&str, &str)>> =
+        std::collections::HashMap::new();
+
     for model in &plan.models {
-        for field in &model.fields {
-            suggested_fields.push((&field.name, &field.rust_type));
+        let name = model.struct_name.as_str();
+
+        // Skip generic/infrastructure models — these must never be flattened
+        // into domain entities.
+        if name.contains('<') || is_infrastructure_model(name) {
+            continue;
+        }
+
+        if name == "{Entity}" {
+            for field in &model.fields {
+                template_fields.push((&field.name, &field.rust_type));
+            }
+        } else {
+            // Concrete name: merge only into an entity with the same name
+            let entry = entity_specific.entry(name.to_string()).or_default();
+            for field in &model.fields {
+                entry.push((&field.name, &field.rust_type));
+            }
         }
     }
 
-    if suggested_fields.is_empty() {
+    if template_fields.is_empty() && entity_specific.is_empty() {
         return;
     }
 
     for entity in entities.iter_mut() {
+        let entity_name = entity["name"].as_str().unwrap_or("").to_string();
         let fields = match entity["fields"].as_array_mut() {
             Some(arr) => arr,
             None => continue,
         };
 
-        // Get existing field names
-        let existing_names: Vec<String> = fields
+        // Collect existing field names (unique)
+        let mut existing: std::collections::HashSet<String> = fields
             .iter()
             .filter_map(|f| f["name"].as_str().map(|s| s.to_string()))
             .collect();
 
-        // Add norm-suggested fields that don't already exist (additive only)
-        for (name, rust_type) in &suggested_fields {
-            if !existing_names.contains(&name.to_string()) {
-                // Map Rust type to the field_type format used by the extraction schema
+        // Apply template fields to every entity
+        for (name, rust_type) in &template_fields {
+            if existing.insert(name.to_string()) {
                 let field_type = rust_type_to_field_type(rust_type);
                 fields.push(serde_json::json!({
                     "name": name,
@@ -148,7 +169,44 @@ fn merge_norm_fields(entities_json: &mut serde_json::Value, plan: &ComposedPlan)
                 }));
             }
         }
+
+        // Apply entity-specific fields only when names match
+        if let Some(specific) = entity_specific.get(&entity_name) {
+            for (name, rust_type) in specific {
+                if existing.insert(name.to_string()) {
+                    let field_type = rust_type_to_field_type(rust_type);
+                    fields.push(serde_json::json!({
+                        "name": name,
+                        "field_type": field_type,
+                        "nullable": true,
+                        "unique": false,
+                    }));
+                }
+            }
+        }
     }
+}
+
+/// Names of infrastructure models that must never be merged into entities.
+/// These are cross-cutting concerns (pagination, errors, auth payloads, etc.)
+/// that have their own structural files — not entity fields.
+fn is_infrastructure_model(name: &str) -> bool {
+    matches!(
+        name,
+        "PaginationParams"
+            | "PaginatedResponse"
+            | "AppError"
+            | "ErrorResponse"
+            | "LoginRequest"
+            | "LoginResponse"
+            | "RegisterRequest"
+            | "TokenResponse"
+            | "JwtClaims"
+            | "Claims"
+            | "HealthCheck"
+            | "HealthStatus"
+            | "ApiResponse"
+    )
 }
 
 /// Map Rust type strings to the field_type format used by the extraction schema.
@@ -236,6 +294,59 @@ mod tests {
             original["entities"].as_array().unwrap().len(),
             "entity count should be unchanged on fallback"
         );
+    }
+
+    #[test]
+    fn test_infrastructure_fields_never_leak_into_entities() {
+        // Regression test for the field pollution bug: pagination/error fields
+        // must not be added to domain entities.
+        let mut json = serde_json::json!({
+            "app_name": "warehouse-inventory",
+            "description": "Warehouse inventory",
+            "entities": [
+                {
+                    "name": "Product",
+                    "fields": [
+                        { "name": "name", "field_type": "String", "nullable": false, "unique": false },
+                        { "name": "unit_price", "field_type": "i64", "nullable": false, "unique": false }
+                    ],
+                    "foreign_keys": []
+                }
+            ]
+        });
+
+        enrich_with_norms(
+            "Warehouse inventory with products, locations, stock movements, and pagination",
+            &mut json,
+        );
+
+        let product = &json["entities"][0];
+        let fields = product["fields"].as_array().unwrap();
+        let field_names: Vec<&str> = fields.iter().filter_map(|f| f["name"].as_str()).collect();
+
+        // Original fields preserved
+        assert!(field_names.contains(&"name"));
+        assert!(field_names.contains(&"unit_price"));
+
+        // Infrastructure fields must NOT be present
+        for forbidden in &[
+            "page", "per_page", "sort", "sort_desc", "search",
+            "items", "total", "total_pages",
+            "NotFound", "ValidationError", "Unauthorized",
+            "Forbidden", "Conflict", "InternalError",
+        ] {
+            assert!(
+                !field_names.contains(forbidden),
+                "forbidden infrastructure field '{}' leaked into Product entity",
+                forbidden,
+            );
+        }
+
+        // No duplicate fields
+        let mut seen = std::collections::HashSet::new();
+        for name in &field_names {
+            assert!(seen.insert(*name), "duplicate field: {}", name);
+        }
     }
 
     #[test]
