@@ -23,6 +23,8 @@ pub enum EventType {
     HarpoonRepo,
     HarpoonStageComplete,
     HarpoonComplete,
+    EvolveProgress,
+    EvolveComplete,
 }
 
 /// A WebSocket event message
