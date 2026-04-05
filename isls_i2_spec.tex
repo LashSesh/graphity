@@ -1,0 +1,725 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+\lstdefinestyle{rust}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,BTreeMap,Result,Option,
+    f64,f32,usize,bool,u32,u64,i64,Box,dyn,Arc},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS I2 Spec --- Infogenetik Evolution}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v1.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS I2 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} Infogenetik Evolution}\\[0.3cm]
+{\large\color{isls-gray} Gen-Clustering, Ollama-native Architect,\\
+Parallel-Scraping, Codematrix-Feedback}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}       & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}      & v6.1 (I2) \\
+\textbf{Author:}       & Sebastian Klemm \\
+\textbf{Date:}         & \today \\
+\textbf{Status:}       & Specification \\
+\textbf{Depends:}      & I1 (complete), Ollama-Forge-Fix (complete) \\
+\textbf{Branch:}       & \texttt{claude/implement-isls-i2-spec} \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+License: MIT
+}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+I1 installed measurement: 5D Codematrix, Resonites, Mikro/Meso-Gates, 
+Fitness-R\"uckkopplung. The system can now \emph{see} what it generates. 
+I2 makes it \emph{act} on what it sees.
+
+Three problems to solve:
+
+\begin{enumerate}[nosep]
+\item \textbf{The Architect needs OpenAI.} The Chat entity-extraction 
+      in the Studio calls GPT-4o for every message. On the VPS with 
+      48~GB RAM and Qwen2.5-Coder 32B sitting idle during chat, this 
+      is wasteful. I2 makes the Architect Ollama-native: entity 
+      extraction via the local model. Zero external API dependency 
+      for the full pipeline.
+\item \textbf{Norms are flat.} 33 norms (31 builtin + 2 auto) in 
+      a flat list. No clustering. No co-activation tracking. No 
+      gene structure. I2 introduces Gen-Clustering: norms that 
+      consistently co-activate form genes. Genes compose into 
+      chromosomes. The Infogenetik becomes operational.
+\item \textbf{Scraping is single-threaded.} The \"Olbohrinsel 
+      processes one keyword per hour. On an 8-core server with 
+      600~Mbit/s, this wastes 87\% of capacity. I2 parallelizes 
+      the scraping pipeline and accelerates keyword rotation.
+\end{enumerate}
+
+\subsection{What I2 Produces}
+
+\begin{enumerate}[nosep]
+\item \textbf{Ollama Architect:} The session chat 
+      (\texttt{POST /api/session/\{id\}/message}) uses the local 
+      Ollama model for entity extraction when no API key is 
+      provided. Full ISLS pipeline without external dependencies.
+\item \textbf{Gen-Clustering:} Automatic detection of norm 
+      co-activation clusters from \texttt{metrics.jsonl}. 
+      Stored as \texttt{genome.json}. CLI: \texttt{isls norms 
+      genome}.
+\item \textbf{Parallel Scraping:} The mass-scrape endpoint 
+      processes multiple keywords simultaneously. 8 workers 
+      on 8 cores. 5$\times$ throughput.
+\item \textbf{Codematrix in Fitness:} Fitness update uses 
+      not just compile-success but the average Codematrix 
+      resonance of the generated files. Better code $=$ higher 
+      fitness, even if both runs compile.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W1: Ollama-Native Architect}
+\label{sec:w1}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem}
+
+\texttt{POST /api/session/\{id\}/message} in \texttt{architect.rs} 
+calls the OpenAI API for entity extraction. Without an API key, it 
+falls back to ``manual mode'' --- the user must add entities via 
+REST. This defeats the purpose of the chat interface.
+
+\subsection{Solution}
+
+The Architect uses the same Oracle abstraction as the Forge. When 
+\texttt{OracleConfig} has \texttt{use\_ollama = true}, the 
+Architect constructs an \texttt{OllamaOracle} and calls it for 
+entity extraction.
+
+\subsection{Prompt Adaptation}
+
+The Architect prompt currently assumes GPT-4o's instruction-following 
+capability. For Qwen2.5-Coder 32B, the prompt needs to be tighter:
+
+\begin{lstlisting}[style=rust]
+pub fn build_architect_prompt_ollama(
+    history: &[SessionMessage],
+    current_spec: &AppSpec,
+    user_message: &str,
+) -> String {
+    format!(
+        r#"You are a software architect. The user describes an 
+application. Extract entities with their fields.
+
+CURRENT STATE:
+App name: {app_name}
+Entities: {entities}
+
+USER MESSAGE: {message}
+
+Respond with ONLY a JSON object. No markdown. No explanation.
+Example format:
+{{"message":"Created Trade entity","updates":{{"entities_add":[{{"name":"Trade","fields":[{{"name":"price","field_type":"f64"}}]}}],"entities_modify":[],"entities_remove":[],"infra":{{}}}}}}
+
+JSON:"#,
+        app_name = current_spec.app_name,
+        entities = format_entities_compact(current_spec),
+        message = user_message,
+    )
+}
+\end{lstlisting}
+
+Key differences from the GPT-4o prompt:
+\begin{itemize}[nosep]
+\item Shorter, more direct. Local models follow shorter prompts 
+      better.
+\item Explicit JSON-only instruction with example.
+\item No conversation history injection (reduces context length; 
+      current spec is sufficient context).
+\end{itemize}
+
+\subsection{Fallback Chain}
+
+\begin{enumerate}[nosep]
+\item Session has \texttt{api\_key}: use OpenAI (best quality).
+\item Server has \texttt{oracle\_config.api\_key}: use OpenAI.
+\item Server has \texttt{use\_ollama = true}: use Ollama 
+      (local, free, slightly lower quality).
+\item Nothing: manual mode (existing behavior, no change).
+\end{enumerate}
+
+\subsection{JSON Parsing Robustness}
+
+Local models sometimes wrap JSON in markdown fences or add 
+preamble text. The parser must:
+\begin{enumerate}[nosep]
+\item Try parsing the raw response as JSON.
+\item If that fails: extract the first \texttt{\{...\}} block 
+      using brace-matching.
+\item If that fails: try removing \texttt{```json} and 
+      \texttt{```} wrappers.
+\item If all fail: treat as manual-mode message (log warning, 
+      don't crash).
+\end{enumerate}
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-gateway/src/architect.rs}
+  & Add \texttt{build\_architect\_prompt\_ollama()}, 
+    Oracle-based entity extraction, JSON parsing 
+    robustness. \\
+\texttt{isls-gateway/src/session.rs}
+  & Use \texttt{OracleConfig} from AppState to construct 
+    Oracle for architect calls. \\
+\texttt{isls-gateway/src/lib.rs}
+  & Pass \texttt{OracleConfig} to session/architect 
+    handlers. \\
+\bottomrule
+\end{longtable}
+
+\subsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item Start \texttt{isls serve --port 8420 --ollama} (no API key).
+\item Open Studio, type ``Pet shop with animals and owners''.
+\item System responds with entities (via Ollama, not OpenAI).
+\item Entity cards appear in chat.
+\item Readiness ring updates.
+\item Type ``forge'' --- forge runs with Ollama.
+\item \textbf{Full pipeline without any external API.}
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W2: Gen-Clustering}
+\label{sec:w2}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem}
+
+Norms are a flat list. The system doesn't know that CRUD-Entity, 
+JWT-Auth, Pagination, and ErrorSystem \emph{always} activate 
+together. This co-activation pattern is a ``gene'' --- a cluster 
+of norms that form a functional unit.
+
+\subsection{Data Source}
+
+\texttt{metrics.jsonl} contains \texttt{norms\_activated} for 
+every generation. After 20+ entries, co-activation patterns 
+are detectable.
+
+\subsection{Algorithm}
+
+\begin{lstlisting}[style=rust]
+pub fn cluster_genes(
+    metrics: &[GenerationMetrics],
+    min_coactivation: f64,  // default 0.8
+) -> Vec<Gene> {
+    // 1. Build co-activation matrix
+    let all_norms: BTreeSet<String> = metrics.iter()
+        .flat_map(|m| m.norms_activated.iter().cloned())
+        .collect();
+    
+    let n = all_norms.len();
+    let norm_list: Vec<&String> = all_norms.iter().collect();
+    let mut coact = vec![vec![0u32; n]; n];
+    let mut counts = vec![0u32; n];
+    
+    for m in metrics {
+        let active: Vec<usize> = norm_list.iter().enumerate()
+            .filter(|(_, name)| m.norms_activated.contains(*name))
+            .map(|(i, _)| i)
+            .collect();
+        for &i in &active {
+            counts[i] += 1;
+            for &j in &active {
+                coact[i][j] += 1;
+            }
+        }
+    }
+    
+    // 2. Compute Jaccard similarity
+    let mut sim = vec![vec![0.0f64; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            if counts[i] + counts[j] > coact[i][j] {
+                sim[i][j] = coact[i][j] as f64 
+                    / (counts[i] + counts[j] - coact[i][j]) as f64;
+            }
+        }
+    }
+    
+    // 3. Agglomerative clustering
+    //    Merge norms with sim >= min_coactivation
+    //    into gene clusters.
+    agglomerative_cluster(&sim, &norm_list, min_coactivation)
+}
+\end{lstlisting}
+
+\subsection{Gene Data Structure}
+
+\begin{lstlisting}[style=rust]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Gene {
+    pub id: String,           // "GENE-0001"
+    pub name: String,         // auto-generated or user-named
+    pub norms: Vec<String>,   // norm IDs in this cluster
+    pub coactivation: f64,    // avg pairwise coactivation
+    pub fitness: f64,         // avg fitness of member norms
+    pub activation_count: u64,
+    pub domains: Vec<String>, // domains where this gene activated
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Genome {
+    pub genes: Vec<Gene>,
+    pub generation: u64,      // how often genome was recomputed
+    pub last_updated: String,
+    pub total_metrics: usize, // metrics entries used
+}
+\end{lstlisting}
+
+\subsection{Storage}
+
+\texttt{\textasciitilde/.isls/genome.json}. Recomputed whenever 
+\texttt{isls norms genome} is called or when 10 new metrics 
+entries have accumulated since last computation.
+
+\subsection{Auto-Naming}
+
+Genes are named by their dominant norm:
+\begin{itemize}[nosep]
+\item Gene containing CRUD + Auth + Pagination $\to$ ``WebApp-Core''
+\item Gene containing Docker + Nginx + Env $\to$ ``Deployment''
+\item Gene containing only one norm $\to$ norm's own name (singleton)
+\end{itemize}
+
+\subsection{CLI}
+
+\begin{lstlisting}[style=bash]
+isls norms genome
+
+ISLS Genome (Generation 3, 19 metrics entries)
+---
+GENE-0001  "WebApp-Core"  coact=1.00  fitness=0.95
+  ISLS-NORM-0042 (CRUD-Entity)
+  ISLS-NORM-0088 (JWT-Auth)
+  ISLS-NORM-0096 (Pagination)
+  ISLS-NORM-0103 (ErrorSystem)
+  Domains: pet-shop, hotel, clinic, gym, ... (15)
+
+GENE-0002  "Infra-Web"  coact=0.95  fitness=0.92
+  ISLS-NORM-INFRA-WEB
+  ISLS-NORM-INFRA-DB
+  ISLS-NORM-INFRA-AUTH
+  ISLS-NORM-INFRA-FRONTEND
+  ISLS-NORM-INFRA-DOCKER
+  Domains: all
+
+Singletons (not yet clustered):
+  ISLS-NORM-INFRA-CLI (2 activations)
+  ISLS-NORM-INFRA-LIB (0 activations)
+\end{lstlisting}
+
+\subsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-norms/src/genome.rs}
+  & \texttt{Gene}, \texttt{Genome}, \texttt{cluster\_genes()}, 
+    persistence, CLI output. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-norms/src/lib.rs}
+  & \texttt{pub mod genome;} \\
+\texttt{isls-cli/src/cmd\_norms.rs}
+  & Add \texttt{isls norms genome} subcommand. \\
+\texttt{isls-cli/src/main.rs}
+  & Route \texttt{genome} subcommand. \\
+\bottomrule
+\end{longtable}
+
+\subsection{W2 Verification}
+
+\begin{enumerate}[nosep]
+\item Need 20+ entries in \texttt{metrics.jsonl} (from fulltest 
+      or Studio usage).
+\item \texttt{isls norms genome} shows gene clusters.
+\item WebApp-Core gene (CRUD + Auth + Pagination + Error) detected.
+\item Singletons listed separately.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W3: Parallel Scraping}
+\label{sec:w3}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem}
+
+The current mass-scrape endpoint processes keywords sequentially. 
+One keyword $\to$ search $\to$ 5 repos $\to$ scrape each $\to$ 
+next keyword. With GitHub rate limiting (2s between API calls), 
+this is slow. But the rate limit is only on \emph{GitHub search}. 
+The actual scraping (clone + parse + observe) is CPU-bound and 
+can be parallelized.
+
+\subsection{Solution}
+
+Separate the pipeline into two phases:
+
+\begin{enumerate}[nosep]
+\item \textbf{Search phase (sequential):} Query GitHub API for 
+      all keywords. Collect all repo URLs. Respect rate limit 
+      (2s between searches). This takes $N_\text{keywords} \times 2$ 
+      seconds.
+\item \textbf{Scrape phase (parallel):} Scrape all collected repos 
+      in parallel using a worker pool. $W$ workers (default: 
+      \texttt{num\_cpus / 2}, max 4). Each worker: clone $\to$ 
+      parse $\to$ observe $\to$ delete temp dir.
+\end{enumerate}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[style=rust]
+async fn mass_scrape_parallel(
+    keywords: Vec<String>,
+    results_per_keyword: usize,
+    state: AppState,
+) {
+    // Phase 1: Collect all repos (sequential, rate-limited)
+    let mut all_repos: Vec<RepoInfo> = Vec::new();
+    for keyword in &keywords {
+        let repos = github_search(keyword, results_per_keyword).await;
+        all_repos.extend(repos);
+        publish_event(&state, DiscoverKeyword { ... });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+    
+    // Phase 2: Scrape all repos (parallel)
+    let semaphore = Arc::new(Semaphore::new(4)); // 4 workers
+    let mut handles = Vec::new();
+    
+    for repo in all_repos {
+        let sem = semaphore.clone();
+        let state = state.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = sem.acquire().await.unwrap();
+            let result = scrape_repo(&repo, &state).await;
+            publish_event(&state, DiscoverRepo { ... });
+            result
+        }));
+    }
+    
+    let results = futures::future::join_all(handles).await;
+    publish_event(&state, DiscoverComplete { ... });
+}
+\end{lstlisting}
+
+\subsection{Hourly Scrape Enhancement}
+
+Update \texttt{scrape\_hourly.sh} to send 5 keywords per run 
+instead of 1:
+
+\begin{lstlisting}[style=bash]
+#!/bin/bash
+KEYWORDS=$(shuf -n 5 /home/mithra/isls/scrape_keywords.txt \
+  | paste -sd ',' -)
+# Convert to JSON array
+JSON_KW=$(echo "$KEYWORDS" | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')
+curl -s -X POST http://localhost:8420/api/discover/mass-scrape \
+  -H "Content-Type: application/json" \
+  -d "{\"keywords\":[$JSON_KW],\"results_per_keyword\":3}" \
+  >> /home/mithra/isls/scrape.log 2>&1
+\end{lstlisting}
+
+Result: 5 keywords $\times$ 3 repos $\times$ 24 hours = 
+\textbf{360 repos/day} (up from 120).
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-gateway/src/discover.rs}
+  & Refactor mass-scrape to two-phase parallel pipeline. 
+    Add semaphore-based worker pool. \\
+\bottomrule
+\end{longtable}
+
+\subsection{W3 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{POST /api/discover/mass-scrape} with 5 keywords 
+      runs faster than sequential.
+\item WebSocket events still arrive in order per keyword.
+\item No GitHub rate limit violations (search phase is sequential).
+\item 4 concurrent scrape operations visible in server logs.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W4: Codematrix-Enhanced Fitness}
+\label{sec:w4}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem}
+
+I1 Fitness uses binary success ($r_t \in \{0, 1\}$). Two runs 
+that both compile get the same fitness boost, even if one 
+produced clean code (Codematrix resonance 0.85) and the other 
+produced messy code (resonance 0.45).
+
+\subsection{Solution}
+
+Replace binary $r_t$ with continuous Codematrix resonance:
+
+\begin{equation}
+r_t = \begin{cases}
+\bar{R}_\text{codematrix} & \text{if compile success} \\
+0 & \text{if compile failed}
+\end{cases}
+\end{equation}
+
+where $\bar{R}_\text{codematrix}$ is the average resonance 
+product across all generated files in this run 
+(from \texttt{ForgeStats.codematrix\_avg}).
+
+\begin{equation}
+\phi_{t+1}(n) = \alpha \cdot \phi_t(n) + (1 - \alpha) \cdot r_t
+\end{equation}
+
+with $\alpha = 0.9$ (unchanged).
+
+\subsection{Effect}
+
+\begin{itemize}[nosep]
+\item A norm that consistently produces high-resonance code 
+      gets $\phi \to 0.85+$.
+\item A norm that compiles but produces messy code gets 
+      $\phi \to 0.5$.
+\item A norm that fails to compile gets $\phi \to 0$.
+\item \textbf{The system learns quality, not just success.}
+\end{itemize}
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-norms/src/fitness.rs}
+  & \texttt{update\_fitness()} takes \texttt{Option<f64>} 
+    codematrix resonance instead of \texttt{bool} success. \\
+\texttt{isls-forge-llm/src/staged\_closure.rs}
+  & Compute average codematrix resonance from generated files. 
+    Pass to \texttt{update\_fitness()}. \\
+\texttt{isls-cli/src/main.rs}
+  & Pass codematrix data through to fitness update in CLI 
+    forge paths. \\
+\bottomrule
+\end{longtable}
+
+\subsection{W4 Verification}
+
+\begin{enumerate}[nosep]
+\item Run two forge generations.
+\item \texttt{isls norms fitness} shows fitness values between 
+      0 and 1 (not just 0.5 or 0.9x).
+\item Fitness reflects code quality, not just compile success.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Dependency Graph}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{verbatim}
+W1 (Ollama Architect)     W3 (Parallel Scraping)
+         |                        |
+         v                        v
+W4 (Codematrix Fitness)   W2 (Gen-Clustering)
+\end{verbatim}
+
+W1 and W3 are independent. W4 depends on W1 (needs Ollama 
+forge to produce real codematrix data). W2 depends on 
+metrics.jsonl having entries (from W1 or from previous runs).
+
+Recommended: W1 $\to$ W3 $\to$ W4 $\to$ W2.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{Ollama Architect} reuses the existing \texttt{Oracle} 
+      trait. Construct \texttt{OllamaOracle} from 
+      \texttt{AppState.oracle\_config}. No new HTTP client.
+\item \textbf{JSON parsing robustness} is critical. Local models 
+      produce inconsistent formatting. The parser must not crash 
+      on unexpected output.
+\item \textbf{Gen-Clustering} reads \texttt{metrics.jsonl}. If 
+      fewer than 10 entries exist, return empty genome with 
+      message ``Not enough data.''
+\item \textbf{Parallel scraping} uses \texttt{tokio::sync::Semaphore} 
+      with max 4 permits. Do NOT spawn unbounded tasks.
+\item \textbf{Codematrix fitness} must be backward compatible: if 
+      codematrix data is not available (old metrics entries), 
+      fall back to binary success.
+\item \textbf{Do not modify} isls-merkaba, isls-reader, 
+      isls-code-topo, isls-hypercube, isls-types, isls-chat.
+\item All existing tests MUST pass.
+\item Branch: \texttt{claude/implement-isls-i2-spec}.
+\item Commit format: \texttt{I2/W\{n\}: <description>}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Acceptance Criteria}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Pass} & \textbf{Criterion} \\
+\midrule
+1 & & \texttt{cargo build --workspace} compiles. \\
+2 & & \texttt{cargo test --workspace} passes. \\
+3 & & Studio chat works with \texttt{--ollama} only (no API key). 
+      Entities extracted, readiness computed. \\
+4 & & Forge from Studio uses Ollama. Real LLM calls visible 
+      (duration $> 30$s, tokens $> 0$). \\
+5 & & \texttt{isls norms genome} shows gene clusters (needs 
+      10+ metrics entries). \\
+6 & & Mass-scrape with 5 keywords uses parallel workers. \\
+7 & & Fitness values reflect codematrix resonance, not just 
+      binary success. \\
+8 & & Full pipeline (chat $\to$ forge $\to$ compile) works 
+      without any external API. \\
+\bottomrule
+\end{longtable}
+
+I2 is passed when criteria 1--4 and 8 are fulfilled. 
+Criteria 5 requires accumulated metrics. Criteria 6--7 
+are improvements that can be verified independently.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{After I2: Full Sovereignty}
+% ══════════════════════════════════════════════════════════════════════════════
+
+With I2 complete, ISLS runs entirely on the VPS:
+
+\begin{itemize}[nosep]
+\item \textbf{Chat:} Ollama (free).
+\item \textbf{Forge:} Ollama (free).
+\item \textbf{Scraping:} GitHub API (free, rate-limited).
+\item \textbf{Norms:} Local (\texttt{norms.json}).
+\item \textbf{Fitness:} Local (\texttt{fitness.json}).
+\item \textbf{Genome:} Local (\texttt{genome.json}).
+\item \textbf{Metrics:} Local (\texttt{metrics.jsonl}).
+\item \textbf{Studio:} Self-hosted (port 8420).
+\end{itemize}
+
+Zero external dependencies. Zero recurring costs beyond 
+VPS hosting. The system learns, generates, and improves 
+autonomously. The \"Olbohrinsel pumps. The Genome crystallizes. 
+The Fitness converges. The operator sleeps.
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of I2 Specification.\\[0.3em]
+Souver\"anit\"at ist nicht Unabh\"angigkeit von Technologie.\\
+Souver\"anit\"at ist Unabh\"angigkeit von Erlaubnis.}
+\end{center}
+
+\end{document}
