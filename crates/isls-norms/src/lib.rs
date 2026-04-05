@@ -27,8 +27,19 @@ pub mod catalog;
 pub mod composition;
 pub mod fitness;
 pub mod genome;
+pub mod injection;
 pub mod learning;
+pub mod spectroscopy;
 pub mod types;
+
+pub use injection::{
+    inject_norm, load_blueprint, parse_blueprint, remove_injected, BlueprintConstraints,
+    InjectError, NormBlueprint, ResonitePattern, INJECT_PREFIX,
+};
+pub use spectroscopy::{
+    classify_resonite, spectroscopy, suggest_keywords, suggest_keywords_for_class, NormGap,
+    Resonite, ResoniteClass, ResoniteTypeKind, ScrapeSuggestion, SpectroscopyResult,
+};
 
 pub use catalog::builtin_norms;
 pub use composition::{compose_norms, ComposedPlan};
@@ -140,6 +151,11 @@ impl NormRegistry {
         self.norms.insert(norm.id.clone(), norm);
     }
 
+    /// Remove a norm by ID. Returns the removed norm, if any.
+    pub fn remove(&mut self, id: &str) -> Option<Norm> {
+        self.norms.remove(id)
+    }
+
     /// Look up a norm by ID.
     pub fn get(&self, id: &str) -> Option<&Norm> {
         self.norms.get(id)
@@ -194,8 +210,13 @@ impl NormRegistry {
         let auto_norms: Vec<&Norm> = self.norms.values()
             .filter(|n| n.id.starts_with("ISLS-NORM-AUTO-"))
             .collect();
+        // I3/W2: persist injected norms separately
+        let injected_norms: Vec<&Norm> = self.norms.values()
+            .filter(|n| n.id.starts_with(injection::INJECT_PREFIX))
+            .collect();
         let payload = serde_json::json!({
             "auto_norms": auto_norms,
+            "injected_norms": injected_norms,
             "candidates": self.candidates.values().collect::<Vec<_>>(),
             "auto_id_counter": self.auto_id_counter,
         });
@@ -219,6 +240,14 @@ impl NormRegistry {
         let payload: serde_json::Value = serde_json::from_str(&content)?;
 
         if let Some(norms) = payload["auto_norms"].as_array() {
+            for v in norms {
+                if let Ok(norm) = serde_json::from_value::<Norm>(v.clone()) {
+                    self.norms.insert(norm.id.clone(), norm);
+                }
+            }
+        }
+        // I3/W2: restore injected norms
+        if let Some(norms) = payload["injected_norms"].as_array() {
             for v in norms {
                 if let Ok(norm) = serde_json::from_value::<Norm>(v.clone()) {
                     self.norms.insert(norm.id.clone(), norm);

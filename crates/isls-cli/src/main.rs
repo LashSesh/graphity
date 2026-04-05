@@ -6,9 +6,11 @@
 
 use std::path::Path;
 
+mod cmd_evolve;
 mod cmd_metrics;
 mod cmd_norms;
 mod cmd_scrape;
+mod cmd_spectroscopy;
 
 // ─── Command Enum ────────────────────────────────────────────────────────────
 
@@ -63,6 +65,22 @@ enum Command {
     },
     /// D7: Generation metrics inspection.
     Metrics { compare: bool, last: Option<usize> },
+    /// I3/W1: Constraint Spectroscopy — analyse a target system.
+    Spectroscopy {
+        path: Option<String>,
+        scrape: bool,
+    },
+    /// I3/W3: Solve-Coagula orchestration.
+    Evolve {
+        from: String,
+        delta: String,
+        output: String,
+        scrape_gaps: bool,
+        api_key: Option<String>,
+        model: String,
+        ollama: bool,
+        ollama_url: String,
+    },
     /// Start the Gateway / Studio web interface.
     Serve {
         port: u16,
@@ -78,7 +96,7 @@ enum Command {
 /// Subcommands for `isls norms`.
 enum NormsSubcmd {
     /// List all norms.
-    List { auto_only: bool },
+    List { auto_only: bool, source: Option<String> },
     /// Inspect a specific norm by ID.
     Inspect { norm_id: String },
     /// List candidate pool.
@@ -91,6 +109,10 @@ enum NormsSubcmd {
     Genome,
     /// Reset auto-discovered norms.
     Reset,
+    /// I3/W2: Inject a norm blueprint from JSON file.
+    Inject { file: String },
+    /// I3/W2: Remove an injected norm by id.
+    Remove { id: String },
 }
 
 // ─── Argument Parsing ────────────────────────────────────────────────────────
@@ -175,7 +197,24 @@ fn parse_args(args: &[String]) -> Command {
             let subcmd = match subcmd {
                 "list" => {
                     let auto_only = args.contains(&"--auto-only".to_string());
-                    NormsSubcmd::List { auto_only }
+                    let source = args.iter().position(|a| a == "--source")
+                        .and_then(|i| args.get(i + 1))
+                        .cloned();
+                    NormsSubcmd::List { auto_only, source }
+                }
+                "inject" => {
+                    let file = args.get(3).cloned().unwrap_or_else(|| {
+                        eprintln!("[ERROR] isls norms inject requires a blueprint file path");
+                        std::process::exit(1);
+                    });
+                    NormsSubcmd::Inject { file }
+                }
+                "remove" => {
+                    let id = args.get(3).cloned().unwrap_or_else(|| {
+                        eprintln!("[ERROR] isls norms remove requires a norm ID");
+                        std::process::exit(1);
+                    });
+                    NormsSubcmd::Remove { id }
                 }
                 "inspect" => {
                     let norm_id = args.get(3).cloned().unwrap_or_else(|| {
@@ -191,7 +230,7 @@ fn parse_args(args: &[String]) -> Command {
                 "reset" => NormsSubcmd::Reset,
                 _ => {
                     eprintln!("[ERROR] Unknown norms subcommand: {}", subcmd);
-                    eprintln!("Available: list, inspect, candidates, stats, fitness, genome, reset");
+                    eprintln!("Available: list, inspect, candidates, stats, fitness, genome, reset, inject, remove");
                     std::process::exit(1);
                 }
             };
@@ -256,6 +295,48 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .and_then(|s| s.parse().ok());
             Command::Metrics { compare, last }
+        }
+        "spectroscopy" => {
+            let path = args.iter().position(|a| a == "--path")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            let scrape = args.contains(&"--scrape".to_string());
+            Command::Spectroscopy { path, scrape }
+        }
+        "evolve" => {
+            let from = args.iter().position(|a| a == "--from")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| {
+                    eprintln!("[ERROR] --from <path> is required for evolve");
+                    std::process::exit(1);
+                });
+            let delta = args.iter().position(|a| a == "--delta")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| {
+                    eprintln!("[ERROR] --delta <description> is required for evolve");
+                    std::process::exit(1);
+                });
+            let output = args.iter().position(|a| a == "--output")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "./evolved".to_string());
+            let scrape_gaps = args.contains(&"--scrape-gaps".to_string());
+            let api_key = args.iter().position(|a| a == "--api-key")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+            let model = args.iter().position(|a| a == "--model")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "gpt-4o".to_string());
+            let ollama = args.contains(&"--ollama".to_string());
+            let ollama_url = args.iter().position(|a| a == "--ollama-url")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            Command::Evolve { from, delta, output, scrape_gaps, api_key, model, ollama, ollama_url }
         }
         "serve" => {
             let port = args.iter().position(|a| a == "--port")
@@ -803,6 +884,8 @@ fn print_help() {
     println!("  forge-chat  D3: Natural language to compiled application");
     println!("  norms       D4: Inspect norm catalog, candidates, and auto-discovered norms");
     println!("  scrape      D5: Scrape repositories — extract topology into norms");
+    println!("  spectroscopy I3/W1: Constraint Spectroscopy (target → gaps + keywords)");
+    println!("  evolve      I3/W3: Solve-Coagula cycle (from → delta → next-gen)");
     println!("  metrics     D7: Generation metrics (CLI vs Cockpit comparison)");
     println!("  serve       Start the Gateway / Studio web interface");
     println!("  help        Print this message");
@@ -842,11 +925,28 @@ fn print_help() {
     println!("  --swarm-threshold <f>  Resonance threshold (default: 0.20)");
     println!();
     println!("norms subcommands:");
-    println!("  list [--auto-only]     List all norms (builtin + auto-discovered)");
+    println!("  list [--auto-only] [--source builtin|auto|injected]");
+    println!("                          List norms (filtered by origin)");
     println!("  inspect <norm-id>      Show full norm details");
     println!("  candidates             List candidate pool");
     println!("  stats                  Summary statistics");
+    println!("  inject <file>          I3/W2: Register a norm blueprint JSON");
+    println!("  remove <id>            I3/W2: Remove an injected norm (ISLS-NORM-INJECT-*)");
     println!("  reset                  Delete ~/.isls/norms.json (with confirm)");
+    println!();
+    println!("spectroscopy options:");
+    println!("  --path <dir>           Target project (default: .)");
+    println!("  --scrape               Emit scrape instructions for detected gaps");
+    println!();
+    println!("evolve options:");
+    println!("  --from <path>          Existing project to evolve (required)");
+    println!("  --delta <text>         Natural-language description of the delta (required)");
+    println!("  --output <path>        Output directory (default: ./evolved)");
+    println!("  --scrape-gaps          Emit targeted scrape campaigns for each gap");
+    println!("  --api-key <key>        OpenAI API key (or set OPENAI_API_KEY env var)");
+    println!("  --model <model>        LLM model name (default: gpt-4o)");
+    println!("  --ollama               Use local Ollama instance instead of OpenAI");
+    println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
     println!();
     println!("scrape options:");
     println!("  --path <dir>           Local directory to scrape");
@@ -893,14 +993,24 @@ fn main() {
             });
         }
         Command::Norms { subcmd } => match subcmd {
-            NormsSubcmd::List { auto_only } => cmd_norms::cmd_norms_list(auto_only),
+            NormsSubcmd::List { auto_only, source } => {
+                cmd_norms::cmd_norms_list(auto_only, source.as_deref())
+            }
             NormsSubcmd::Inspect { norm_id } => cmd_norms::cmd_norms_inspect(&norm_id),
             NormsSubcmd::Candidates => cmd_norms::cmd_norms_candidates(),
             NormsSubcmd::Stats => cmd_norms::cmd_norms_stats(),
             NormsSubcmd::Fitness => cmd_norms::cmd_norms_fitness(),
             NormsSubcmd::Genome => cmd_norms::cmd_norms_genome(),
             NormsSubcmd::Reset => cmd_norms::cmd_norms_reset(),
+            NormsSubcmd::Inject { file } => cmd_norms::cmd_norms_inject(&file),
+            NormsSubcmd::Remove { id } => cmd_norms::cmd_norms_remove(&id),
         },
+        Command::Spectroscopy { path, scrape } => {
+            cmd_spectroscopy::cmd_spectroscopy(path.as_deref(), scrape);
+        }
+        Command::Evolve { from, delta, output, scrape_gaps, api_key, model, ollama, ollama_url } => {
+            cmd_evolve::cmd_evolve(&from, &delta, &output, scrape_gaps, api_key, &model, ollama, &ollama_url);
+        }
         Command::Metrics { compare, last } => {
             if compare {
                 cmd_metrics::cmd_metrics_compare();
@@ -1076,7 +1186,7 @@ mod tests {
     fn test_parse_norms_list() {
         let cmd = parse_args(&args(&["isls", "norms"]));
         match cmd {
-            Command::Norms { subcmd: NormsSubcmd::List { auto_only } } => {
+            Command::Norms { subcmd: NormsSubcmd::List { auto_only, source: _ } } => {
                 assert!(!auto_only);
             }
             _ => panic!("expected Norms List"),
@@ -1087,7 +1197,7 @@ mod tests {
     fn test_parse_norms_list_auto_only() {
         let cmd = parse_args(&args(&["isls", "norms", "list", "--auto-only"]));
         match cmd {
-            Command::Norms { subcmd: NormsSubcmd::List { auto_only } } => {
+            Command::Norms { subcmd: NormsSubcmd::List { auto_only, source: _ } } => {
                 assert!(auto_only);
             }
             _ => panic!("expected Norms List with auto_only"),

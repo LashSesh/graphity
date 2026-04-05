@@ -635,7 +635,13 @@ pub async fn discover_upload_keywords(
     discover_mass_scrape(State(state), Json(req)).await
 }
 
-/// GET /api/discover/gaps — Norm gap analysis
+/// GET /api/discover/gaps — Norm gap analysis (I3/W1: Constraint Spectroscopy).
+///
+/// Returns the SpectroscopyResult computed against the registry's breadth —
+/// every class the registry does *not* yet cover is reported as a gap with
+/// suggested scrape keywords. The response shape is a superset of the
+/// legacy payload (still includes `gaps` + `covered` + `total_norms`) so
+/// existing Studio code continues to work.
 pub async fn discover_gaps(
     State(state): State<AppState>,
 ) -> Json<serde_json::Value> {
@@ -643,65 +649,41 @@ pub async fn discover_gaps(
     let all_norms = registry.all_norms();
     let candidates = registry.candidates();
 
-    // Collect all keywords from existing norms
-    let mut covered_keywords: Vec<String> = Vec::new();
-    for norm in &all_norms {
-        covered_keywords.push(norm.name.to_lowercase());
-        for trigger in &norm.triggers {
-            covered_keywords.extend(trigger.keywords.iter().map(|k| k.to_lowercase()));
-            covered_keywords.extend(trigger.concepts.iter().map(|c| c.to_lowercase()));
-        }
-    }
-    let covered_str = covered_keywords.join(" ");
+    // Synthetic target: every known ResoniteClass is represented by a
+    // single placeholder resonite. Running spectroscopy against this
+    // "universal target" surfaces the registry's breadth gaps.
+    let universe = universal_target_resonites();
+    let result = isls_norms::spectroscopy::spectroscopy(&universe, &registry);
 
-    // Common patterns to check coverage for
-    let patterns = vec![
-        ("Caching", "rust cache lru redis", vec!["cache", "lru", "redis", "caching"]),
-        ("Background Jobs", "rust job queue worker", vec!["job", "queue", "worker", "background"]),
-        ("WebSocket Realtime", "rust websocket realtime", vec!["websocket", "realtime", "ws"]),
-        ("Rate Limiting", "rust rate limit tower", vec!["rate", "limit", "throttle"]),
-        ("Circuit Breaker", "rust circuit breaker resilience", vec!["circuit", "breaker", "resilience"]),
-        ("Retry Patterns", "rust retry backoff", vec!["retry", "backoff"]),
-        ("Config Management", "rust config toml dotenv", vec!["config", "dotenv", "configuration"]),
-        ("Logging/Tracing", "rust logging tracing structured", vec!["logging", "tracing", "structured"]),
-        ("Metrics/Monitoring", "rust metrics prometheus export", vec!["metrics", "prometheus", "monitoring"]),
-        ("GraphQL", "rust graphql async-graphql", vec!["graphql"]),
-        ("gRPC", "rust grpc tonic protobuf", vec!["grpc", "tonic", "protobuf"]),
-        ("File Upload", "rust file upload multipart", vec!["upload", "multipart"]),
-        ("CSV/Export", "rust csv export report", vec!["csv", "export"]),
-        ("Email", "rust email smtp lettre", vec!["email", "smtp"]),
-        ("Scheduling/Cron", "rust scheduler cron job", vec!["scheduler", "cron"]),
-        ("Full-text Search", "rust search fulltext tantivy", vec!["search", "fulltext", "tantivy"]),
-        ("i18n", "rust i18n internationalization", vec!["i18n", "internationalization", "locale"]),
-        ("Feature Flags", "rust feature flag toggle", vec!["feature", "flag", "toggle"]),
-        ("Audit Logging", "rust audit log trail", vec!["audit", "trail"]),
-        ("Health Check", "rust health check endpoint", vec!["health", "check"]),
-    ];
-
-    let mut gaps = Vec::new();
-    let mut covered = Vec::new();
-
-    for (area, suggested_query, check_keywords) in &patterns {
-        let norm_count = check_keywords
-            .iter()
-            .filter(|kw| covered_str.contains(*kw))
-            .count();
-
-        if norm_count == 0 {
-            gaps.push(serde_json::json!({
-                "area": area,
+    let gaps_json: Vec<serde_json::Value> = result
+        .gaps
+        .iter()
+        .zip(result.suggestions.iter().map(Some).chain(std::iter::repeat(None)))
+        .map(|(gap, sugg)| {
+            let suggested = sugg
+                .and_then(|s| s.keywords.first().cloned())
+                .unwrap_or_default();
+            serde_json::json!({
+                "area": gap.class.as_str(),
+                "class": gap.class.as_str(),
                 "norm_count": 0,
-                "suggested_query": suggested_query,
-            }));
-        } else {
-            covered.push(serde_json::json!({
-                "area": area,
-                "keyword_matches": norm_count,
-            }));
-        }
-    }
+                "priority": gap.priority,
+                "resonite_count": gap.resonite_count,
+                "suggested_query": suggested,
+            })
+        })
+        .collect();
 
-    // Count norm types
+    let covered_json: Vec<serde_json::Value> = result
+        .covered
+        .iter()
+        .map(|c| serde_json::json!({
+            "area": c.as_str(),
+            "class": c.as_str(),
+            "keyword_matches": 1,
+        }))
+        .collect();
+
     let builtin_count = all_norms.iter().filter(|n| n.evidence.builtin).count();
     let auto_count = all_norms.len() - builtin_count;
 
@@ -711,9 +693,287 @@ pub async fn discover_gaps(
         "builtin": builtin_count,
         "auto": auto_count,
         "candidates": candidates.len(),
-        "gaps": gaps,
-        "covered": covered,
+        "coverage": result.coverage,
+        "gaps": gaps_json,
+        "covered": covered_json,
     }))
+}
+
+/// Produce one resonite per known ResoniteClass so that
+/// [`isls_norms::spectroscopy::spectroscopy`] runs against the universe
+/// of classes known to ISLS. Used by `/api/discover/gaps`.
+fn universal_target_resonites() -> Vec<isls_norms::spectroscopy::Resonite> {
+    use isls_norms::spectroscopy::Resonite;
+    [
+        "list_items",
+        "login_user",
+        "authorize_request",
+        "emit_event",
+        "enqueue_job",
+        "acquire_conn",
+        "cache_get",
+        "rate_limit_check",
+        "circuit_break_trip",
+        "retry_backoff",
+        "paginate_results",
+        "search_fulltext",
+        "upload_file",
+        "export_csv",
+        "schedule_cron",
+        "notify_user",
+        "log_entry",
+        "metrics_record",
+        "health_check",
+        "load_config",
+        "migrate_schema",
+        "test_runner",
+        "state_transition",
+        "workflow_step",
+        "compute_rsi",
+        "filter_signal",
+        "risk_kelly",
+        "execute_order",
+        "chart_render",
+        "ws_broadcast",
+        "graphql_resolver",
+        "grpc_handler",
+        "cli_parse_args",
+        "register_plugin",
+    ]
+    .iter()
+    .map(|n| Resonite::Fn { name: n.to_string(), arity: 1 })
+    .collect()
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// I3/W1: Constraint Spectroscopy endpoints
+// ═══════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Deserialize)]
+pub struct SpectroscopyRequest {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SpectroscopyFillRequest {
+    #[serde(default)]
+    pub gaps: Vec<String>,
+    #[serde(default)]
+    pub repos_per_keyword: Option<usize>,
+}
+
+/// POST /api/discover/spectroscopy — analyse a target and return the full
+/// [`SpectroscopyResult`].
+pub async fn discover_spectroscopy(
+    State(state): State<AppState>,
+    Json(req): Json<SpectroscopyRequest>,
+) -> Json<serde_json::Value> {
+    let registry = state.norm_registry.read().await;
+
+    let resonites = if let Some(ref p) = req.path {
+        let path = PathBuf::from(p);
+        if !path.is_dir() {
+            return Json(serde_json::json!({
+                "ok": false,
+                "error": "path is not a directory",
+            }));
+        }
+        match tokio::task::spawn_blocking(move || {
+            isls_reader::parse_directory(&path)
+                .map(|a| resonites_from_analysis(&a))
+                .map_err(|e| e.to_string())
+        })
+        .await
+        {
+            Ok(Ok(rs)) => rs,
+            Ok(Err(e)) => {
+                return Json(serde_json::json!({ "ok": false, "error": e }));
+            }
+            Err(e) => {
+                return Json(serde_json::json!({
+                    "ok": false,
+                    "error": format!("task panicked: {}", e),
+                }));
+            }
+        }
+    } else if let Some(ref desc) = req.description {
+        resonites_from_description(desc)
+    } else if let Some(ref _url) = req.url {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "url targets are handled via /api/discover/scrape first",
+        }));
+    } else {
+        universal_target_resonites()
+    };
+
+    let result = isls_norms::spectroscopy::spectroscopy(&resonites, &registry);
+    Json(serde_json::json!({
+        "ok": true,
+        "result": result,
+    }))
+}
+
+/// POST /api/discover/spectroscopy/fill — launch a background mass-scrape
+/// for the keywords of the requested gap classes.
+pub async fn discover_spectroscopy_fill(
+    State(state): State<AppState>,
+    Json(req): Json<SpectroscopyFillRequest>,
+) -> Json<serde_json::Value> {
+    if req.gaps.is_empty() {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "gaps list is empty",
+        }));
+    }
+
+    // Collect keywords for every requested gap.
+    let mut keywords: Vec<String> = Vec::new();
+    for gap in &req.gaps {
+        let class = parse_class(gap);
+        let kws = isls_norms::spectroscopy::suggest_keywords_for_class(&class);
+        keywords.extend(kws);
+    }
+    keywords.sort();
+    keywords.dedup();
+
+    if keywords.is_empty() {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": "no keywords known for requested gaps",
+        }));
+    }
+
+    let per_kw = req.repos_per_keyword.unwrap_or(5).min(10);
+    let mass_req = MassScrapeRequest {
+        keywords: keywords.clone(),
+        results_per_keyword: Some(per_kw),
+    };
+    let response = discover_mass_scrape(State(state), Json(mass_req)).await;
+    let Json(mut value) = response;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("gaps".into(), serde_json::json!(req.gaps));
+        obj.insert("keywords_expanded".into(), serde_json::json!(keywords));
+    }
+    Json(value)
+}
+
+/// Convert a `WorkspaceAnalysis` into a Vec<Resonite> suitable for
+/// spectroscopy. Mirrors the CLI helper in `cmd_spectroscopy.rs`.
+fn resonites_from_analysis(
+    analysis: &isls_reader::WorkspaceAnalysis,
+) -> Vec<isls_norms::spectroscopy::Resonite> {
+    use isls_norms::spectroscopy::{Resonite, ResoniteTypeKind};
+    let mut out = Vec::new();
+    for file in &analysis.files {
+        for f in &file.functions {
+            out.push(Resonite::Fn {
+                name: f.name.clone(),
+                arity: f.params.len(),
+            });
+        }
+        for s in &file.structs {
+            let kind = if s.derives.iter().any(|d| d.to_lowercase().contains("enum")) {
+                ResoniteTypeKind::Enum
+            } else {
+                ResoniteTypeKind::Struct
+            };
+            out.push(Resonite::Type {
+                name: s.name.clone(),
+                kind,
+            });
+        }
+        for i in &file.imports {
+            out.push(Resonite::Import { path: i.clone() });
+        }
+    }
+    out
+}
+
+/// Build a synthetic resonite set from a free-text system description.
+/// Every known ResoniteClass whose keyword index matches the description
+/// gets one placeholder resonite so the classifier picks it up.
+fn resonites_from_description(desc: &str) -> Vec<isls_norms::spectroscopy::Resonite> {
+    use isls_norms::spectroscopy::Resonite;
+    let lower = desc.to_lowercase();
+    let hints: [(&str, &str); 18] = [
+        ("event", "emit_event"),
+        ("websocket", "ws_broadcast"),
+        ("cache", "cache_get"),
+        ("queue", "enqueue_job"),
+        ("pool", "acquire_conn"),
+        ("auth", "login_user"),
+        ("search", "search_fulltext"),
+        ("cron", "schedule_cron"),
+        ("upload", "upload_file"),
+        ("notif", "notify_user"),
+        ("metric", "metrics_record"),
+        ("tracing", "log_entry"),
+        ("graphql", "graphql_resolver"),
+        ("grpc", "grpc_handler"),
+        ("risk", "risk_kelly"),
+        ("indicator", "compute_rsi"),
+        ("order", "execute_order"),
+        ("chart", "chart_render"),
+    ];
+    let mut out = Vec::new();
+    for (needle, fn_name) in hints {
+        if lower.contains(needle) {
+            out.push(Resonite::Fn {
+                name: fn_name.to_string(),
+                arity: 1,
+            });
+        }
+    }
+    out
+}
+
+/// Parse a user-supplied gap-class string into a `ResoniteClass`.
+fn parse_class(s: &str) -> isls_norms::spectroscopy::ResoniteClass {
+    use isls_norms::spectroscopy::ResoniteClass as C;
+    match s.trim() {
+        "CrudEntity" => C::CrudEntity,
+        "Authentication" => C::Authentication,
+        "Authorization" => C::Authorization,
+        "EventBus" => C::EventBus,
+        "MessageQueue" => C::MessageQueue,
+        "ConnectionPool" => C::ConnectionPool,
+        "Caching" => C::Caching,
+        "RateLimiting" => C::RateLimiting,
+        "CircuitBreaker" => C::CircuitBreaker,
+        "RetryPattern" => C::RetryPattern,
+        "Pagination" => C::Pagination,
+        "Search" => C::Search,
+        "FileUpload" => C::FileUpload,
+        "ExportImport" => C::ExportImport,
+        "Scheduling" => C::Scheduling,
+        "Notification" => C::Notification,
+        "Logging" => C::Logging,
+        "Metrics" => C::Metrics,
+        "HealthCheck" => C::HealthCheck,
+        "Configuration" => C::Configuration,
+        "Migration" => C::Migration,
+        "Testing" => C::Testing,
+        "Docker" => C::Docker,
+        "StateMachine" => C::StateMachine,
+        "Workflow" => C::Workflow,
+        "IndicatorPipeline" => C::IndicatorPipeline,
+        "SignalProcessing" => C::SignalProcessing,
+        "RiskManagement" => C::RiskManagement,
+        "OrderExecution" => C::OrderExecution,
+        "DataVisualization" => C::DataVisualization,
+        "RealtimeWebSocket" => C::RealtimeWebSocket,
+        "GraphQLApi" => C::GraphQLApi,
+        "GrpcService" => C::GrpcService,
+        "CliInterface" => C::CliInterface,
+        "PluginSystem" => C::PluginSystem,
+        other => C::Custom(other.to_string()),
+    }
 }
 
 /// GET /api/discover/genealogy/{norm_id} — Norm observation history
