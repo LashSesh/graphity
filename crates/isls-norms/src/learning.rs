@@ -285,7 +285,11 @@ impl Default for PromotionCriteria {
         Self {
             min_consistency: 0.85,
             min_domains: 3,
-            min_layers: 4,
+            // I3 fix: lowered from 4 → 2 so cross-layer patterns observed
+            // in external repos (which typically expose only 2–3 layers)
+            // can actually be promoted. The layer-type set is not
+            // restricted, only the distinct-layer count.
+            min_layers: 2,
             min_observations: 5,
             min_artifact_presence: 0.80,
         }
