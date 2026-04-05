@@ -1522,49 +1522,119 @@ async fn session_message(
         None => return Json(serde_json::json!({ "ok": false, "error": "session not found" })),
     };
 
-    let has_api_key = session.api_key.is_some();
+    // I2/W1: fallback chain for oracle selection:
+    //   1. Session-specific api_key          → OpenAI
+    //   2. Server oracle_config.api_key      → OpenAI
+    //   3. Server oracle_config.use_ollama   → Ollama (local, free)
+    //   4. Nothing                           → manual mode
+    #[derive(Clone, Debug)]
+    enum OracleChoice {
+        OpenAi {
+            api_key: Option<String>, // None → OpenAiOracle reads env var
+            model: String,
+        },
+        Ollama {
+            url: String,
+            model: String,
+        },
+        Manual,
+    }
 
-    let assistant_message = if has_api_key {
-        // LLM mode: call oracle in spawn_blocking (OpenAiOracle is blocking)
-        let api_key = session.api_key.clone();
-        let model = session.model.clone();
-        let user_msg = req.message.clone();
-
-        // Build prompt before spawning
-        session.add_user_message(&user_msg);
-        let prompt = architect::build_architect_prompt(&session, &user_msg);
-        // Remove the user message we just added — process_message will re-add it
-        // Actually, let's handle this differently: call oracle directly in spawn_blocking
-        session.messages.pop(); // undo the add
-
-        let result = tokio::task::spawn_blocking(move || {
-            use isls_forge_llm::Oracle as _;
-            let oracle = match isls_forge_llm::oracle::OpenAiOracle::new(api_key, Some(model)) {
-                Ok(o) => o,
-                Err(e) => return Err(format!("Oracle init failed: {}", e)),
-            };
-            oracle.call(&prompt, 4096).map_err(|e| format!("Oracle call failed: {}", e))
-        }).await;
-
-        match result {
-            Ok(Ok(response_text)) => {
-                session.add_user_message(&req.message);
-                let parsed = architect::parse_llm_response(&response_text);
-                let msg = parsed.message.clone();
-                architect::apply_architect_response(&mut session, &parsed);
-                msg
-            }
-            Ok(Err(e)) => {
-                // Oracle failed — fall back to manual mode
-                architect::process_message_manual(&mut session, &req.message)
-            }
-            Err(e) => {
-                architect::process_message_manual(&mut session, &req.message)
-            }
+    let oracle_choice = if let Some(key) = session.api_key.clone() {
+        OracleChoice::OpenAi {
+            api_key: Some(key),
+            model: session.model.clone(),
+        }
+    } else if state.oracle_config.api_key.is_some() {
+        OracleChoice::OpenAi {
+            api_key: state.oracle_config.api_key.clone(),
+            model: if state.oracle_config.openai_model.is_empty() {
+                session.model.clone()
+            } else {
+                state.oracle_config.openai_model.clone()
+            },
+        }
+    } else if state.oracle_config.use_ollama {
+        OracleChoice::Ollama {
+            url: state.oracle_config.ollama_url.clone(),
+            model: state.oracle_config.ollama_model.clone(),
         }
     } else {
-        // Manual mode
-        architect::process_message_manual(&mut session, &req.message)
+        OracleChoice::Manual
+    };
+
+    let assistant_message = match oracle_choice {
+        OracleChoice::Manual => architect::process_message_manual(&mut session, &req.message),
+        OracleChoice::OpenAi { api_key, model } => {
+            // Build prompt first so we can move it into the blocking task.
+            let prompt = architect::build_architect_prompt(&session, &req.message);
+
+            let result = tokio::task::spawn_blocking(move || {
+                use isls_forge_llm::Oracle as _;
+                let oracle = match isls_forge_llm::oracle::OpenAiOracle::new(api_key, Some(model)) {
+                    Ok(o) => o,
+                    Err(e) => return Err(format!("Oracle init failed: {}", e)),
+                };
+                oracle
+                    .call(&prompt, 4096)
+                    .map_err(|e| format!("Oracle call failed: {}", e))
+            })
+            .await;
+
+            match result {
+                Ok(Ok(response_text)) => {
+                    session.add_user_message(&req.message);
+                    let parsed = architect::parse_llm_response(&response_text);
+                    let msg = parsed.message.clone();
+                    architect::apply_architect_response(&mut session, &parsed);
+                    msg
+                }
+                Ok(Err(e)) => {
+                    eprintln!("[architect] OpenAI oracle failed: {} — falling back to manual mode", e);
+                    architect::process_message_manual(&mut session, &req.message)
+                }
+                Err(e) => {
+                    eprintln!("[architect] OpenAI task join failed: {} — falling back to manual mode", e);
+                    architect::process_message_manual(&mut session, &req.message)
+                }
+            }
+        }
+        OracleChoice::Ollama { url, model } => {
+            // Use the tighter Ollama-style prompt (shorter, JSON-only, no
+            // history injection).
+            let prompt = architect::build_architect_prompt_ollama(&session, &req.message);
+
+            let result = tokio::task::spawn_blocking(move || {
+                use isls_forge_llm::Oracle as _;
+                let oracle = isls_forge_llm::oracle::OllamaOracle::new(&model, &url);
+                oracle
+                    .call(&prompt, 4096)
+                    .map_err(|e| format!("Ollama oracle call failed: {}", e))
+            })
+            .await;
+
+            match result {
+                Ok(Ok(response_text)) => {
+                    session.add_user_message(&req.message);
+                    let parsed = architect::parse_llm_response(&response_text);
+                    // If the local model produced no entities AND no fenced
+                    // JSON, surface the raw model text as the assistant
+                    // message instead of treating it as a crash — the JSON
+                    // extractor already refuses to crash on unexpected output.
+                    let msg = parsed.message.clone();
+                    architect::apply_architect_response(&mut session, &parsed);
+                    msg
+                }
+                Ok(Err(e)) => {
+                    eprintln!("[architect] Ollama oracle failed: {} — falling back to manual mode", e);
+                    architect::process_message_manual(&mut session, &req.message)
+                }
+                Err(e) => {
+                    eprintln!("[architect] Ollama task join failed: {} — falling back to manual mode", e);
+                    architect::process_message_manual(&mut session, &req.message)
+                }
+            }
+        }
     };
 
     // Compute readiness

@@ -86,6 +86,67 @@ pub fn build_architect_prompt(session: &ArchitectSession, user_message: &str) ->
     p
 }
 
+/// Build a short, JSON-only prompt for local Ollama models.
+///
+/// I2/W1: local models (Qwen2.5-Coder 32B) follow short, strict prompts much
+/// better than long conversational ones. No history injection — the current
+/// spec is sufficient context.
+pub fn build_architect_prompt_ollama(session: &ArchitectSession, user_message: &str) -> String {
+    let mut entities_compact = String::new();
+    if session.spec.entities.is_empty() {
+        entities_compact.push_str("(none)");
+    } else {
+        for (i, e) in session.spec.entities.iter().enumerate() {
+            if i > 0 {
+                entities_compact.push_str("; ");
+            }
+            entities_compact.push_str(&e.name);
+            entities_compact.push('(');
+            for (j, f) in e.fields.iter().enumerate() {
+                if j > 0 {
+                    entities_compact.push_str(", ");
+                }
+                entities_compact.push_str(&f.name);
+                entities_compact.push(':');
+                entities_compact.push_str(&f.rust_type);
+            }
+            entities_compact.push(')');
+        }
+    }
+
+    let app_name = if session.spec.app_name.is_empty() {
+        "(unset)"
+    } else {
+        session.spec.app_name.as_str()
+    };
+
+    format!(
+        "You are a software architect. The user describes an application. Extract entities with their fields.\n\
+         \n\
+         CURRENT STATE:\n\
+         App name: {app}\n\
+         Entities: {ents}\n\
+         \n\
+         USER MESSAGE: {msg}\n\
+         \n\
+         Respond with ONLY a JSON object. No markdown. No explanation.\n\
+         Rules:\n\
+         - Entity names PascalCase. Field names snake_case.\n\
+         - Valid field types: String, i32, i64, f64, bool.\n\
+         - Do NOT list id/created_at/updated_at fields.\n\
+         - Use entities_add for NEW entities, entities_modify for changes.\n\
+         - Use empty arrays when nothing changes.\n\
+         \n\
+         Example format:\n\
+         {{\"app_name\":\"pet-shop\",\"description\":\"Pet shop app\",\"message\":\"Created Pet and Owner entities.\",\"updates\":{{\"entities_add\":[{{\"name\":\"Pet\",\"fields\":[{{\"name\":\"name\",\"field_type\":\"String\"}},{{\"name\":\"breed\",\"field_type\":\"String\"}}],\"foreign_keys\":[]}}],\"entities_modify\":[],\"entities_remove\":[],\"infra\":{{}}}}}}\n\
+         \n\
+         JSON:",
+        app = app_name,
+        ents = entities_compact,
+        msg = user_message,
+    )
+}
+
 // ─── Response Parser ────────────────────────────────────────────────────────
 
 /// Parsed response from the LLM architect call.
@@ -137,25 +198,112 @@ pub fn parse_llm_response(response: &str) -> ArchitectResponse {
     }
 }
 
-/// Extract JSON block fenced with ```json ... ``` from the response.
+/// Extract a JSON block from an LLM response.
+///
+/// I2/W1: local models produce inconsistent formatting. The parser tries
+/// multiple strategies in order and never panics:
+/// 1. Raw parse of the full trimmed response.
+/// 2. ```` ```json ... ``` ```` fenced block.
+/// 3. Generic ```` ``` ... ``` ```` fenced block.
+/// 4. Brace-matching scan that finds the first balanced `{...}` block,
+///    respecting string literals and escape sequences.
+/// 5. Greedy `first '{' .. last '}'` slice.
 fn extract_json_block(response: &str) -> Option<String> {
-    // Try ```json ... ```
-    if let Some(start) = response.find("```json") {
-        let after = &response[start + 7..];
+    let trimmed = response.trim();
+
+    // 1. Try the whole response as raw JSON.
+    if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
+        return Some(trimmed.to_string());
+    }
+
+    // 2. ```json ... ``` fence.
+    if let Some(start) = trimmed.find("```json") {
+        let after = &trimmed[start + 7..];
         if let Some(end) = after.find("```") {
-            return Some(after[..end].trim().to_string());
+            let inner = after[..end].trim();
+            if serde_json::from_str::<serde_json::Value>(inner).is_ok() {
+                return Some(inner.to_string());
+            }
         }
     }
-    // Try bare JSON object
-    if let Some(start) = response.find('{') {
-        if let Some(end) = response.rfind('}') {
+
+    // 3. Generic ``` ... ``` fence (some models drop the `json` tag).
+    if let Some(start) = trimmed.find("```") {
+        let after = &trimmed[start + 3..];
+        // Skip a possible language tag line.
+        let after = match after.find('\n') {
+            Some(nl) => &after[nl + 1..],
+            None => after,
+        };
+        if let Some(end) = after.find("```") {
+            let inner = after[..end].trim();
+            if serde_json::from_str::<serde_json::Value>(inner).is_ok() {
+                return Some(inner.to_string());
+            }
+        }
+    }
+
+    // 4. Balanced brace-matching scan (strings + escapes respected).
+    if let Some(block) = find_balanced_json_object(trimmed) {
+        if serde_json::from_str::<serde_json::Value>(&block).is_ok() {
+            return Some(block);
+        }
+    }
+
+    // 5. Greedy fallback: first '{' .. last '}'.
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
             if end > start {
-                let candidate = &response[start..=end];
+                let candidate = &trimmed[start..=end];
                 if serde_json::from_str::<serde_json::Value>(candidate).is_ok() {
                     return Some(candidate.to_string());
                 }
             }
         }
+    }
+    None
+}
+
+/// Scan `s` for the first balanced `{...}` block, honouring string literals
+/// and backslash escapes. Returns `None` if no balanced block exists.
+fn find_balanced_json_object(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            let mut depth: i32 = 0;
+            let mut in_string = false;
+            let mut escape = false;
+            let start = i;
+            let mut j = i;
+            while j < bytes.len() {
+                let c = bytes[j];
+                if in_string {
+                    if escape {
+                        escape = false;
+                    } else if c == b'\\' {
+                        escape = true;
+                    } else if c == b'"' {
+                        in_string = false;
+                    }
+                } else {
+                    match c {
+                        b'"' => in_string = true,
+                        b'{' => depth += 1,
+                        b'}' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                return Some(s[start..=j].to_string());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                j += 1;
+            }
+            // Unbalanced from this '{' — move on.
+        }
+        i += 1;
     }
     None
 }
@@ -620,5 +768,77 @@ mod tests {
 
         let no_json = "Just plain text without any JSON";
         assert_eq!(extract_json_block(no_json), None);
+    }
+
+    // I2/W1: JSON extraction robustness — local models produce inconsistent
+    // formatting. The parser must never crash.
+    #[test]
+    fn test_extract_json_raw() {
+        // Strategy 1: whole response is already JSON.
+        let raw = r#"{"message":"ok","updates":{"entities_add":[]}}"#;
+        let got = extract_json_block(raw).expect("raw JSON must parse");
+        let v: serde_json::Value = serde_json::from_str(&got).unwrap();
+        assert_eq!(v["message"], "ok");
+    }
+
+    #[test]
+    fn test_extract_json_generic_fence() {
+        // Strategy 3: generic ``` fence without the `json` tag.
+        let wrapped = "```\n{\"message\":\"ok\",\"updates\":{}}\n```";
+        let got = extract_json_block(wrapped).expect("generic fence must parse");
+        assert!(got.contains("\"message\":\"ok\""));
+    }
+
+    #[test]
+    fn test_extract_json_with_preamble_balanced() {
+        // Strategy 4: preamble text + balanced brace block with nested object
+        // and braces inside a string literal (should not confuse the scanner).
+        let resp = r#"Sure! Here is what I found:
+{
+  "message": "Created Trade",
+  "note": "curly in string: {not a brace}",
+  "updates": {
+    "entities_add": [{"name":"Trade","fields":[],"foreign_keys":[]}],
+    "entities_modify": [],
+    "entities_remove": [],
+    "infra": {}
+  }
+}
+Hope that helps!"#;
+        let got = extract_json_block(resp).expect("balanced scan must find block");
+        let v: serde_json::Value = serde_json::from_str(&got).unwrap();
+        assert_eq!(v["message"], "Created Trade");
+        assert_eq!(v["updates"]["entities_add"][0]["name"], "Trade");
+    }
+
+    #[test]
+    fn test_parse_llm_response_garbage_no_crash() {
+        // Strategy: nothing parses → treat as message.
+        let garbage = "I have no idea what you mean. { broken }";
+        let parsed = parse_llm_response(garbage);
+        // Parser must not crash and must surface the raw text.
+        assert_eq!(parsed.entities_add.len(), 0);
+        assert!(!parsed.message.is_empty());
+    }
+
+    #[test]
+    fn test_parse_llm_response_raw_object() {
+        // Strict Ollama output: just a JSON object, no markdown.
+        let resp = r#"{"app_name":"pet-shop","description":"","message":"ok","updates":{"entities_add":[{"name":"Pet","fields":[{"name":"name","field_type":"String"}],"foreign_keys":[]}],"entities_modify":[],"entities_remove":[],"infra":{}}}"#;
+        let parsed = parse_llm_response(resp);
+        assert_eq!(parsed.app_name, Some("pet-shop".to_string()));
+        assert_eq!(parsed.entities_add.len(), 1);
+        assert_eq!(parsed.entities_add[0].name, "Pet");
+    }
+
+    #[test]
+    fn test_build_architect_prompt_ollama_shape() {
+        let session = ArchitectSession::new("t-ol".into(), None, "qwen2.5-coder:32b".into());
+        let p = build_architect_prompt_ollama(&session, "Pet shop with animals and owners");
+        assert!(p.contains("JSON:"));
+        assert!(p.contains("Pet shop with animals and owners"));
+        assert!(p.contains("PascalCase"));
+        // No conversational history scaffolding from the full prompt.
+        assert!(!p.contains("CONVERSATION HISTORY"));
     }
 }
