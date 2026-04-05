@@ -246,6 +246,80 @@ pub fn cmd_norms_fitness() {
     }
 }
 
+/// I2/W2: Compute and display the ISLS Genome (gene clusters).
+///
+/// Reads `~/.isls/metrics.jsonl`, runs Jaccard + single-link clustering,
+/// persists the result to `~/.isls/genome.json`, and prints it. When fewer
+/// than 10 metrics entries exist, prints "Not enough data" and exits.
+pub fn cmd_norms_genome() {
+    use isls_norms::genome::{load_metrics_lite, compute_genome, DEFAULT_MIN_COACTIVATION, MIN_METRICS_ENTRIES};
+
+    let metrics = load_metrics_lite();
+    let genome = compute_genome(&metrics, DEFAULT_MIN_COACTIVATION);
+
+    if metrics.len() < MIN_METRICS_ENTRIES {
+        println!(
+            "ISLS Genome — Not enough data ({} / {} metrics entries required)",
+            metrics.len(),
+            MIN_METRICS_ENTRIES
+        );
+        println!("Generate more applications with `isls forge-chat` or the Studio to accumulate entries.");
+        return;
+    }
+
+    // Persist before printing so the CLI is observable end-to-end.
+    if let Err(e) = genome.save() {
+        eprintln!("[WARN] Could not save genome.json: {}", e);
+    }
+
+    println!(
+        "ISLS Genome (Generation {}, {} metrics entries)",
+        genome.generation, genome.total_metrics
+    );
+    println!("---");
+
+    if genome.genes.is_empty() {
+        println!("No gene clusters detected yet — norms are not co-activating consistently.");
+    } else {
+        for gene in &genome.genes {
+            println!(
+                "{}  \"{}\"  coact={:.2}  fitness={:.2}",
+                gene.id, gene.name, gene.coactivation, gene.fitness
+            );
+            for norm in &gene.norms {
+                println!("  {}", norm);
+            }
+            if !gene.domains.is_empty() {
+                let shown: Vec<&String> = gene.domains.iter().take(5).collect();
+                let more = gene.domains.len().saturating_sub(shown.len());
+                let suffix = if more > 0 {
+                    format!(", ... ({})", gene.domains.len())
+                } else {
+                    String::new()
+                };
+                println!(
+                    "  Domains: {}{}",
+                    shown
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    suffix
+                );
+            }
+            println!("  Activations: {}", gene.activation_count);
+            println!();
+        }
+    }
+
+    if !genome.singletons.is_empty() {
+        println!("Singletons (not yet clustered):");
+        for s in &genome.singletons {
+            println!("  {}", s);
+        }
+    }
+}
+
 /// Delete ~/.isls/norms.json (reset auto-discovered norms).
 pub fn cmd_norms_reset() {
     let persistence_path = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).ok().map(std::path::PathBuf::from)

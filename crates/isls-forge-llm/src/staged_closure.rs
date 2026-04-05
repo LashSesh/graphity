@@ -340,17 +340,47 @@ impl StagedClosure {
             }
         }
 
-        // I1: Fitness-Rückkopplung — update norm fitness based on outcome
+        // I1/I2: Fitness-Rückkopplung — update norm fitness based on outcome.
+        //
+        // I2/W4: reward is the average Codematrix resonance across all
+        // Mikro-Gate results when the run compiled, 0.0 on compile failure.
+        // This makes fitness reflect code *quality*, not just binary
+        // compile success. Two runs that both compile but produce code of
+        // different resonance now receive different rewards.
         {
-            let success = self.stats.compile_failures == 0 || self.stats.compile_checks > self.stats.compile_failures;
+            let success = self.stats.compile_failures == 0
+                || self.stats.compile_checks > self.stats.compile_failures;
+
+            // Average Mikro-Gate resonance across all files in this run.
+            // Stored on stats regardless of success so the metrics pipeline
+            // can persist it for later analysis.
+            let codematrix_avg: f64 = if mikro_results.is_empty() {
+                0.0
+            } else {
+                let sum: f64 = mikro_results
+                    .iter()
+                    .map(|(_, r)| r.codematrix.resonance())
+                    .sum();
+                sum / mikro_results.len() as f64
+            };
+            self.stats.i2_codematrix_avg = codematrix_avg;
+
+            let reward: f64 = if success { codematrix_avg } else { 0.0 };
+
             let norm_ids: Vec<String> = self.plan.norm_ids.clone();
             if !norm_ids.is_empty() {
                 let mut fitness_store = isls_norms::fitness::FitnessStore::load();
-                fitness_store.update_fitness(&norm_ids, success);
+                fitness_store.update_fitness(&norm_ids, Some(reward));
                 if let Err(e) = fitness_store.save() {
                     tracing::warn!("Could not save fitness.json: {}", e);
                 }
-                eprintln!("[HDAG I1] Fitness updated for {} norms (success={})", norm_ids.len(), success);
+                eprintln!(
+                    "[HDAG I2] Fitness updated for {} norms (success={}, codematrix_avg={:.3}, reward={:.3})",
+                    norm_ids.len(),
+                    success,
+                    codematrix_avg,
+                    reward
+                );
             }
         }
 

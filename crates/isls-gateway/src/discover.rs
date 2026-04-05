@@ -11,7 +11,7 @@ use std::time::Duration;
 use axum::extract::{Path as AxumPath, Query, State};
 use axum::response::Json;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 
 use isls_code_topo::{self, bridge, CodeTopology};
 use isls_norms::NormRegistry;
@@ -424,6 +424,21 @@ pub async fn discover_mass_scrape(
     }))
 }
 
+/// Max number of concurrent repo scrape workers.
+///
+/// I2/W3: GitHub search is rate-limited so it stays sequential. The actual
+/// clone+parse pipeline is CPU/IO-bound and parallelizes well. 4 workers is
+/// the spec default — `Semaphore::new(4)`.
+const MASS_SCRAPE_PARALLELISM: usize = 4;
+
+/// A repository queued for scraping after phase-1 keyword search.
+struct QueuedRepo {
+    keyword: String,
+    clone_url: String,
+    full_name: String,
+    domain: String,
+}
+
 async fn run_mass_scrape(
     jobs: MassScrapeStore,
     event_hub: crate::ws::EventHub,
@@ -433,8 +448,14 @@ async fn run_mass_scrape(
 ) {
     let total = keywords.len();
 
+    // ─── Phase 1: sequential GitHub search, rate-limited ────────────────
+    //
+    // Emits DiscoverKeyword events in keyword order and collects all repos
+    // into a single queue. The 2-second sleep honours GitHub's search rate
+    // limit. No cloning happens in this phase.
+    let mut queue: Vec<QueuedRepo> = Vec::new();
+
     for (ki, keyword) in keywords.iter().enumerate() {
-        // Publish keyword event
         event_hub.publish(WsEvent::new(
             EventType::DiscoverKeyword,
             serde_json::json!({
@@ -446,11 +467,8 @@ async fn run_mass_scrape(
             }),
         ));
 
-        // GitHub search
         let repos = match github_search_repos(keyword, per_keyword).await {
-            Ok(data) => {
-                data["repos"].as_array().cloned().unwrap_or_default()
-            }
+            Ok(data) => data["repos"].as_array().cloned().unwrap_or_default(),
             Err(e) => {
                 let mut j = jobs.write().await;
                 if let Some(job) = j.get_mut(&job_id) {
@@ -461,16 +479,59 @@ async fn run_mass_scrape(
         };
 
         for repo in &repos {
-            let clone_url = repo["clone_url"].as_str().unwrap_or("");
-            let full_name = repo["full_name"].as_str().unwrap_or("unknown");
-
+            let clone_url = repo["clone_url"].as_str().unwrap_or("").to_string();
+            let full_name = repo["full_name"].as_str().unwrap_or("unknown").to_string();
             if clone_url.is_empty() {
                 continue;
             }
+            let domain = bridge::domain_from_url(&clone_url);
+            queue.push(QueuedRepo {
+                keyword: keyword.clone(),
+                clone_url,
+                full_name,
+                domain,
+            });
+        }
 
-            let domain = bridge::domain_from_url(clone_url);
-            let clone_url_owned = clone_url.to_string();
-            let domain_owned = domain.clone();
+        // Advance keyword-progress counter as soon as each keyword's
+        // search completes (scraping for this keyword continues in phase 2).
+        {
+            let mut j = jobs.write().await;
+            if let Some(job) = j.get_mut(&job_id) {
+                job.keywords_done = ki + 1;
+            }
+        }
+
+        if ki + 1 < total {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    }
+
+    // ─── Phase 2: parallel scrape with bounded worker pool ──────────────
+    //
+    // Spawn one tokio task per queued repo. A shared semaphore with
+    // MASS_SCRAPE_PARALLELISM permits bounds concurrency. Each task calls
+    // the existing `clone_and_analyze_sync` helper inside
+    // `spawn_blocking`, publishes a `DiscoverRepo` event on success, and
+    // updates the shared job record.
+    let semaphore = Arc::new(Semaphore::new(MASS_SCRAPE_PARALLELISM));
+    let mut handles = Vec::with_capacity(queue.len());
+
+    for repo in queue {
+        let permit_sem = semaphore.clone();
+        let jobs_cl = jobs.clone();
+        let event_hub_cl = event_hub.clone();
+        let job_id_cl = job_id.clone();
+
+        handles.push(tokio::spawn(async move {
+            // Acquire before touching disk/network.
+            let _permit = match permit_sem.acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => return,
+            };
+
+            let clone_url_owned = repo.clone_url.clone();
+            let domain_owned = repo.domain.clone();
 
             let result = tokio::task::spawn_blocking(move || {
                 clone_and_analyze_sync(&clone_url_owned, &domain_owned, true)
@@ -483,47 +544,37 @@ async fn run_mass_scrape(
                     let new_cands = data["norms"]["new_candidates"].as_u64().unwrap_or(0);
                     let new_norms = data["norms"]["new_norms"].as_u64().unwrap_or(0);
 
-                    event_hub.publish(WsEvent::new(
+                    event_hub_cl.publish(WsEvent::new(
                         EventType::DiscoverRepo,
                         serde_json::json!({
                             "type": "discover:repo",
-                            "job_id": &job_id,
-                            "repo": full_name,
+                            "job_id": &job_id_cl,
+                            "repo": repo.full_name,
                             "artifacts": artifact_count,
-                            "keyword": keyword,
+                            "keyword": repo.keyword,
                         }),
                     ));
 
-                    let mut j = jobs.write().await;
-                    if let Some(job) = j.get_mut(&job_id) {
+                    let mut j = jobs_cl.write().await;
+                    if let Some(job) = j.get_mut(&job_id_cl) {
                         job.repos_scraped += 1;
                         job.new_candidates += new_cands as usize;
                         job.new_norms += new_norms as usize;
                     }
                 }
                 _ => {
-                    let mut j = jobs.write().await;
-                    if let Some(job) = j.get_mut(&job_id) {
+                    let mut j = jobs_cl.write().await;
+                    if let Some(job) = j.get_mut(&job_id_cl) {
                         job.repos_failed += 1;
-                        job.errors.push(format!("Scrape failed: {}", full_name));
+                        job.errors.push(format!("Scrape failed: {}", repo.full_name));
                     }
                 }
             }
-        }
-
-        // Update keyword progress
-        {
-            let mut j = jobs.write().await;
-            if let Some(job) = j.get_mut(&job_id) {
-                job.keywords_done = ki + 1;
-            }
-        }
-
-        // Rate limit: 2s between GitHub API calls
-        if ki + 1 < total {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-        }
+        }));
     }
+
+    // Wait for every scrape task to finish before publishing completion.
+    futures::future::join_all(handles).await;
 
     // Complete
     let final_job = {
