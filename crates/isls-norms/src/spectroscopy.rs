@@ -786,3 +786,235 @@ mod tests {
         assert!(result.gaps.is_empty());
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// I4/bonus: Auto-keyword extraction from scraped repos
+// ═══════════════════════════════════════════════════════════════════
+
+/// Words that produce low-quality keywords.  Keywords whose content words
+/// (everything after the language prefix) consist entirely of these terms
+/// are discarded.
+const KEYWORD_BLACKLIST: &[&str] = &[
+    "utils", "util", "lib", "core", "common", "helper",
+    "helpers", "misc", "main", "app", "config", "mod",
+    "test", "tests", "bench", "example", "examples",
+    "internal", "private", "public", "types", "error",
+    "errors", "base", "shared", "new", "old", "tmp",
+    "temp", "default", "impl", "init", "setup",
+];
+
+/// Rust / stdlib import prefixes — not external crates.
+const RUST_STDLIB_PREFIXES: &[&str] = &[
+    "std::", "core::", "alloc::", "crate::", "super::", "self::",
+];
+
+/// Split a PascalCase (or camelCase) identifier into lower-case words.
+///
+/// `"ConnectionPool"` → `["connection", "pool"]`
+/// `"HTTPClient"`     → `["h", "t", "t", "p", "client"]` (best-effort)
+pub fn split_pascal_case(name: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    for ch in name.chars() {
+        if ch.is_uppercase() && !current.is_empty() {
+            words.push(current.to_lowercase());
+            current.clear();
+        }
+        current.push(ch);
+    }
+    if !current.is_empty() {
+        words.push(current.to_lowercase());
+    }
+    words
+}
+
+/// Returns `true` when the keyword is useful (not just a language prefix +
+/// blacklisted filler word).
+pub fn is_useful_keyword(keyword: &str) -> bool {
+    let parts: Vec<&str> = keyword.split_whitespace().collect();
+    // Must have at least "lang word" (2 parts).
+    if parts.len() < 2 {
+        return false;
+    }
+    // Every content word (after the language prefix) must not be blacklisted.
+    let content = &parts[1..];
+    !content.iter().all(|w| KEYWORD_BLACKLIST.contains(w))
+}
+
+/// Extract up to `max_keywords` search keywords from a scraped code corpus.
+///
+/// # Arguments
+/// * `struct_names`  — type / class names found in the repo (from topology).
+/// * `import_paths`  — raw import strings from all files:
+///   - Python / TypeScript / Go: external imports are prefixed with `"ext:"`.
+///   - Rust: external crates look like `"tokio"` or `"tokio::sync::..."`.
+/// * `language`     — primary language of the repo (`"rust"`, `"python"`, etc.).
+/// * `max_keywords` — cap on the number of returned keywords (spec default: 5).
+///
+/// Keywords have the form `"<lang> <concept>"`, e.g. `"rust connection pool"`.
+pub fn extract_keywords_from_analysis(
+    struct_names: &[String],
+    import_paths: &[String],
+    language: &str,
+    max_keywords: usize,
+) -> Vec<String> {
+    use std::collections::BTreeSet;
+
+    if language.is_empty() || language == "unknown" {
+        return vec![];
+    }
+
+    let mut candidates: BTreeSet<String> = BTreeSet::new();
+
+    // ── Type names → keywords ─────────────────────────────────────────
+    for name in struct_names {
+        let words = split_pascal_case(name);
+        if words.len() >= 2 {
+            let keyword = format!("{} {}", language, words.join(" "));
+            if is_useful_keyword(&keyword) {
+                candidates.insert(keyword);
+            }
+        }
+    }
+
+    // ── External imports → keywords ───────────────────────────────────
+    for path in import_paths {
+        // Python / TypeScript / Go: "ext:requests", "ext:github.com/pkg/errors"
+        let crate_name = if let Some(ext) = path.strip_prefix("ext:") {
+            // Go convention: "github.com/pkg/errors" → take last path component ("errors").
+            // npm convention: "express/Request" → take first component ("express").
+            let first_segment = ext.split('/').next().unwrap_or(ext);
+            if first_segment.contains('.') {
+                // Go-style host path → last component is the package
+                ext.split('/').last().unwrap_or(ext).to_string()
+            } else {
+                // npm / Python style → package name is the first segment
+                first_segment.to_string()
+            }
+        } else {
+            // Rust: skip stdlib
+            if RUST_STDLIB_PREFIXES.iter().any(|p| path.starts_with(p)) {
+                continue;
+            }
+            // Rust external crate: "tokio::sync::mpsc" → "tokio"
+            // "sqlx" → "sqlx"
+            path.split("::").next().unwrap_or(path.as_str()).to_string()
+        };
+
+        let name = crate_name.trim();
+        // Quality gates: length 3–30, at least one letter.
+        if name.len() < 3 || name.len() > 30 || !name.chars().any(|c| c.is_alphabetic()) {
+            continue;
+        }
+        let keyword = format!("{} {}", language, name.to_lowercase());
+        if is_useful_keyword(&keyword) {
+            candidates.insert(keyword);
+        }
+    }
+
+    // ── Return top `max_keywords` in insertion (BTree) order ─────────
+    candidates.into_iter().take(max_keywords).collect()
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod auto_keywords_tests {
+    use super::*;
+
+    #[test]
+    fn pascal_split_connection_pool() {
+        let words = split_pascal_case("ConnectionPool");
+        assert_eq!(words, vec!["connection", "pool"]);
+    }
+
+    #[test]
+    fn pascal_split_event_handler() {
+        let words = split_pascal_case("EventHandler");
+        assert_eq!(words, vec!["event", "handler"]);
+    }
+
+    #[test]
+    fn keyword_from_struct_name() {
+        let kws = extract_keywords_from_analysis(
+            &["ConnectionPool".to_string(), "EventBus".to_string()],
+            &[],
+            "rust",
+            5,
+        );
+        assert!(kws.iter().any(|k| k == "rust connection pool"),
+            "Expected 'rust connection pool', got {:?}", kws);
+        assert!(kws.iter().any(|k| k == "rust event bus"),
+            "Expected 'rust event bus', got {:?}", kws);
+    }
+
+    #[test]
+    fn keyword_from_external_import() {
+        let kws = extract_keywords_from_analysis(
+            &[],
+            &["ext:sqlx".to_string(), "ext:tokio".to_string()],
+            "rust",
+            5,
+        );
+        assert!(kws.iter().any(|k| k == "rust sqlx"),
+            "Expected 'rust sqlx', got {:?}", kws);
+        assert!(kws.iter().any(|k| k == "rust tokio"),
+            "Expected 'rust tokio', got {:?}", kws);
+    }
+
+    #[test]
+    fn blacklist_filters_utils() {
+        let kws = extract_keywords_from_analysis(
+            &["Utils".to_string(), "Helpers".to_string()],
+            &[],
+            "python",
+            5,
+        );
+        // "python utils" and "python helpers" should be filtered out
+        assert!(!kws.iter().any(|k| k.contains("utils")), "utils should be filtered: {:?}", kws);
+    }
+
+    #[test]
+    fn max_keywords_respected() {
+        let structs: Vec<String> = (0..20)
+            .map(|i| format!("ServiceLayer{}", i))
+            .collect();
+        let kws = extract_keywords_from_analysis(&structs, &[], "go", 5);
+        assert!(kws.len() <= 5, "Should not exceed max_keywords=5, got {}", kws.len());
+    }
+
+    #[test]
+    fn stdlib_rust_skipped() {
+        let kws = extract_keywords_from_analysis(
+            &[],
+            &["std::io".to_string(), "crate::models".to_string(), "core::fmt".to_string()],
+            "rust",
+            5,
+        );
+        assert!(kws.is_empty(), "Stdlib/crate imports should produce no keywords: {:?}", kws);
+    }
+
+    #[test]
+    fn go_external_import_pkg() {
+        let kws = extract_keywords_from_analysis(
+            &[],
+            &["ext:github.com/jackc/pgx".to_string()],
+            "go",
+            5,
+        );
+        assert!(kws.iter().any(|k| k == "go pgx"),
+            "Expected 'go pgx', got {:?}", kws);
+    }
+
+    #[test]
+    fn typescript_external_import() {
+        let kws = extract_keywords_from_analysis(
+            &[],
+            &["ext:express/Request".to_string()],
+            "typescript",
+            5,
+        );
+        assert!(kws.iter().any(|k| k.contains("express")),
+            "Expected express keyword, got {:?}", kws);
+    }
+}

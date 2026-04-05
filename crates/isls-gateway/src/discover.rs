@@ -295,6 +295,24 @@ fn analyze_directory_sync(
         *layer_counts.entry(format!("{:?}", a.layer)).or_insert(0) += 1;
     }
 
+    // ── I4/bonus: extract auto-keywords from this repo ────────────────
+    let auto_keywords: Vec<String> = {
+        // Aggregate all import paths across files for keyword extraction.
+        let mut all_imports: Vec<String> = Vec::new();
+        for obs in &analysis.files {
+            all_imports.extend(obs.imports.iter().cloned());
+        }
+        all_imports.sort();
+        all_imports.dedup();
+
+        isls_norms::spectroscopy::extract_keywords_from_analysis(
+            &topology.struct_names,
+            &all_imports,
+            &topology.primary_language,
+            5, // max 5 keywords per repo (spec)
+        )
+    };
+
     let mut norm_result = serde_json::json!(null);
 
     if feed_norms && !artifacts.is_empty() {
@@ -344,8 +362,10 @@ fn analyze_directory_sync(
             "struct_names": topology.struct_names.iter().take(30).collect::<Vec<_>>(),
             "function_signatures": topology.function_signatures.iter().take(30).collect::<Vec<_>>(),
             "language_breakdown": topology.language_breakdown,
+            "primary_language": &topology.primary_language,
         },
         "norms": norm_result,
+        "auto_keywords": auto_keywords,
     });
 
     Ok((result, feed_norms))
@@ -354,6 +374,51 @@ fn analyze_directory_sync(
 // ═══════════════════════════════════════════════════════════════════
 // Handlers
 // ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// Keyword file helpers
+// ═══════════════════════════════════════════════════════════════════
+
+/// Append `new_keywords` to the keyword file at `path`, skipping any that
+/// are already present (case-insensitive).  Returns the number of keywords
+/// actually written.
+async fn append_new_keywords(path: &Path, new_keywords: &[String]) -> usize {
+    if new_keywords.is_empty() {
+        return 0;
+    }
+    let existing_raw = tokio::fs::read_to_string(path).await.unwrap_or_default();
+    let existing: std::collections::BTreeSet<String> = existing_raw
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .map(|l| l.trim().to_lowercase())
+        .collect();
+
+    use tokio::io::AsyncWriteExt;
+    let mut file = match tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .await
+    {
+        Ok(f) => f,
+        Err(e) => {
+            tracing::warn!("Could not open keywords file {:?}: {}", path, e);
+            return 0;
+        }
+    };
+
+    let mut added = 0usize;
+    for kw in new_keywords {
+        if !existing.contains(&kw.to_lowercase()) {
+            if let Err(e) = file.write_all(format!("{}\n", kw).as_bytes()).await {
+                tracing::warn!("Failed to write keyword '{}': {}", kw, e);
+            } else {
+                added += 1;
+            }
+        }
+    }
+    added
+}
 
 /// POST /api/discover/search — GitHub keyword search
 pub async fn discover_search(
@@ -399,8 +464,19 @@ pub async fn discover_scrape(
     });
 
     if let Some(ref url) = req.url {
+        let kw_path = state.scrape_keywords_path.clone();
         match clone_and_analyze(url, &domain, Some(state.norm_registry.clone())).await {
-            Ok(data) => Json(serde_json::json!({ "ok": true, "data": data })),
+            Ok(data) => {
+                let auto_kws: Vec<String> = data["auto_keywords"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let added = append_new_keywords(&kw_path, &auto_kws).await;
+                if added > 0 {
+                    tracing::info!("Auto-added {} keywords from {}", added, url);
+                }
+                Json(serde_json::json!({ "ok": true, "data": data }))
+            }
             Err(e) => Json(serde_json::json!({ "ok": false, "error": e })),
         }
     } else if let Some(ref path_str) = req.path {
@@ -409,13 +485,24 @@ pub async fn discover_scrape(
             return Json(serde_json::json!({ "ok": false, "error": "path is not a directory" }));
         }
         let domain_c = domain.clone();
+        let kw_path = state.scrape_keywords_path.clone();
         let result = tokio::task::spawn_blocking(move || {
             analyze_directory_sync(&p, &domain_c, None, true)
         })
         .await;
 
         match result {
-            Ok(Ok((data, _))) => Json(serde_json::json!({ "ok": true, "data": data })),
+            Ok(Ok((data, _))) => {
+                let auto_kws: Vec<String> = data["auto_keywords"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default();
+                let added = append_new_keywords(&kw_path, &auto_kws).await;
+                if added > 0 {
+                    tracing::info!("Auto-added {} keywords from local path", added);
+                }
+                Json(serde_json::json!({ "ok": true, "data": data }))
+            }
             Ok(Err(e)) => Json(serde_json::json!({ "ok": false, "error": e })),
             Err(e) => Json(serde_json::json!({ "ok": false, "error": format!("Task panicked: {}", e) })),
         }
@@ -454,10 +541,11 @@ pub async fn discover_mass_scrape(
     let jobs = state.mass_scrape_jobs.clone();
     let event_hub = state.event_hub.clone();
     let history = state.scrape_history.clone();
+    let kw_path = state.scrape_keywords_path.clone();
     let job_id_ret = job_id.clone();
 
     tokio::spawn(async move {
-        run_mass_scrape(jobs, event_hub, history, job_id, keywords, per_kw).await;
+        run_mass_scrape(jobs, event_hub, history, kw_path, job_id, keywords, per_kw).await;
     });
 
     Json(serde_json::json!({
@@ -487,6 +575,7 @@ async fn run_mass_scrape(
     jobs: MassScrapeStore,
     event_hub: crate::ws::EventHub,
     history: ScrapeHistoryStore,
+    keywords_path: PathBuf,
     job_id: String,
     keywords: Vec<String>,
     per_keyword: usize,
@@ -589,6 +678,8 @@ async fn run_mass_scrape(
         let job_id_cl = job_id.clone();
         let per_kw_cl = per_keyword.clone();
 
+        let kw_path_cl = keywords_path.clone();
+
         handles.push(tokio::spawn(async move {
             // Acquire before touching disk/network.
             let _permit = match permit_sem.acquire_owned().await {
@@ -610,6 +701,19 @@ async fn run_mass_scrape(
                     let new_cands = data["norms"]["new_candidates"].as_u64().unwrap_or(0);
                     let new_norms = data["norms"]["new_norms"].as_u64().unwrap_or(0);
 
+                    // Extract and persist auto-keywords from this repo.
+                    let auto_kws: Vec<String> = data["auto_keywords"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default();
+                    let added_kws = append_new_keywords(&kw_path_cl, &auto_kws).await;
+                    if added_kws > 0 {
+                        tracing::info!(
+                            "Auto-added {} keywords from {}",
+                            added_kws, repo.full_name
+                        );
+                    }
+
                     event_hub_cl.publish(WsEvent::new(
                         EventType::DiscoverRepo,
                         serde_json::json!({
@@ -620,6 +724,7 @@ async fn run_mass_scrape(
                             "keyword": repo.keyword,
                             "new_candidates": new_cands,
                             "new_norms": new_norms,
+                            "auto_keywords": auto_kws,
                         }),
                     ));
 
