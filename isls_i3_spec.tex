@@ -1,0 +1,959 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-red}{HTML}{c0392b}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+
+\lstdefinestyle{rust}{
+  language=C,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{isls-blue}\bfseries,
+  commentstyle=\color{isls-gray}\itshape,
+  stringstyle=\color{isls-green},
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,
+    crate,super,where,trait,for,in,if,else,match,return,async,await,
+    Ok,Err,Some,None,Vec,String,HashMap,BTreeMap,BTreeSet,
+    Result,Option,PathBuf,
+    f64,f32,usize,bool,u32,u64,i64,Box,dyn,Arc},
+}
+\lstdefinestyle{bash}{
+  language=bash,
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+\lstdefinestyle{json}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{code-bg},
+  frame=single,
+  rulecolor=\color{isls-gray!30},
+  breaklines=true,
+  showstringspaces=false,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS I3 Spec --- Metamorphose-Kern}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v1.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\section}
+  {\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}
+  {\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalsize\bfseries\color{isls-blue!60}}{\thesubsubsection}{1em}{}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=isls-blue,
+  urlcolor=isls-orange,
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{2.5cm}
+
+{\Huge\bfseries\color{isls-blue} ISLS I3 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} Metamorphose-Kern}\\[0.3cm]
+{\large\color{isls-gray} Constraint Spectroscopy, Norm-Injektion,\\
+Solve-Coagula-Orchestrierung}\\[2cm]
+
+{\large
+\begin{tabular}{rl}
+\textbf{System:}       & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:}      & v6.2 (I3) \\
+\textbf{Author:}       & Sebastian Klemm \\
+\textbf{Date:}         & \today \\
+\textbf{Status:}       & Specification \\
+\textbf{Depends:}      & I2 (complete) \\
+\textbf{Branch:}       & \texttt{claude/implement-isls-i3-spec} \\
+\textbf{Basis:}        & ISLS Metamorphose-Architektur (Formalisierung) \\
+\end{tabular}
+}
+
+\vfill
+
+{\small\color{isls-gray}
+Mithras Substructure University\\
+Repository: \texttt{https://github.com/LashSesh/graphity}\\
+License: MIT
+}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Executive Summary}
+% ══════════════════════════════════════════════════════════════════════════════
+
+After I2, ISLS generates, observes, and learns. But the 
+learning is passive: the \"Olbohrinsel scrapes random keywords 
+and hopes for useful norms. The system has no concept of 
+\emph{what it needs}. It cannot analyze a target system and 
+say ``I need norms for EventBus, IndicatorPipeline, and 
+RiskManagement --- let me go find them.''
+
+I3 installs three capabilities:
+
+\begin{enumerate}[nosep]
+\item \textbf{Constraint Spectroscopy:} Analyze a target system 
+      (or a description), identify exactly which norm-classes 
+      are missing, generate targeted scrape-keywords, and 
+      fill the gaps chirurgically.
+\item \textbf{Norm-Injektion:} Manually define norms as JSON 
+      blueprints. The fitness system validates them 
+      automatically --- bad norms die, good norms thrive.
+\item \textbf{\texttt{isls evolve}:} A single CLI command that 
+      orchestrates the full Solve-Coagula cycle: scrape an 
+      existing system $\to$ identify gaps $\to$ optionally 
+      fill gaps $\to$ re-forge with expanded norms. One 
+      command to metamorphose.
+\end{enumerate}
+
+These three capabilities transform ISLS from a passive 
+generator into an active, self-directed synthesis engine.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W1: Constraint Spectroscopy}
+\label{sec:w1}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem}
+
+The ``was fehlt mir?'' endpoint (S1c) checks against a 
+hardcoded list of 20 common patterns. This is static and 
+superficial. Constraint Spectroscopy replaces it with a 
+dynamic, target-aware analysis.
+
+\subsection{The Spectroscopy Pipeline}
+
+\begin{lstlisting}[style=rust]
+/// Analyze a target system and identify missing norm coverage.
+pub struct SpectroscopyResult {
+    /// Resonite classes found in the target.
+    pub target_spectrum: Vec<ResoniteClass>,
+    /// Resonite classes covered by existing norms.
+    pub covered: Vec<ResoniteClass>,
+    /// Gap: in target but not in norms.
+    pub gaps: Vec<NormGap>,
+    /// Suggested scrape keywords per gap.
+    pub suggestions: Vec<ScrapeSuggestion>,
+    /// Coverage ratio: |covered| / |target_spectrum|.
+    pub coverage: f64,
+}
+
+pub struct NormGap {
+    pub class: ResoniteClass,
+    pub resonite_count: usize,  // how many resonites in target
+    pub layers_affected: Vec<String>,
+    pub priority: f64,  // count * layer_depth
+}
+
+pub struct ScrapeSuggestion {
+    pub gap: String,
+    pub keywords: Vec<String>,
+    pub estimated_repos: usize,
+}
+\end{lstlisting}
+
+\subsection{Resonite Classification}
+
+\begin{lstlisting}[style=rust]
+/// High-level classification of resonites into 
+/// architectural pattern categories.
+#[derive(Debug, Clone, Serialize, Deserialize, 
+         Hash, Eq, PartialEq)]
+pub enum ResoniteClass {
+    CrudEntity,
+    Authentication,
+    Authorization,
+    EventBus,
+    MessageQueue,
+    ConnectionPool,
+    Caching,
+    RateLimiting,
+    CircuitBreaker,
+    RetryPattern,
+    Pagination,
+    Search,
+    FileUpload,
+    ExportImport,
+    Scheduling,
+    Notification,
+    Logging,
+    Metrics,
+    HealthCheck,
+    Configuration,
+    Migration,
+    Testing,
+    Docker,
+    StateMachine,
+    Workflow,
+    IndicatorPipeline,
+    SignalProcessing,
+    RiskManagement,
+    OrderExecution,
+    DataVisualization,
+    RealtimeWebSocket,
+    GraphQLApi,
+    GrpcService,
+    CliInterface,
+    PluginSystem,
+    Custom(String),
+}
+
+/// Classify a resonite into a high-level class.
+pub fn classify_resonite(r: &Resonite) -> Option<ResoniteClass> {
+    match r {
+        Resonite::Fn { name, .. } => {
+            if name.starts_with("get_") || name.starts_with("list_") 
+               || name.starts_with("create_") || name.starts_with("update_")
+               || name.starts_with("delete_") {
+                Some(ResoniteClass::CrudEntity)
+            } else if name.contains("auth") || name.contains("login") 
+                      || name.contains("token") {
+                Some(ResoniteClass::Authentication)
+            } else if name.contains("emit") || name.contains("subscribe") 
+                      || name.contains("dispatch") {
+                Some(ResoniteClass::EventBus)
+            } else if name.contains("cache") || name.contains("invalidate") {
+                Some(ResoniteClass::Caching)
+            } else if name.contains("connect") || name.contains("pool") {
+                Some(ResoniteClass::ConnectionPool)
+            }
+            // ... weitere Klassifikationen
+            else { None }
+        },
+        Resonite::Type { name, .. } => {
+            if name.contains("Event") || name.contains("Handler") {
+                Some(ResoniteClass::EventBus)
+            } else if name.contains("Cache") {
+                Some(ResoniteClass::Caching)
+            }
+            // ... weitere
+            else { None }
+        },
+        _ => None,
+    }
+}
+\end{lstlisting}
+
+\subsection{Keyword Generation}
+
+\begin{lstlisting}[style=rust]
+/// Generate scrape keywords for a gap.
+pub fn suggest_keywords(gap: &NormGap) -> Vec<String> {
+    let base = match &gap.class {
+        ResoniteClass::EventBus => vec![
+            "rust event bus async",
+            "rust event driven architecture",
+            "rust publish subscribe pattern",
+        ],
+        ResoniteClass::Caching => vec![
+            "rust cache lru",
+            "rust caching redis",
+            "rust memoization",
+        ],
+        ResoniteClass::ConnectionPool => vec![
+            "rust connection pool database",
+            "rust deadpool bb8 r2d2",
+        ],
+        ResoniteClass::RateLimiting => vec![
+            "rust rate limit tower",
+            "rust rate limiter",
+        ],
+        ResoniteClass::IndicatorPipeline => vec![
+            "rust technical indicators trading",
+            "rust financial analysis ta",
+        ],
+        ResoniteClass::RiskManagement => vec![
+            "rust risk management kelly criterion",
+            "rust portfolio risk var",
+        ],
+        // ... 30+ Klassen mit je 2-3 Keywords
+        _ => vec![],
+    };
+    base.into_iter().map(String::from).collect()
+}
+\end{lstlisting}
+
+\subsection{CLI: \texttt{isls spectroscopy}}
+
+\begin{lstlisting}[style=bash]
+# Analyze a local project:
+isls spectroscopy --path ./my-trading-system
+
+ISLS Constraint Spectroscopy
+---
+Target: ./my-trading-system
+Resonites: 234 (42 Fn, 89 Type, 67 Import, 12 Layer, 24 Relation)
+Spectrum: 8 classes identified
+
+Coverage: 3/8 (37.5%)
+  [OK] CrudEntity       (covered by ISLS-NORM-0042)
+  [OK] Authentication   (covered by ISLS-NORM-0088)
+  [OK] Pagination       (covered by ISLS-NORM-0096)
+  [GAP] EventBus        (14 resonites, 3 layers)
+  [GAP] IndicatorPipeline (8 resonites, 2 layers)
+  [GAP] RiskManagement  (6 resonites, 2 layers)
+  [GAP] ConnectionPool  (4 resonites, 1 layer)
+  [GAP] StateMachine    (3 resonites, 1 layer)
+
+Suggested scrape campaigns:
+  1. "rust event bus async" (priority: 42)
+  2. "rust technical indicators" (priority: 16)
+  3. "rust risk management kelly" (priority: 12)
+  4. "rust connection pool deadpool" (priority: 4)
+  5. "rust state machine" (priority: 3)
+
+Run: isls spectroscopy --path ./my-trading-system --scrape
+to automatically fill gaps.
+
+# Analyze + auto-scrape:
+isls spectroscopy --path ./my-trading-system --scrape
+
+Filling 5 gaps...
+  [1/5] EventBus: scraping 3 keywords, 15 repos...
+        -> 3 new candidates, 1 promoted
+  [2/5] IndicatorPipeline: scraping 2 keywords, 10 repos...
+        -> 2 new candidates
+  ...
+Coverage after: 7/8 (87.5%)
+  [GAP] StateMachine (still missing, only 2 repos found)
+\end{lstlisting}
+
+\subsection{API Endpoint}
+
+\begin{lstlisting}[style=bash]
+POST /api/discover/spectroscopy
+Body: { "path": "/path/to/project" }
+  or: { "url": "https://github.com/user/repo" }
+  or: { "description": "Trading system with events and risk" }
+Response: SpectroscopyResult as JSON
+
+POST /api/discover/spectroscopy/fill
+Body: { "gaps": ["EventBus", "Caching"], "repos_per_keyword": 5 }
+Response: { "job_id": "...", "gaps": 2, "keywords": 5 }
+(Progress via WebSocket, like mass-scrape)
+\end{lstlisting}
+
+\subsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-norms/src/spectroscopy.rs}
+  & \texttt{ResoniteClass} enum, \texttt{classify\_resonite()}, 
+    \texttt{spectroscopy()}, \texttt{suggest\_keywords()}, 
+    \texttt{SpectroscopyResult}. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-norms/src/lib.rs}
+  & \texttt{pub mod spectroscopy;} \\
+\texttt{isls-cli/src/main.rs}
+  & Add \texttt{isls spectroscopy} subcommand with 
+    \texttt{--path}, \texttt{--url}, \texttt{--scrape} flags. \\
+\texttt{isls-gateway/src/discover.rs}
+  & Replace hardcoded \texttt{gaps()} with 
+    \texttt{spectroscopy()} call. Add 
+    \texttt{/api/discover/spectroscopy} and 
+    \texttt{/api/discover/spectroscopy/fill} endpoints. \\
+\texttt{isls-gateway/src/lib.rs}
+  & Route new endpoints. \\
+\bottomrule
+\end{longtable}
+
+\subsection{W1 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{isls spectroscopy --path .} on the ISLS repo 
+      itself produces a spectrum.
+\item Gaps are identified (ISLS has no EventBus, no Caching).
+\item Keywords are suggested for each gap.
+\item \texttt{--scrape} flag triggers targeted scraping.
+\item Studio: ``was fehlt mir?'' now uses spectroscopy instead 
+      of hardcoded list.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W2: Norm-Injektion}
+\label{sec:w2}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem}
+
+Norms can only enter the system through auto-discovery 
+(observation $\to$ candidate $\to$ promotion). There is no 
+way for the architect to directly define a norm. This blocks 
+two use cases:
+\begin{itemize}[nosep]
+\item Novel patterns that don't exist in any scraped repo.
+\item Domain-specific patterns from proprietary knowledge.
+\end{itemize}
+
+\subsection{Norm Blueprint Format}
+
+\begin{lstlisting}[style=json]
+{
+  "id": "ISLS-NORM-INJECT-001",
+  "name": "EventDrivenArchitecture",
+  "level": "System",
+  "description": "Event bus with handlers, dispatcher, store",
+  "layers": [
+    "EventDefinition",
+    "EventBus",
+    "EventHandler",
+    "EventDispatcher",
+    "EventStore"
+  ],
+  "expected_resonites": [
+    { "kind": "Fn", "pattern": "emit_*", "arity": 2 },
+    { "kind": "Fn", "pattern": "subscribe_*", "arity": 2 },
+    { "kind": "Fn", "pattern": "dispatch", "arity": 1 },
+    { "kind": "Fn", "pattern": "replay_events", "arity": 1 },
+    { "kind": "Type", "pattern": "Event", "type_kind": "Enum" },
+    { "kind": "Type", "pattern": "*Handler", "type_kind": "Trait" },
+    { "kind": "Type", "pattern": "EventStore", "type_kind": "Struct" }
+  ],
+  "activation_keywords": [
+    "event", "event-driven", "publish", "subscribe",
+    "dispatch", "handler", "event sourcing"
+  ],
+  "constraints": {
+    "min_layers": 3,
+    "requires": ["ISLS-NORM-INFRA-DB"]
+  }
+}
+\end{lstlisting}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[style=rust]
+/// A manually injected norm blueprint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NormBlueprint {
+    pub id: String,
+    pub name: String,
+    pub level: String,           // Atom, Molecule, System
+    pub description: String,
+    pub layers: Vec<String>,
+    pub expected_resonites: Vec<ResonitePattern>,
+    pub activation_keywords: Vec<String>,
+    pub constraints: BlueprintConstraints,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResonitePattern {
+    pub kind: String,       // "Fn", "Type", "Import"
+    pub pattern: String,    // glob pattern, e.g. "emit_*"
+    pub arity: Option<usize>,
+    pub type_kind: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlueprintConstraints {
+    pub min_layers: Option<usize>,
+    pub requires: Vec<String>,    // norm IDs that must co-activate
+}
+
+/// Inject a norm blueprint into the registry.
+pub fn inject_norm(
+    registry: &mut NormRegistry,
+    blueprint: NormBlueprint,
+) -> Result<String, String> {
+    // 1. Validate: ID must start with "ISLS-NORM-INJECT-"
+    if !blueprint.id.starts_with("ISLS-NORM-INJECT-") {
+        return Err("Injected norms must have ID prefix \
+                    ISLS-NORM-INJECT-".to_string());
+    }
+    
+    // 2. Check for duplicates
+    if registry.get_norm(&blueprint.id).is_some() {
+        return Err(format!("Norm {} already exists", blueprint.id));
+    }
+    
+    // 3. Convert to internal Norm format
+    let norm = Norm {
+        id: blueprint.id.clone(),
+        name: blueprint.name,
+        level: parse_level(&blueprint.level),
+        layers: blueprint.layers.iter()
+            .map(|l| parse_layer(l)).collect(),
+        builtin: false,
+        source: NormSource::Injected,
+        activation_keywords: blueprint.activation_keywords,
+        // ... map remaining fields
+    };
+    
+    // 4. Add to registry with default fitness 0.5
+    registry.add_norm(norm);
+    
+    // 5. Initialize fitness
+    fitness_store.set_fitness(&blueprint.id, 0.5);
+    
+    Ok(blueprint.id)
+}
+\end{lstlisting}
+
+\subsection{CLI}
+
+\begin{lstlisting}[style=bash]
+# Inject a single norm:
+isls norms inject ./event_driven.json
+
+[OK] Injected ISLS-NORM-INJECT-001 "EventDrivenArchitecture"
+     Fitness: 0.50 (neutral, will be validated by usage)
+     Keywords: event, event-driven, publish, subscribe, ...
+
+# List injected norms:
+isls norms list --source injected
+
+ISLS-NORM-INJECT-001  EventDrivenArchitecture  injected  System
+ISLS-NORM-INJECT-002  IndicatorPipeline        injected  Organism
+
+# Remove an injected norm:
+isls norms remove ISLS-NORM-INJECT-001
+
+[OK] Removed ISLS-NORM-INJECT-001. Fitness data preserved.
+\end{lstlisting}
+
+\subsection{Self-Correction}
+
+Injected norms are subject to the same fitness tracking as 
+auto-discovered norms (I1/I2). After each generation:
+
+\begin{itemize}[nosep]
+\item Compile success: $\phi \to \phi \cdot 0.9 + r \cdot 0.1$
+\item $r = \text{codematrix\_resonance}$ if compiled, 
+      $r = 0$ if failed.
+\item After 20 failed generations: $\phi < 0.06$, 
+      effectively dead.
+\item No special treatment. Injected norms must earn their 
+      fitness like any other norm.
+\end{itemize}
+
+\subsection{New Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{isls-norms/src/injection.rs}
+  & \texttt{NormBlueprint}, \texttt{inject\_norm()}, 
+    \texttt{remove\_injected()}, blueprint validation. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-norms/src/lib.rs}
+  & \texttt{pub mod injection;} Add 
+    \texttt{NormSource::Injected} variant. \\
+\texttt{isls-cli/src/main.rs}
+  & \texttt{isls norms inject <file>}, 
+    \texttt{isls norms remove <id>}, 
+    \texttt{isls norms list --source} filter. \\
+\bottomrule
+\end{longtable}
+
+\subsection{W2 Verification}
+
+\begin{enumerate}[nosep]
+\item Create a valid blueprint JSON.
+\item \texttt{isls norms inject blueprint.json} succeeds.
+\item \texttt{isls norms list} shows the injected norm.
+\item A forge with matching keywords activates the injected norm.
+\item An invalid blueprint (bad JSON, missing fields) is rejected.
+\item After 5 failed generations: fitness drops below 0.3.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W3: \texttt{isls evolve} --- Solve-Coagula Orchestrierung}
+\label{sec:w3}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Problem}
+
+The Solve-Coagula cycle currently requires manual steps:
+\texttt{isls scrape} $\to$ (think about gaps) $\to$ 
+\texttt{isls forge-chat}. There is no single command 
+that orchestrates the full metamorphose.
+
+\subsection{The \texttt{evolve} Command}
+
+\begin{lstlisting}[style=bash]
+isls evolve \
+    --from ./current-version \
+    --delta "Add real-time WebSocket notifications and 
+             event-driven architecture" \
+    --output ./next-version \
+    --scrape-gaps \
+    --ollama
+\end{lstlisting}
+
+This single command:
+
+\begin{enumerate}[nosep]
+\item \textbf{Solve:} Scrapes \texttt{./current-version}, 
+      extracts topology, feeds to norm system.
+\item \textbf{Spectroscopy:} Analyzes the delta description 
+      + existing topology. Identifies missing norms.
+\item \textbf{Fill (optional, \texttt{--scrape-gaps}):} 
+      Runs chirurgical scraping for each gap.
+\item \textbf{Merge:} Combines the delta description with 
+      the existing topology to form a complete generation 
+      description.
+\item \textbf{Coagula:} Runs \texttt{forge-chat} with the 
+      merged description and the enriched norm library.
+\item \textbf{Report:} Shows before/after comparison.
+\end{enumerate}
+
+\subsection{Implementation}
+
+\begin{lstlisting}[style=rust]
+pub async fn cmd_evolve(
+    from: PathBuf,
+    delta: String,
+    output: PathBuf,
+    scrape_gaps: bool,
+    oracle: Box<dyn Oracle>,
+) -> Result<EvolveReport, Box<dyn Error>> {
+    // 1. SOLVE: Extract topology of existing system
+    tracing::info!("Solve: scraping {}", from.display());
+    let topo = scrape_path(&from)?;
+    let resonites = extract_resonites_from_topology(&topo);
+    observe_and_learn(&topo, &from)?;
+    
+    // 2. SPECTROSCOPY: Identify gaps
+    tracing::info!("Spectroscopy: analyzing gaps");
+    let spectrum = spectroscopy(&resonites, &load_norms()?);
+    tracing::info!("Coverage: {:.0}% ({} gaps)", 
+        spectrum.coverage * 100.0, spectrum.gaps.len());
+    
+    // 3. FILL GAPS (optional)
+    if scrape_gaps && !spectrum.gaps.is_empty() {
+        tracing::info!("Filling {} gaps via targeted scraping", 
+            spectrum.gaps.len());
+        for suggestion in &spectrum.suggestions {
+            for keyword in &suggestion.keywords {
+                // GitHub search + scrape top 5
+                mass_scrape_keyword(keyword, 5).await?;
+            }
+        }
+        // Re-evaluate coverage
+        let new_spectrum = spectroscopy(&resonites, &load_norms()?);
+        tracing::info!("Coverage after fill: {:.0}%", 
+            new_spectrum.coverage * 100.0);
+    }
+    
+    // 4. MERGE: Build combined description
+    let existing_entities = extract_entities_from_topology(&topo);
+    let merged_description = format!(
+        "{}\n\nExisting system has: {}. \
+         Retain all existing functionality.",
+        delta,
+        existing_entities.join(", ")
+    );
+    
+    // 5. COAGULA: Re-forge
+    tracing::info!("Coagula: forging next generation");
+    let result = forge_chat(
+        &merged_description, 
+        &output, 
+        oracle
+    ).await?;
+    
+    // 6. REPORT
+    let report = EvolveReport {
+        from: from.clone(),
+        output: output.clone(),
+        delta: delta.clone(),
+        solve_resonites: resonites.len(),
+        gaps_before: spectrum.gaps.len(),
+        gaps_after: if scrape_gaps { 
+            spectroscopy(&resonites, &load_norms()?)
+                .gaps.len() 
+        } else { spectrum.gaps.len() },
+        coverage_before: spectrum.coverage,
+        forge_result: result,
+    };
+    
+    print_evolve_report(&report);
+    Ok(report)
+}
+\end{lstlisting}
+
+\subsection{Report Output}
+
+\begin{lstlisting}[style=bash]
+isls evolve --from ./trading-v1 \
+    --delta "Add WebSocket notifications" \
+    --output ./trading-v2 --scrape-gaps --ollama
+
+ISLS Evolve: Solve-Coagula Cycle
+================================
+
+[Solve] Scraped ./trading-v1
+  234 resonites, 8 classes, 42 functions, 89 types
+
+[Spectroscopy] Coverage: 37.5% (5 gaps)
+  [GAP] EventBus (priority: 42)
+  [GAP] RealTimeWebSocket (priority: 28)
+  [GAP] ConnectionPool (priority: 4)
+  [GAP] IndicatorPipeline (priority: 16)
+  [GAP] RiskManagement (priority: 12)
+
+[Fill] Targeted scraping for 5 gaps...
+  EventBus: 15 repos -> 3 candidates, 1 norm
+  WebSocket: 10 repos -> 2 candidates
+  ConnectionPool: 10 repos -> 1 candidate, 1 norm
+  IndicatorPipeline: 10 repos -> 2 candidates
+  RiskManagement: 5 repos -> 1 candidate
+  Coverage after: 62.5% (3 remaining gaps)
+
+[Coagula] Forging next generation...
+  Description: "Add WebSocket notifications. Existing 
+  system has: Trade, Portfolio, Signal, Order, Indicator.
+  Retain all existing functionality."
+  
+  35 files, 1580 LOC, 7 LLM calls, 0 coagula, 189s
+  cargo check: PASSED
+
+[Report]
+  Before: ./trading-v1 (234 resonites, 37.5% coverage)
+  After:  ./trading-v2 (298 resonites, 62.5% coverage)
+  Delta:  +64 resonites, +25% coverage, +WebSocket
+  Norms used: 38 (33 existing + 2 new auto + 3 injected)
+\end{lstlisting}
+
+\subsection{Studio Integration}
+
+In the Studio Erschaffen mode, the user can type:
+
+\begin{lstlisting}[style=bash]
+evolve ./trading-v1 with WebSocket notifications
+\end{lstlisting}
+
+The Studio detects the ``evolve'' keyword, extracts the 
+path and delta, and runs the evolve pipeline. Progress 
+appears in the chat stream (Solve $\to$ Spectroscopy $\to$ 
+Fill $\to$ Coagula $\to$ Report).
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-cli/src/main.rs}
+  & Add \texttt{isls evolve} subcommand with 
+    \texttt{--from}, \texttt{--delta}, \texttt{--output}, 
+    \texttt{--scrape-gaps}, \texttt{--ollama} flags. \\
+\texttt{isls-cli/src/cmd\_evolve.rs} (NEW)
+  & \texttt{cmd\_evolve()} implementation. \\
+\texttt{isls-gateway/src/lib.rs}
+  & \texttt{POST /api/evolve} endpoint (for Studio). \\
+\bottomrule
+\end{longtable}
+
+\subsection{W3 Verification}
+
+\begin{enumerate}[nosep]
+\item \texttt{isls evolve --from . --delta "add health checks" 
+      --output ./evolved} runs without error.
+\item Solve phase: scrapes and observes the source project.
+\item Spectroscopy phase: identifies gaps and suggests keywords.
+\item \texttt{--scrape-gaps}: triggers targeted scraping.
+\item Coagula phase: produces a compilable project in 
+      \texttt{--output}.
+\item Report shows before/after coverage comparison.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{W4: Studio UX f\"ur Spectroscopy + Evolve}
+\label{sec:w4}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Entdecken-Modus: ``was fehlt mir?'' Upgrade}
+
+Replace the hardcoded gap response with spectroscopy output. 
+When the user types ``was fehlt mir?'' in Entdecken mode:
+
+\begin{enumerate}[nosep]
+\item \texttt{GET /api/discover/spectroscopy} (no target: 
+      analyzes norm library breadth against all known classes).
+\item Render gaps as cards with [Scrape] buttons (existing UI).
+\item Add coverage percentage at the top.
+\end{enumerate}
+
+\subsection{Entdecken-Modus: Target Spectroscopy}
+
+When user types ``analysiere <path or url>'':
+
+\begin{enumerate}[nosep]
+\item \texttt{POST /api/discover/spectroscopy} with path/url.
+\item Render full SpectroscopyResult: spectrum, covered, gaps, 
+      suggestions.
+\item Each gap has a [F\"ullen] button that triggers 
+      \texttt{/api/discover/spectroscopy/fill}.
+\end{enumerate}
+
+\subsection{Erschaffen-Modus: Evolve}
+
+When user types ``evolve <path> with <delta>'':
+
+\begin{enumerate}[nosep]
+\item Parse path and delta from message.
+\item \texttt{POST /api/evolve} with path, delta, scrape\_gaps.
+\item Render progress as process messages (Solve $\to$ 
+      Spectroscopy $\to$ Fill $\to$ Coagula $\to$ Report).
+\end{enumerate}
+
+\subsection{Modified Files}
+
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-gateway/src/static/studio.html}
+  & Parse ``analysiere'' and ``evolve'' keywords. Render 
+    spectroscopy results and evolve progress. \\
+\bottomrule
+\end{longtable}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Dependency Graph}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{verbatim}
+W1 (Constraint Spectroscopy)
+  |
+  +---> W2 (Norm-Injektion)  [independent]
+  |
+  +---> W3 (isls evolve)     [uses W1 spectroscopy]
+          |
+          v
+        W4 (Studio UX)       [uses W1 + W3 endpoints]
+\end{verbatim}
+
+W1 first (foundation). W2 independent (can be parallel). 
+W3 depends on W1. W4 depends on W1 + W3.
+
+Recommended: W1 $\to$ W2 $\to$ W3 $\to$ W4.
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Constraints for Claude Code}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{enumerate}
+\item \textbf{Spectroscopy} uses \texttt{isls\_reader} for parsing 
+      and \texttt{isls\_norms} for norm registry access. No new 
+      external dependencies.
+\item \textbf{ResoniteClass} classification is keyword-based 
+      (function/type name matching). Not LLM-based. Deterministic.
+\item \textbf{Norm-Injektion} validates JSON strictly. Missing 
+      required fields $\to$ reject. Invalid level $\to$ reject. 
+      Duplicate ID $\to$ reject.
+\item \textbf{Injected norms} get ID prefix 
+      \texttt{ISLS-NORM-INJECT-}. Never overwrite builtin or 
+      auto-discovered norms.
+\item \textbf{\texttt{isls evolve}} is a composition of existing 
+      functions: \texttt{scrape} + \texttt{spectroscopy} + 
+      \texttt{mass\_scrape} + \texttt{forge\_chat}. No new 
+      generation logic. Only orchestration.
+\item \textbf{The ``was fehlt mir?''} endpoint in discover.rs 
+      must be replaced with spectroscopy call, not kept as 
+      parallel implementation.
+\item \textbf{Do not modify} isls-merkaba, isls-reader, 
+      isls-code-topo, isls-hypercube, isls-types, isls-chat, 
+      isls-forge-llm.
+\item All existing tests MUST pass.
+\item Branch: \texttt{claude/implement-isls-i3-spec}.
+\item Commit format: \texttt{I3/W\{n\}: <description>}.
+\end{enumerate}
+
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Acceptance Criteria}
+% ══════════════════════════════════════════════════════════════════════════════
+
+\begin{longtable}{clp{9cm}}
+\toprule
+\textbf{\#} & \textbf{Pass} & \textbf{Criterion} \\
+\midrule
+1 & & \texttt{cargo build --workspace} compiles. \\
+2 & & \texttt{cargo test --workspace} passes. \\
+3 & & \texttt{isls spectroscopy --path .} produces coverage report. \\
+4 & & \texttt{isls norms inject blueprint.json} adds norm to registry. \\
+5 & & \texttt{isls norms list --source injected} shows injected norms. \\
+6 & & \texttt{isls evolve --from . --delta "add X" --output ./out} 
+      runs full cycle. \\
+7 & & Studio ``was fehlt mir?'' uses spectroscopy. \\
+8 & & Studio ``evolve'' triggers full cycle with progress. \\
+9 & & Invalid blueprint JSON is rejected with clear error. \\
+10 & & All existing tests pass (backward compat). \\
+\bottomrule
+\end{longtable}
+
+I3 is passed when criteria 1--6 and 10 are fulfilled. 
+Criteria 7--8 require Studio testing.
+
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of I3 Specification.\\[0.3em]
+Das System wei{\ss} jetzt was es nicht wei{\ss}.\\
+Und es wei{\ss} wo es suchen muss.\\
+Und es kann sich selbst neu drucken.}
+\end{center}
+
+\end{document}
