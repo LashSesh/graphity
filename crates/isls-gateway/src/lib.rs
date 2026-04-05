@@ -98,6 +98,13 @@ pub struct AppState {
     pub session_store: session::SessionStore,
     /// S1: Mass-scrape job tracking for Entdecken mode.
     pub mass_scrape_jobs: discover::MassScrapeStore,
+    /// S1/ux: ring-buffer of the most recent scrape-history entries
+    /// (completed mass-scrape jobs). In-memory only — intentionally not
+    /// persisted, so a restart clears the feed.
+    pub scrape_history: discover::ScrapeHistoryStore,
+    /// S1/ux: filesystem path of the editable scrape-keyword list
+    /// (`~/.isls/scrape_keywords.txt` by default).
+    pub scrape_keywords_path: PathBuf,
     /// Oracle configuration for session forge (OpenAI vs Ollama vs Mock).
     pub oracle_config: OracleConfig,
 }
@@ -132,9 +139,11 @@ impl OracleConfig {
 
 impl AppState {
     pub fn new() -> Self {
-        let projects_dir = std::env::var("HOME")
-            .map(|h| PathBuf::from(h).join(".isls").join("projects"))
-            .unwrap_or_else(|_| PathBuf::from("/tmp/isls/projects"));
+        let isls_home = std::env::var("HOME")
+            .map(|h| PathBuf::from(h).join(".isls"))
+            .unwrap_or_else(|_| PathBuf::from("/tmp/isls"));
+        let projects_dir = isls_home.join("projects");
+        let scrape_keywords_path = isls_home.join("scrape_keywords.txt");
         Self {
             start_time: Instant::now(),
             event_hub: EventHub::default(),
@@ -149,6 +158,8 @@ impl AppState {
             projects_dir,
             session_store: Arc::new(RwLock::new(HashMap::new())),
             mass_scrape_jobs: discover::new_mass_scrape_store(),
+            scrape_history: discover::new_scrape_history_store(),
+            scrape_keywords_path,
             oracle_config: OracleConfig::default_mock(),
         }
     }
@@ -535,6 +546,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discover/gaps", get(discover::discover_gaps))
         .route("/api/discover/spectroscopy", post(discover::discover_spectroscopy))
         .route("/api/discover/spectroscopy/fill", post(discover::discover_spectroscopy_fill))
+        .route("/api/discover/scrape-status", get(discover::discover_scrape_status))
+        .route(
+            "/api/discover/keywords",
+            get(discover::discover_keywords_get).post(discover::discover_keywords_post),
+        )
         .route("/api/discover/genealogy/{norm_id}", get(discover::discover_genealogy))
         .route("/api/discover/similarity", get(discover::discover_similarity))
         // WebSocket
