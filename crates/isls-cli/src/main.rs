@@ -87,6 +87,8 @@ enum NormsSubcmd {
     Stats,
     /// Norm fitness report.
     Fitness,
+    /// I2/W2: Gen-Clustering (gene detection from metrics.jsonl).
+    Genome,
     /// Reset auto-discovered norms.
     Reset,
 }
@@ -185,10 +187,11 @@ fn parse_args(args: &[String]) -> Command {
                 "candidates" => NormsSubcmd::Candidates,
                 "stats" => NormsSubcmd::Stats,
                 "fitness" => NormsSubcmd::Fitness,
+                "genome" => NormsSubcmd::Genome,
                 "reset" => NormsSubcmd::Reset,
                 _ => {
                     eprintln!("[ERROR] Unknown norms subcommand: {}", subcmd);
-                    eprintln!("Available: list, inspect, candidates, stats, fitness, reset");
+                    eprintln!("Available: list, inspect, candidates, stats, fitness, genome, reset");
                     std::process::exit(1);
                 }
             };
@@ -895,6 +898,7 @@ fn main() {
             NormsSubcmd::Candidates => cmd_norms::cmd_norms_candidates(),
             NormsSubcmd::Stats => cmd_norms::cmd_norms_stats(),
             NormsSubcmd::Fitness => cmd_norms::cmd_norms_fitness(),
+            NormsSubcmd::Genome => cmd_norms::cmd_norms_genome(),
             NormsSubcmd::Reset => cmd_norms::cmd_norms_reset(),
         },
         Command::Metrics { compare, last } => {
