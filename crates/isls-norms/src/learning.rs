@@ -6,7 +6,7 @@
 //! Observes cross-layer patterns from synthesis runs and promotes recurring
 //! patterns to reusable norms automatically.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use sha2::{Digest, Sha256};
 use serde::{Deserialize, Serialize};
@@ -176,6 +176,10 @@ pub struct NormCandidate {
     pub common_artifacts: Vec<AbstractedArtifact>,
     /// Current status.
     pub status: CandidateStatus,
+    /// I4: Source languages that contributed observations to this candidate.
+    pub languages: BTreeSet<String>,
+    /// I4: `true` when observations from 2+ distinct languages are present.
+    pub cross_language: bool,
 }
 
 impl NormCandidate {
@@ -190,9 +194,19 @@ impl NormCandidate {
             consistent_layers: pattern.layers_present.clone(),
             common_artifacts: abstract_artifacts(&pattern.artifacts, &pattern.observed_on),
             status: CandidateStatus::Observing,
+            languages: BTreeSet::new(),
+            cross_language: false,
         };
         c.observe(pattern.clone());
         c
+    }
+
+    /// Record the source language of a contributing observation (I4).
+    pub fn add_language(&mut self, lang: &str) {
+        if !lang.is_empty() && lang != "unknown" {
+            self.languages.insert(lang.to_string());
+            self.cross_language = self.languages.len() >= 2;
+        }
     }
 
     /// Record a new observation of this pattern.

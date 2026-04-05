@@ -46,7 +46,7 @@ pub fn mikro_gate(
     provided_symbols: &[ProvidedSymbol],
     threshold: f64,
 ) -> MikroGateResult {
-    let resonites = extract_resonites(code, &node.path);
+    let resonites = extract_resonites(code, &node.path, isls_reader::Language::Rust);
     let codematrix = compute_codematrix(&resonites, Some(node.layer));
     let mut violations = Vec::new();
 
@@ -149,7 +149,7 @@ pub fn meso_gate(
     // Check 1: No duplicate function definitions across files in layer
     let mut all_fns: HashMap<String, Vec<String>> = HashMap::new();
     for (path, code, _) in layer_files {
-        let resonites = extract_resonites(code, path);
+        let resonites = extract_resonites(code, path, isls_reader::Language::Rust);
         for r in &resonites {
             if let Resonite::Fn { name, .. } = r {
                 all_fns.entry(name.clone()).or_default().push(path.clone());
