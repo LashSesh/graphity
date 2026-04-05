@@ -3,7 +3,7 @@
 // GitHub search, X-ray topology, scrape into norms, mass-scrape
 // background jobs, norm gap analysis, and norm genealogy.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -73,6 +73,49 @@ pub type MassScrapeStore = Arc<RwLock<HashMap<String, MassScrapeJob>>>;
 
 pub fn new_mass_scrape_store() -> MassScrapeStore {
     Arc::new(RwLock::new(HashMap::new()))
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// S1/ux: Scrape history ring-buffer
+// ═══════════════════════════════════════════════════════════════════
+
+/// Maximum number of entries retained by the in-memory scrape history.
+pub const SCRAPE_HISTORY_CAPACITY: usize = 100;
+
+/// One completed mass-scrape run (one keyword's worth of results).
+///
+/// These entries are pushed onto the `ScrapeHistory` ring-buffer when a
+/// mass-scrape job finishes and are surfaced through
+/// `GET /api/discover/scrape-status` to drive the Studio's live
+/// Ölbohrinsel monitor.
+#[derive(Debug, Clone, Serialize)]
+pub struct ScrapeHistoryEntry {
+    pub timestamp: String,
+    pub keyword: String,
+    pub repos: Vec<String>,
+    pub artifacts: usize,
+    pub new_candidates: usize,
+    pub new_norms: usize,
+}
+
+/// In-memory ring-buffer of recent scrape entries.
+pub type ScrapeHistoryStore = Arc<tokio::sync::Mutex<VecDeque<ScrapeHistoryEntry>>>;
+
+/// Construct an empty ring-buffer. Capacity is fixed at
+/// [`SCRAPE_HISTORY_CAPACITY`]; older entries fall off the back.
+pub fn new_scrape_history_store() -> ScrapeHistoryStore {
+    Arc::new(tokio::sync::Mutex::new(VecDeque::with_capacity(
+        SCRAPE_HISTORY_CAPACITY,
+    )))
+}
+
+/// Append an entry to the ring-buffer, evicting the oldest when full.
+pub async fn push_scrape_history(store: &ScrapeHistoryStore, entry: ScrapeHistoryEntry) {
+    let mut guard = store.lock().await;
+    if guard.len() >= SCRAPE_HISTORY_CAPACITY {
+        guard.pop_front();
+    }
+    guard.push_back(entry);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -410,10 +453,11 @@ pub async fn discover_mass_scrape(
 
     let jobs = state.mass_scrape_jobs.clone();
     let event_hub = state.event_hub.clone();
+    let history = state.scrape_history.clone();
     let job_id_ret = job_id.clone();
 
     tokio::spawn(async move {
-        run_mass_scrape(jobs, event_hub, job_id, keywords, per_kw).await;
+        run_mass_scrape(jobs, event_hub, history, job_id, keywords, per_kw).await;
     });
 
     Json(serde_json::json!({
@@ -442,6 +486,7 @@ struct QueuedRepo {
 async fn run_mass_scrape(
     jobs: MassScrapeStore,
     event_hub: crate::ws::EventHub,
+    history: ScrapeHistoryStore,
     job_id: String,
     keywords: Vec<String>,
     per_keyword: usize,
@@ -517,11 +562,32 @@ async fn run_mass_scrape(
     let semaphore = Arc::new(Semaphore::new(MASS_SCRAPE_PARALLELISM));
     let mut handles = Vec::with_capacity(queue.len());
 
+    // S1/ux: per-keyword aggregation so we can push a ScrapeHistoryEntry
+    // for every keyword after the phase-2 scrape completes. Preserve
+    // the original keyword order by seeding the map up-front.
+    #[derive(Default)]
+    struct KeywordAgg {
+        repos: Vec<String>,
+        artifacts: usize,
+        new_candidates: usize,
+        new_norms: usize,
+    }
+    let per_keyword: Arc<tokio::sync::Mutex<std::collections::BTreeMap<String, KeywordAgg>>> =
+        Arc::new(tokio::sync::Mutex::new(std::collections::BTreeMap::new()));
+    for kw in &keywords {
+        per_keyword
+            .lock()
+            .await
+            .entry(kw.clone())
+            .or_default();
+    }
+
     for repo in queue {
         let permit_sem = semaphore.clone();
         let jobs_cl = jobs.clone();
         let event_hub_cl = event_hub.clone();
         let job_id_cl = job_id.clone();
+        let per_kw_cl = per_keyword.clone();
 
         handles.push(tokio::spawn(async move {
             // Acquire before touching disk/network.
@@ -552,15 +618,27 @@ async fn run_mass_scrape(
                             "repo": repo.full_name,
                             "artifacts": artifact_count,
                             "keyword": repo.keyword,
+                            "new_candidates": new_cands,
+                            "new_norms": new_norms,
                         }),
                     ));
 
-                    let mut j = jobs_cl.write().await;
-                    if let Some(job) = j.get_mut(&job_id_cl) {
-                        job.repos_scraped += 1;
-                        job.new_candidates += new_cands as usize;
-                        job.new_norms += new_norms as usize;
+                    {
+                        let mut j = jobs_cl.write().await;
+                        if let Some(job) = j.get_mut(&job_id_cl) {
+                            job.repos_scraped += 1;
+                            job.new_candidates += new_cands as usize;
+                            job.new_norms += new_norms as usize;
+                        }
                     }
+
+                    // Per-keyword aggregation for the scrape history.
+                    let mut agg = per_kw_cl.lock().await;
+                    let entry = agg.entry(repo.keyword.clone()).or_default();
+                    entry.repos.push(repo.full_name.clone());
+                    entry.artifacts += artifact_count as usize;
+                    entry.new_candidates += new_cands as usize;
+                    entry.new_norms += new_norms as usize;
                 }
                 _ => {
                     let mut j = jobs_cl.write().await;
@@ -575,6 +653,26 @@ async fn run_mass_scrape(
 
     // Wait for every scrape task to finish before publishing completion.
     futures::future::join_all(handles).await;
+
+    // S1/ux: persist one ScrapeHistoryEntry per keyword, in declaration
+    // order. Entries whose keyword produced no repos still get a row
+    // so the Studio feed reflects the attempted campaign.
+    {
+        let agg = per_keyword.lock().await;
+        for kw in &keywords {
+            if let Some(k) = agg.get(kw) {
+                let entry = ScrapeHistoryEntry {
+                    timestamp: chrono::Utc::now().to_rfc3339(),
+                    keyword: kw.clone(),
+                    repos: k.repos.clone(),
+                    artifacts: k.artifacts,
+                    new_candidates: k.new_candidates,
+                    new_norms: k.new_norms,
+                };
+                push_scrape_history(&history, entry).await;
+            }
+        }
+    }
 
     // Complete
     let final_job = {
@@ -1079,6 +1177,202 @@ pub async fn discover_similarity(
         "query_domain": params.domain,
         "norms": norms,
     }))
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// S1/ux: Scrape status + keyword editor endpoints
+// ═══════════════════════════════════════════════════════════════════
+
+/// GET /api/discover/scrape-status — live state of the Ölbohrinsel.
+///
+/// Aggregates the mass-scrape job store, the norm registry, and the
+/// in-memory scrape history so the Studio can render a single
+/// refresh-driven dashboard in the Entdecken mode.
+pub async fn discover_scrape_status(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    // ── Active jobs ────────────────────────────────────────────────
+    let jobs = state.mass_scrape_jobs.read().await;
+    let active_jobs = jobs.values().filter(|j| j.status == "running").count();
+    drop(jobs);
+
+    // ── History ────────────────────────────────────────────────────
+    let history_guard = state.scrape_history.lock().await;
+    let total_repos_scraped: usize = history_guard.iter().map(|e| e.repos.len()).sum();
+    let total_observations: usize = history_guard.iter().map(|e| e.artifacts).sum();
+    let recent: Vec<ScrapeHistoryEntry> =
+        history_guard.iter().rev().take(10).cloned().collect();
+    let (last_scrape, last_keyword) = history_guard
+        .back()
+        .map(|e| (e.timestamp.clone(), e.keyword.clone()))
+        .unwrap_or_default();
+    drop(history_guard);
+
+    // ── Norm registry: candidate + auto-norm totals ────────────────
+    let registry = state.norm_registry.read().await;
+    let all_norms = registry.all_norms();
+    let auto_norms = all_norms
+        .iter()
+        .filter(|n| n.id.starts_with("ISLS-NORM-AUTO-"))
+        .count();
+
+    let candidates = registry.candidates();
+    let candidates_total = candidates.len();
+
+    // Top-5 candidates — sorted by how close they are to promotion.
+    // We approximate "closeness" as a blend of observation count and
+    // domain diversity; both are the tightest remaining bars for
+    // external repos after the I3 layer-threshold fix.
+    let mut ranked: Vec<_> = candidates
+        .iter()
+        .map(|c| {
+            let obs = c.observation_count;
+            let doms = c.domains.len();
+            let layers = c.consistent_layers.len();
+            let score = obs as f64 * 2.0 + doms as f64 * 3.0 + layers as f64;
+            (score, c.id.clone(), obs, doms, layers, c.consistency)
+        })
+        .collect();
+    ranked.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let top_candidates: Vec<serde_json::Value> = ranked
+        .iter()
+        .take(5)
+        .map(|(_, id, obs, doms, layers, cons)| {
+            serde_json::json!({
+                "id": id,
+                "observations": obs,
+                "domains": doms,
+                "layers": layers,
+                "consistency": cons,
+            })
+        })
+        .collect();
+
+    // Recent promotions: the 5 most recent auto-norms (lexical order of
+    // IDs approximates creation order since IDs are monotonic).
+    let mut auto_sorted: Vec<&isls_norms::Norm> = all_norms
+        .iter()
+        .filter(|n| n.id.starts_with("ISLS-NORM-AUTO-"))
+        .copied()
+        .collect();
+    auto_sorted.sort_by(|a, b| b.id.cmp(&a.id));
+    let recent_promotions: Vec<serde_json::Value> = auto_sorted
+        .iter()
+        .take(5)
+        .map(|n| {
+            serde_json::json!({
+                "id": n.id,
+                "name": n.name,
+                "domains": n.evidence.domains_used,
+                "usage_count": n.evidence.usage_count,
+            })
+        })
+        .collect();
+    drop(registry);
+
+    // ── Keyword count (file-backed) ────────────────────────────────
+    let keywords_count = read_keywords_file(&state.scrape_keywords_path)
+        .map(|(_, n)| n)
+        .unwrap_or(0);
+
+    Json(serde_json::json!({
+        "ok": true,
+        "active_jobs": active_jobs,
+        "total_repos_scraped": total_repos_scraped,
+        "total_observations": total_observations,
+        "candidates": candidates_total,
+        "auto_norms": auto_norms,
+        "keywords": keywords_count,
+        "last_scrape": last_scrape,
+        "last_keyword": last_keyword,
+        "recent_activity": recent,
+        "top_candidates": top_candidates,
+        "recent_promotions": recent_promotions,
+    }))
+}
+
+/// GET /api/discover/keywords — return the current scrape_keywords.txt.
+pub async fn discover_keywords_get(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    match read_keywords_file(&state.scrape_keywords_path) {
+        Ok((content, count)) => Json(serde_json::json!({
+            "ok": true,
+            "content": content,
+            "count": count,
+            "path": state.scrape_keywords_path.display().to_string(),
+        })),
+        Err(e) => Json(serde_json::json!({
+            "ok": true,
+            "content": String::new(),
+            "count": 0,
+            "path": state.scrape_keywords_path.display().to_string(),
+            "warning": e,
+        })),
+    }
+}
+
+/// POST /api/discover/keywords — overwrite scrape_keywords.txt with the
+/// raw request body. One keyword per line. Blank / `#`-prefixed lines
+/// are accepted verbatim so the file round-trips, but the `count`
+/// returned reflects only the effective keywords.
+pub async fn discover_keywords_post(
+    State(state): State<AppState>,
+    body: String,
+) -> Json<serde_json::Value> {
+    let path = state.scrape_keywords_path.clone();
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            return Json(serde_json::json!({
+                "ok": false,
+                "error": format!("Cannot create parent dir: {}", e),
+            }));
+        }
+    }
+    // Normalise line endings and make sure the file ends with a newline.
+    let normalised = if body.ends_with('\n') {
+        body
+    } else {
+        format!("{}\n", body)
+    };
+    if let Err(e) = std::fs::write(&path, normalised.as_bytes()) {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": format!("Write failed: {}", e),
+        }));
+    }
+    let count = normalised
+        .lines()
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty() && !t.starts_with('#')
+        })
+        .count();
+    Json(serde_json::json!({
+        "ok": true,
+        "saved": true,
+        "count": count,
+        "path": path.display().to_string(),
+    }))
+}
+
+/// Read the keywords file, returning `(raw_content, effective_count)`.
+fn read_keywords_file(path: &Path) -> std::result::Result<(String, usize), String> {
+    if !path.exists() {
+        return Ok((String::new(), 0));
+    }
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
+    let count = content
+        .lines()
+        .filter(|l| {
+            let t = l.trim();
+            !t.is_empty() && !t.starts_with('#')
+        })
+        .count();
+    Ok((content, count))
 }
 
 // ═══════════════════════════════════════════════════════════════════
