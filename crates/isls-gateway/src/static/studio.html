@@ -178,51 +178,111 @@ html, body {
 }
 
 /* ── Messages ───────────────────────────────────────────────────── */
-.msg {
+.msg-wrap {
+    display: flex;
+    flex-direction: column;
     max-width: 720px;
+    animation: msg-in 0.3s ease-out;
+}
+
+.msg-wrap.user {
+    align-self: flex-end;
+    margin-left: 60px;
+}
+
+.msg-wrap.system,
+.msg-wrap.process,
+.msg-wrap.error,
+.msg-wrap.entities,
+.msg-wrap.repos,
+.msg-wrap.gaps {
+    align-self: flex-start;
+    margin-right: 60px;
+}
+
+.msg {
     padding: 10px 16px;
     border-radius: 10px;
     word-wrap: break-word;
     white-space: pre-wrap;
-    animation: msg-in 0.2s ease-out;
+    animation: msg-in 0.3s ease-out;
 }
+
+.msg-time {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    padding: 0 4px;
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+}
+
+.msg-wrap.user .msg-time { text-align: right; }
+.msg-wrap.system .msg-time,
+.msg-wrap.process .msg-time,
+.msg-wrap.error .msg-time { text-align: left; }
 
 @keyframes msg-in {
     from { opacity: 0; transform: translateY(8px); }
     to   { opacity: 1; transform: translateY(0); }
 }
 
-.msg.user {
-    align-self: flex-end;
-    background: var(--bg-input);
-    border-left: 3px solid var(--accent);
-    margin-left: 60px;
-}
-
-.msg.system {
+/* ── Typing Indicator ───────────────────────────────────────────── */
+#typing-indicator {
     align-self: flex-start;
-    background: var(--bg-card);
-    border-radius: 10px;
+    display: flex;
+    gap: 4px;
+    padding: 10px 16px;
     margin-right: 60px;
 }
 
+#typing-indicator.hidden { display: none; }
+
+#typing-indicator span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    animation: typing-dot 1.2s ease-in-out infinite;
+}
+
+#typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+#typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes typing-dot {
+    0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+    30%           { opacity: 1;   transform: translateY(-3px); }
+}
+
+/* ── Forge Live Timer ───────────────────────────────────────────── */
+.forge-timer {
+    font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+    color: var(--accent);
+    margin-left: 6px;
+}
+
+.msg.user {
+    background: var(--bg-input);
+    border-left: 3px solid var(--accent);
+}
+
+.msg.system {
+    background: var(--bg-card);
+    border-radius: 10px;
+}
+
 .msg.process {
-    align-self: flex-start;
     background: transparent;
     border-left: 2px solid var(--accent);
     padding: 6px 12px;
     font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
     font-size: 13px;
     color: var(--text-secondary);
-    margin-right: 60px;
 }
 
 .msg.error {
-    align-self: flex-start;
     background: rgba(248, 81, 73, 0.1);
     border-left: 3px solid var(--accent-error);
     color: var(--accent-error);
-    margin-right: 60px;
 }
 
 /* ── Input Area ─────────────────────────────────────────────────── */
@@ -247,9 +307,15 @@ html, body {
     line-height: 1.5;
     resize: none;
     min-height: 42px;
-    max-height: 160px;
+    max-height: 140px; /* ~5 lines */
+    overflow-y: auto;
     outline: none;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, opacity 0.2s;
+}
+
+#chat-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 #chat-input:focus {
@@ -617,15 +683,20 @@ html, body {
         font-size: 20px;
     }
 
-    .msg.user {
+    .msg-wrap.user {
         margin-left: 30px;
     }
 
-    .msg.system,
-    .msg.process,
-    .msg.error {
+    .msg-wrap.system,
+    .msg-wrap.process,
+    .msg-wrap.error,
+    .msg-wrap.entities,
+    .msg-wrap.repos,
+    .msg-wrap.gaps {
         margin-right: 30px;
     }
+
+    #typing-indicator { margin-right: 30px; }
 
     #conversation {
         padding: 16px 12px;
@@ -641,6 +712,7 @@ html, body {
     <nav id="mode-strip">
         <button class="mode-btn active" id="btn-create" onclick="switchMode('create')" title="Erschaffen">&#10022;</button>
         <button class="mode-btn" id="btn-discover" onclick="switchMode('discover')" title="Entdecken">&#9673;</button>
+        <button class="mode-btn" id="btn-chat" onclick="switchMode('chat')" title="Chat">&#128172;</button>
     </nav>
 
     <!-- Main Area -->
@@ -656,7 +728,11 @@ html, body {
         </div>
 
         <!-- Conversation Stream -->
-        <div id="conversation"></div>
+        <div id="conversation">
+            <div id="typing-indicator" class="hidden">
+                <span></span><span></span><span></span>
+            </div>
+        </div>
 
         <!-- Readiness Tooltip -->
         <div id="readiness-tooltip"></div>
@@ -685,13 +761,16 @@ html, body {
 
 // ── State ──────────────────────────────────────────────────────────
 var currentMode = 'create';
-var hasMessages = { create: false, discover: false };
-var messages = { create: [], discover: [] };
+var hasMessages = { create: false, discover: false, chat: false };
+var messages = { create: [], discover: [], chat: [] };
 var sessionId = null;
 var readinessData = null;
 var userScrolledUp = false;
 var ws = null;
 var apiKey = null;
+var isBusy = false;              // input-lock while system responds
+var forgeTimerInterval = null;   // live timer for forge
+var forgeTimerStart = 0;
 
 // ── Placeholder Data ───────────────────────────────────────────────
 var placeholders = {
@@ -710,6 +789,14 @@ var placeholders = {
             'connection pooling patterns',
             'was fehlt mir?'
         ]
+    },
+    chat: {
+        title: 'Frag mich etwas...',
+        suggestions: [
+            'Erkl\u00e4re mir Connection Pooling',
+            'Welche Architektur f\u00fcr ein Trading-System?',
+            'Wie funktioniert ein Event-Sourcing Pattern?'
+        ]
     }
 };
 
@@ -722,7 +809,10 @@ var $input   = document.getElementById('chat-input');
 var $ring    = document.getElementById('readiness-ring');
 var $btnC    = document.getElementById('btn-create');
 var $btnD    = document.getElementById('btn-discover');
+var $btnChat = document.getElementById('btn-chat');
 var $tooltip = document.getElementById('readiness-tooltip');
+var $typing  = document.getElementById('typing-indicator');
+var $sendBtn = document.getElementById('send-btn');
 
 // ── API Key ────────────────────────────────────────────────────────
 //
@@ -745,8 +835,17 @@ function switchMode(mode) {
     currentMode = mode;
     $btnC.classList.toggle('active', mode === 'create');
     $btnD.classList.toggle('active', mode === 'discover');
+    $btnChat.classList.toggle('active', mode === 'chat');
     $ring.classList.toggle('hidden', mode !== 'create');
     $tooltip.classList.remove('visible');
+    // Placeholder text per mode
+    if (mode === 'chat') {
+        $input.placeholder = 'Frag mich etwas...';
+    } else if (mode === 'discover') {
+        $input.placeholder = 'Suchen, Scrapen, Fragen...';
+    } else {
+        $input.placeholder = 'Nachricht eingeben...';
+    }
     updateEmptyState();
     renderAllMessages();
 }
@@ -771,21 +870,36 @@ function updateEmptyState() {
 }
 
 // ── Message Rendering ──────────────────────────────────────────────
+function formatTime(d) {
+    var h = d.getHours(), m = d.getMinutes();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
 function renderAllMessages() {
+    // Preserve the typing indicator element (child of #conversation).
+    var keep = $typing;
     $conv.innerHTML = '';
+    if (keep) $conv.appendChild(keep);
     messages[currentMode].forEach(function(m) { appendMessageDOM(m); });
     scrollToBottom();
     updateEmptyState();
 }
 
 function appendMessageDOM(msg) {
-    var el = document.createElement('div');
-    el.className = 'msg ' + (msg.role || 'system');
+    // Legacy DOM-only entries (rendered inline elsewhere, e.g. repo/gap cards)
+    if (msg._dom) return;
 
-    if (msg.role === 'entities') {
+    var role = msg.role || 'system';
+    var wrap = document.createElement('div');
+    wrap.className = 'msg-wrap ' + role;
+
+    var el = document.createElement('div');
+    el.className = 'msg ' + role;
+
+    if (role === 'entities') {
         el.className = 'msg system';
         el.innerHTML = '';
-        msg.entities.forEach(function(ent) {
+        (msg.entities || []).forEach(function(ent) {
             el.appendChild(createEntityCard(ent));
         });
     } else if (msg.html) {
@@ -793,16 +907,36 @@ function appendMessageDOM(msg) {
     } else {
         el.textContent = msg.content || '';
     }
+    wrap.appendChild(el);
 
-    $conv.appendChild(el);
+    // Timestamp (omit for pure process lines to keep forge/scrape noise clean)
+    if (msg.time && role !== 'process') {
+        var t = document.createElement('div');
+        t.className = 'msg-time';
+        t.textContent = msg.time;
+        wrap.appendChild(t);
+    }
+
+    // Insert before typing indicator so it stays at the bottom.
+    if ($typing && $typing.parentNode === $conv) {
+        $conv.insertBefore(wrap, $typing);
+    } else {
+        $conv.appendChild(wrap);
+    }
+
+    // Expose wrapper to callers that need to mutate the DOM post-insertion
+    // (e.g. the forge live timer).
+    msg._wrap = wrap;
 }
 
 function renderMessage(msg) {
+    if (!msg.time) msg.time = formatTime(new Date());
     messages[currentMode].push(msg);
     hasMessages[currentMode] = true;
     $empty.classList.add('hidden');
     appendMessageDOM(msg);
     smartScroll();
+    return msg;
 }
 
 function smartScroll() {
@@ -931,9 +1065,32 @@ async function ensureSession() {
 // ── Send Message ───────────────────────────────────────────────────
 var sending = false;
 
+function setBusy(busy) {
+    isBusy = busy;
+    sending = busy;
+    $input.disabled = busy;
+    $sendBtn.disabled = busy;
+    $sendBtn.style.opacity = busy ? '0.5' : '';
+    if (busy) {
+        showTyping();
+    } else {
+        hideTyping();
+        $input.focus();
+    }
+}
+
+function showTyping() {
+    $typing.classList.remove('hidden');
+    smartScroll();
+}
+
+function hideTyping() {
+    $typing.classList.add('hidden');
+}
+
 async function sendMessage() {
     var text = $input.value.trim();
-    if (!text || sending) return;
+    if (!text || isBusy) return;
 
     $input.value = '';
     autoResize();
@@ -946,18 +1103,53 @@ async function sendMessage() {
         return;
     }
 
-    if (currentMode === 'create') {
-        await sendCreateMessage(text);
-    } else {
-        await sendDiscoverMessage(text);
+    setBusy(true);
+    try {
+        if (currentMode === 'create') {
+            await sendCreateMessage(text);
+        } else if (currentMode === 'chat') {
+            await sendChatMessage(text);
+        } else {
+            await sendDiscoverMessage(text);
+        }
+    } finally {
+        setBusy(false);
+    }
+}
+
+async function sendChatMessage(text) {
+    // Build history from prior chat messages (exclude the one just rendered).
+    var hist = [];
+    var arr = messages.chat;
+    for (var i = 0; i < arr.length - 1; i++) {
+        var m = arr[i];
+        if (m.role === 'user') hist.push({ role: 'user', content: m.content || '' });
+        else if (m.role === 'system' && m.content) hist.push({ role: 'assistant', content: m.content });
+    }
+    // Keep only the last 10 turns
+    if (hist.length > 10) hist = hist.slice(hist.length - 10);
+
+    try {
+        var resp = await fetch('/api/chat/plain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, history: hist })
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: data.error || 'Chat-Fehler.' });
+            return;
+        }
+        renderMessage({ role: 'system', content: (data.response || '').trim() });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Netzwerkfehler: ' + err.message });
     }
 }
 
 async function sendCreateMessage(text) {
-    sending = true;
     try {
         var sid = await ensureSession();
-        if (!sid) { sending = false; return; }
+        if (!sid) return;
 
         var resp = await fetch('/api/session/' + sid + '/message', {
             method: 'POST',
@@ -968,7 +1160,6 @@ async function sendCreateMessage(text) {
 
         if (!data.ok) {
             renderMessage({ role: 'error', content: data.error || 'Fehler bei der Verarbeitung.' });
-            sending = false;
             return;
         }
 
@@ -995,17 +1186,41 @@ async function sendCreateMessage(text) {
     } catch (err) {
         renderMessage({ role: 'error', content: 'Netzwerkfehler: ' + err.message });
     }
-    sending = false;
 }
 
 // ── Forge ──────────────────────────────────────────────────────────
 var forging = false;
 
+function startForgeTimer(msg) {
+    stopForgeTimer();
+    forgeTimerStart = Date.now();
+    var span = document.createElement('span');
+    span.className = 'forge-timer';
+    span.textContent = '00:00';
+    if (msg && msg._wrap) {
+        var inner = msg._wrap.querySelector('.msg');
+        if (inner) inner.appendChild(span);
+    }
+    forgeTimerInterval = setInterval(function() {
+        var s = Math.floor((Date.now() - forgeTimerStart) / 1000);
+        var mm = Math.floor(s / 60), ss = s % 60;
+        span.textContent = (mm < 10 ? '0' : '') + mm + ':' + (ss < 10 ? '0' : '') + ss;
+    }, 1000);
+}
+
+function stopForgeTimer() {
+    if (forgeTimerInterval) {
+        clearInterval(forgeTimerInterval);
+        forgeTimerInterval = null;
+    }
+}
+
 async function triggerForge() {
     if (forging || !sessionId) return;
     forging = true;
 
-    renderMessage({ role: 'process', content: 'Materialisierung gestartet...' });
+    var startMsg = renderMessage({ role: 'process', content: 'Materialisierung gestartet...' });
+    startForgeTimer(startMsg);
 
     try {
         var resp = await fetch('/api/session/' + sessionId + '/forge', {
@@ -1019,6 +1234,7 @@ async function triggerForge() {
             renderMessage({ role: 'error', content: data.error || 'Forge konnte nicht gestartet werden.' });
             if (data.readiness) updateReadiness(data.readiness);
             forging = false;
+            stopForgeTimer();
             return;
         }
 
@@ -1027,12 +1243,12 @@ async function triggerForge() {
     } catch (err) {
         renderMessage({ role: 'error', content: 'Forge-Fehler: ' + err.message });
         forging = false;
+        stopForgeTimer();
     }
 }
 
 // ── Entdecken Mode ─────────────────────────────────────────────────
 async function sendDiscoverMessage(text) {
-    sending = true;
     var lower = text.toLowerCase().trim();
     try {
         // "was fehlt mir?" handler
@@ -1058,7 +1274,6 @@ async function sendDiscoverMessage(text) {
     } catch (err) {
         renderMessage({ role: 'error', content: 'Fehler: ' + err.message });
     }
-    sending = false;
 }
 
 async function discoverSearch(query) {
@@ -1081,12 +1296,16 @@ async function discoverSearch(query) {
     }
     renderMessage({ role: 'system', content: repos.length + ' Repos gefunden' + (total ? ' (von ' + total + ' gesamt)' : '') + ':' });
     // Render repo cards
+    var wrap = document.createElement('div');
+    wrap.className = 'msg-wrap system';
     var el = document.createElement('div');
     el.className = 'msg system';
     repos.forEach(function(r) { el.appendChild(createRepoCard(r)); });
+    wrap.appendChild(el);
     messages[currentMode].push({ role: 'repos', _dom: true });
     hasMessages[currentMode] = true;
-    $conv.appendChild(el);
+    if ($typing && $typing.parentNode === $conv) $conv.insertBefore(wrap, $typing);
+    else $conv.appendChild(wrap);
     smartScroll();
 }
 
@@ -1198,6 +1417,8 @@ async function discoverGaps() {
         var gaps = data.gaps || [];
         if (gaps.length > 0) {
             renderMessage({ role: 'system', content: 'Schwach abgedeckte Bereiche:' });
+            var wrap = document.createElement('div');
+            wrap.className = 'msg-wrap system';
             var el = document.createElement('div');
             el.className = 'msg system';
             gaps.forEach(function(g) {
@@ -1213,9 +1434,11 @@ async function discoverGaps() {
                 };
                 el.appendChild(card);
             });
+            wrap.appendChild(el);
             messages[currentMode].push({ role: 'gaps', _dom: true });
             hasMessages[currentMode] = true;
-            $conv.appendChild(el);
+            if ($typing && $typing.parentNode === $conv) $conv.insertBefore(wrap, $typing);
+            else $conv.appendChild(wrap);
             smartScroll();
         }
 
@@ -1366,6 +1589,7 @@ function handleWsEvent(event) {
         renderMessage({ role: 'process', content: 'cargo check: ' + status });
     } else if (evType === 'forge:complete') {
         forging = false;
+        stopForgeTimer();
         if (d.success) {
             var summary = 'Fertig. ' + (d.files || 0) + ' Dateien, ' +
                 (d.loc || 0) + ' LOC, ' + (d.duration_secs || 0).toFixed(1) + 's.';
@@ -1396,7 +1620,7 @@ function fillInput(text) {
 
 function autoResize() {
     $input.style.height = 'auto';
-    $input.style.height = Math.min($input.scrollHeight, 160) + 'px';
+    $input.style.height = Math.min($input.scrollHeight, 140) + 'px';
 }
 
 // ── Keyboard ───────────────────────────────────────────────────────
@@ -1411,6 +1635,7 @@ $input.addEventListener('input', autoResize);
 
 // ── Touch Swipe (mobile mode switch) ───────────────────────────────
 (function() {
+    var MODES = ['create', 'discover', 'chat'];
     var startX = 0;
     document.addEventListener('touchstart', function(e) {
         startX = e.touches[0].clientX;
@@ -1418,7 +1643,12 @@ $input.addEventListener('input', autoResize);
     document.addEventListener('touchend', function(e) {
         var dx = e.changedTouches[0].clientX - startX;
         if (Math.abs(dx) > 80) {
-            switchMode(dx > 0 ? 'create' : 'discover');
+            var idx = MODES.indexOf(currentMode);
+            if (idx < 0) idx = 0;
+            var next = dx < 0 ? idx + 1 : idx - 1;
+            if (next < 0) next = 0;
+            if (next >= MODES.length) next = MODES.length - 1;
+            switchMode(MODES[next]);
         }
     }, { passive: true });
 })();
