@@ -38,6 +38,13 @@ pub struct GenerationMetrics {
     pub mikro_gate_pass_rate: f64,
     #[serde(default)]
     pub meso_gate_pass_rate: f64,
+    // I2/W4: Codematrix-enhanced fitness.
+    /// Average Codematrix resonance (geometric mean of R/F/T/S/E) across all
+    /// generated files in this run. 0.0 when no files were gated. Used as
+    /// the continuous reward signal for fitness updates. Persisted with
+    /// `#[serde(default)]` so old JSONL entries still deserialize.
+    #[serde(default)]
+    pub codematrix_avg: f64,
 }
 
 /// Source of a generation run.
@@ -226,6 +233,7 @@ mod tests {
             was_contractive: true,
             mikro_gate_pass_rate: 1.0,
             meso_gate_pass_rate: 1.0,
+            codematrix_avg: 0.0,
         }
     }
 

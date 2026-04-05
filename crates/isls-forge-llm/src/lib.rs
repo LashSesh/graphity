@@ -520,6 +520,13 @@ pub struct ForgeStats {
     pub i1_mikro_gate_pass_rate: f64,
     /// Meso-Gate pass rate [0, 1].
     pub i1_meso_gate_pass_rate: f64,
+    /// I2/W4: average Codematrix resonance across all generated files.
+    ///
+    /// Computed at S5 from per-file `MikroGateResult.resonance`. Drives
+    /// continuous fitness updates: a run that compiles but produces messy
+    /// code (low resonance) now receives a lower fitness reward than one
+    /// that produces clean code (high resonance).
+    pub i2_codematrix_avg: f64,
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

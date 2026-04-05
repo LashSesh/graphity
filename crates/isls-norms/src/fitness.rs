@@ -40,18 +40,32 @@ impl NormFitness {
         }
     }
 
-    /// Update fitness after a generation outcome.
-    pub fn update(&mut self, success: bool) {
-        let r = if success { 1.0 } else { 0.0 };
+    /// Update fitness with a continuous reward `r ∈ [0, 1]`.
+    ///
+    /// I2/W4: `r` is typically the average Codematrix resonance for the
+    /// generated run when compilation succeeded, or `0.0` when it failed.
+    /// A run is counted as a "success" (for the success/failure counters)
+    /// when `r > 0.0`, since r=0 corresponds to no reward at all.
+    pub fn update_with_reward(&mut self, r: f64) {
+        let r = r.clamp(0.0, 1.0);
         self.fitness = ALPHA * self.fitness + (1.0 - ALPHA) * r;
         self.fitness = self.fitness.clamp(0.0, 1.0);
         self.activation_count += 1;
-        if success {
+        if r > 0.0 {
             self.success_count += 1;
         } else {
             self.failure_count += 1;
         }
         self.last_activated = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    }
+
+    /// Update fitness from a binary compile outcome (legacy I1 path).
+    ///
+    /// Kept for backward compatibility: old callers that only know compile
+    /// success/failure still work. Equivalent to `update_with_reward(1.0)`
+    /// on success, `update_with_reward(0.0)` on failure.
+    pub fn update(&mut self, success: bool) {
+        self.update_with_reward(if success { 1.0 } else { 0.0 });
     }
 }
 
@@ -80,10 +94,27 @@ impl FitnessStore {
     }
 
     /// Update fitness for a set of norms that were activated in a generation.
-    pub fn update_fitness(&mut self, norm_ids: &[String], success: bool) {
+    ///
+    /// I2/W4: `resonance` is the continuous reward derived from the
+    /// generation's Codematrix average (`Some(r)` where `r ∈ [0, 1]`).
+    /// Passing `None` falls back to `0.0` (no reward — treated like a
+    /// failure). Callers that only know binary compile success should use
+    /// [`Self::update_fitness_binary`] instead.
+    pub fn update_fitness(&mut self, norm_ids: &[String], resonance: Option<f64>) {
+        let r = resonance.unwrap_or(0.0);
         for id in norm_ids {
-            self.get_or_create(id).update(success);
+            self.get_or_create(id).update_with_reward(r);
         }
+    }
+
+    /// Legacy I1 binary-outcome updater.
+    ///
+    /// Equivalent to `update_fitness(norm_ids, Some(if success { 1.0 } else
+    /// { 0.0 }))`. Preserved so callers outside the forge pipeline (e.g.
+    /// CLI paths without Codematrix data) keep compiling.
+    pub fn update_fitness_binary(&mut self, norm_ids: &[String], success: bool) {
+        let r = if success { 1.0 } else { 0.0 };
+        self.update_fitness(norm_ids, Some(r));
     }
 
     /// Get all entries sorted by fitness (descending).
@@ -181,12 +212,39 @@ mod tests {
     }
 
     #[test]
-    fn test_fitness_store_update() {
+    fn test_fitness_store_update_binary() {
         let mut store = FitnessStore::new();
-        store.update_fitness(&["A".into(), "B".into()], true);
+        store.update_fitness_binary(&["A".into(), "B".into()], true);
         assert!(store.get_fitness("A") > 0.5);
         assert!(store.get_fitness("B") > 0.5);
         assert_eq!(store.get_fitness("C"), 0.5); // default
+    }
+
+    // I2/W4: continuous reward driven by codematrix resonance.
+    #[test]
+    fn test_fitness_store_update_resonance() {
+        let mut store = FitnessStore::new();
+        // r = 0.7 → φ = 0.9·0.5 + 0.1·0.7 = 0.52
+        store.update_fitness(&["A".into()], Some(0.7));
+        assert!((store.get_fitness("A") - 0.52).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_fitness_store_update_none_is_zero_reward() {
+        let mut store = FitnessStore::new();
+        // None → r = 0.0 → φ = 0.9·0.5 + 0.1·0.0 = 0.45
+        store.update_fitness(&["A".into()], None);
+        assert!((store.get_fitness("A") - 0.45).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_fitness_converges_toward_codematrix() {
+        // A norm that always produces resonance=0.85 should converge to 0.85.
+        let mut store = FitnessStore::new();
+        for _ in 0..100 {
+            store.update_fitness(&["q".into()], Some(0.85));
+        }
+        assert!((store.get_fitness("q") - 0.85).abs() < 1e-3);
     }
 
     #[test]

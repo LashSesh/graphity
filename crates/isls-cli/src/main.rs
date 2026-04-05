@@ -545,6 +545,9 @@ fn write_generation_metrics(
         was_contractive: stats.i1_was_contractive,
         mikro_gate_pass_rate: stats.i1_mikro_gate_pass_rate,
         meso_gate_pass_rate: stats.i1_meso_gate_pass_rate,
+        // I2/W4: persist average Codematrix resonance so
+        // `isls norms genome` and fitness analytics can read it later.
+        codematrix_avg: stats.i2_codematrix_avg,
     };
     if let Err(e) = append_metrics(&metrics) {
         eprintln!("[WARN] Could not write metrics.jsonl: {}", e);
