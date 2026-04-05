@@ -97,6 +97,36 @@ pub struct AppState {
     pub session_store: session::SessionStore,
     /// S1: Mass-scrape job tracking for Entdecken mode.
     pub mass_scrape_jobs: discover::MassScrapeStore,
+    /// Oracle configuration for session forge (OpenAI vs Ollama vs Mock).
+    pub oracle_config: OracleConfig,
+}
+
+/// Configuration for constructing an LLM oracle in the session forge.
+///
+/// Priority at forge time:
+/// 1. Session-specific api_key → OpenAiOracle
+/// 2. oracle_config.api_key → OpenAiOracle
+/// 3. oracle_config.use_ollama → OllamaOracle
+/// 4. Fallback → MockOracle
+#[derive(Clone, Debug, Default)]
+pub struct OracleConfig {
+    pub api_key: Option<String>,
+    pub use_ollama: bool,
+    pub ollama_url: String,
+    pub ollama_model: String,
+    pub openai_model: String,
+}
+
+impl OracleConfig {
+    pub fn default_mock() -> Self {
+        Self {
+            api_key: None,
+            use_ollama: false,
+            ollama_url: "http://localhost:11434".to_string(),
+            ollama_model: "qwen2.5-coder:32b".to_string(),
+            openai_model: "gpt-4o".to_string(),
+        }
+    }
 }
 
 impl AppState {
@@ -118,7 +148,14 @@ impl AppState {
             projects_dir,
             session_store: Arc::new(RwLock::new(HashMap::new())),
             mass_scrape_jobs: discover::new_mass_scrape_store(),
+            oracle_config: OracleConfig::default_mock(),
         }
+    }
+
+    /// Builder: set the oracle configuration for session forge.
+    pub fn with_oracle_config(mut self, config: OracleConfig) -> Self {
+        self.oracle_config = config;
+        self
     }
 }
 
@@ -1618,11 +1655,12 @@ async fn session_forge(
 
     // Build ForgePlan from session spec
     let spec = session.spec.clone();
-    let api_key = session.api_key.clone();
+    let session_api_key = session.api_key.clone();
     let event_hub = state.event_hub.clone();
     let session_store = state.session_store.clone();
     let session_id = id.clone();
     let output_dir_clone = output_dir.clone();
+    let oracle_config = state.oracle_config.clone();
 
     // Spawn background forge task
     tokio::spawn(async move {
@@ -1661,11 +1699,49 @@ async fn session_forge(
             );
             plan.blueprint = isls_forge_llm::blueprint::derive_blueprint_from_description(&spec.description);
 
-            // Create oracle — use MockOracle (blocking context safe)
-            let oracle: Box<dyn isls_forge_llm::Oracle> = Box::new(isls_forge_llm::MockOracle);
+            // Create oracle based on priority:
+            //   1. Session api_key → OpenAiOracle
+            //   2. oracle_config.api_key → OpenAiOracle
+            //   3. oracle_config.use_ollama → OllamaOracle
+            //   4. Fallback → MockOracle
+            let (oracle, use_mock): (Box<dyn isls_forge_llm::Oracle>, bool) = {
+                let effective_key = session_api_key
+                    .clone()
+                    .or_else(|| oracle_config.api_key.clone());
+
+                if let Some(key) = effective_key {
+                    match isls_forge_llm::oracle::OpenAiOracle::new(
+                        Some(key),
+                        Some(oracle_config.openai_model.clone()),
+                    ) {
+                        Ok(o) => {
+                            tracing::info!("session_forge: using OpenAiOracle (model={})", oracle_config.openai_model);
+                            (Box::new(o), false)
+                        }
+                        Err(e) => {
+                            tracing::warn!("session_forge: OpenAiOracle init failed ({}), falling back to Mock", e);
+                            (Box::new(isls_forge_llm::MockOracle), true)
+                        }
+                    }
+                } else if oracle_config.use_ollama {
+                    tracing::info!(
+                        "session_forge: using OllamaOracle (model={}, url={})",
+                        oracle_config.ollama_model,
+                        oracle_config.ollama_url,
+                    );
+                    let ollama = isls_forge_llm::oracle::OllamaOracle::new(
+                        &oracle_config.ollama_model,
+                        &oracle_config.ollama_url,
+                    );
+                    (Box::new(ollama), false)
+                } else {
+                    tracing::info!("session_forge: using MockOracle (no LLM configured)");
+                    (Box::new(isls_forge_llm::MockOracle), true)
+                }
+            };
 
             let mut forge = isls_forge_llm::LlmForge::new(
-                oracle, plan, output_dir_clone.clone(), true,
+                oracle, plan, output_dir_clone.clone(), use_mock,
             );
 
             // D7/W3: Wire progress callback to publish WsEvent via channel
