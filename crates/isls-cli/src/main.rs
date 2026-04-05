@@ -7,6 +7,7 @@
 use std::path::Path;
 
 mod cmd_evolve;
+mod cmd_harpoon;
 mod cmd_metrics;
 mod cmd_norms;
 mod cmd_scrape;
@@ -80,6 +81,14 @@ enum Command {
         model: String,
         ollama: bool,
         ollama_url: String,
+    },
+    /// I4/harpoon: Cascading targeted scrape with depth limit.
+    Harpoon {
+        seed: String,
+        depth: usize,
+        repos_per_keyword: usize,
+        stop_at_coverage: f64,
+        domain: Option<String>,
     },
     /// Start the Gateway / Studio web interface.
     Serve {
@@ -356,6 +365,31 @@ fn parse_args(args: &[String]) -> Command {
                 .cloned()
                 .unwrap_or_else(|| "qwen2.5-coder:32b".to_string());
             Command::Serve { port, api_key, ollama, ollama_url, ollama_model }
+        }
+        "harpoon" => {
+            let seed = args.iter().position(|a| a == "--seed")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| {
+                    eprintln!("[ERROR] --seed <path_or_url> is required for harpoon");
+                    std::process::exit(1);
+                });
+            let depth = args.iter().position(|a| a == "--depth")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(3usize);
+            let repos_per_keyword = args.iter().position(|a| a == "--repos-per-keyword")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(5usize);
+            let stop_at_coverage = args.iter().position(|a| a == "--stop-at-coverage")
+                .and_then(|i| args.get(i + 1))
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0.9f64);
+            let domain = args.iter().position(|a| a == "--domain")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Harpoon { seed, depth, repos_per_keyword, stop_at_coverage, domain }
         }
         "--help" | "-h" | "help" => Command::Help,
         _ => Command::Help,
@@ -884,6 +918,7 @@ fn print_help() {
     println!("  forge-chat  D3: Natural language to compiled application");
     println!("  norms       D4: Inspect norm catalog, candidates, and auto-discovered norms");
     println!("  scrape      D5: Scrape repositories — extract topology into norms");
+    println!("  harpoon     I4: Cascading targeted scrape (seed → keywords → repos → …)");
     println!("  spectroscopy I3/W1: Constraint Spectroscopy (target → gaps + keywords)");
     println!("  evolve      I3/W3: Solve-Coagula cycle (from → delta → next-gen)");
     println!("  metrics     D7: Generation metrics (CLI vs Cockpit comparison)");
@@ -947,6 +982,13 @@ fn print_help() {
     println!("  --model <model>        LLM model name (default: gpt-4o)");
     println!("  --ollama               Use local Ollama instance instead of OpenAI");
     println!("  --ollama-url <url>     Ollama API URL (default: http://localhost:11434)");
+    println!();
+    println!("harpoon options:");
+    println!("  --seed <path_or_url>        Seed: local directory or git URL (required)");
+    println!("  --depth <n>                 Max cascade depth 1–3 (default: 3)");
+    println!("  --repos-per-keyword <n>     Repos searched at depth-0 (default: 5)");
+    println!("  --stop-at-coverage <0–1>    Stop when norm coverage exceeds ratio (default: 0.9)");
+    println!("  --domain <name>             Override inferred domain tag");
     println!();
     println!("scrape options:");
     println!("  --path <dir>           Local directory to scrape");
@@ -1019,6 +1061,11 @@ fn main() {
             } else {
                 cmd_metrics::cmd_metrics_summary();
             }
+        }
+        Command::Harpoon { seed, depth, repos_per_keyword, stop_at_coverage, domain } => {
+            cmd_harpoon::cmd_harpoon(cmd_harpoon::HarpoonOpts {
+                seed, depth, repos_per_keyword, stop_at_coverage, domain,
+            });
         }
         Command::Serve { port, api_key, ollama, ollama_url, ollama_model } => {
             cmd_serve(port, api_key, ollama, ollama_url, ollama_model)

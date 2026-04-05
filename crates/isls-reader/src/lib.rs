@@ -5,8 +5,17 @@
 //!
 //! Parses source files using regex-based analysis to extract structural
 //! information: function definitions, struct/class declarations, imports,
-//! SQL table names. Supports Rust, JavaScript, Python, SQL, HTML, CSS,
-//! TOML, and Dockerfile.
+//! SQL table names. Supports Rust, Python, TypeScript, Go, JavaScript, SQL,
+//! HTML, CSS, TOML, and Dockerfile.
+//!
+//! I4 adds dedicated parsers for Python, TypeScript, and Go in separate
+//! sub-modules (`python`, `typescript`, `go`) and a shared normalisation
+//! module (`normalize`).
+
+pub mod normalize;
+pub mod python;
+pub mod typescript;
+pub mod go;
 
 use std::path::{Path, PathBuf};
 use std::fs;
@@ -34,12 +43,13 @@ pub type Result<T> = std::result::Result<T, ReaderError>;
 // ─── Language ────────────────────────────────────────────────────────────────
 
 /// Source language detected from file extension or explicit specification.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Language {
     Rust,
     JavaScript,
     TypeScript,
     Python,
+    Go,
     Sql,
     Html,
     Css,
@@ -49,28 +59,45 @@ pub enum Language {
 }
 
 impl Language {
-    /// Detect language from file extension.
+    /// Detect language from file extension string (without leading dot).
+    pub fn from_extension(ext: &str) -> Self {
+        match ext {
+            "rs" => Language::Rust,
+            "py" => Language::Python,
+            "ts" | "tsx" => Language::TypeScript,
+            "go" => Language::Go,
+            "js" | "mjs" => Language::JavaScript,
+            "sql" => Language::Sql,
+            "html" | "htm" => Language::Html,
+            "css" => Language::Css,
+            "toml" => Language::Toml,
+            _ => Language::Unknown,
+        }
+    }
+
+    /// Detect language from a full filename (uses the extension).
+    pub fn from_filename(name: &str) -> Self {
+        if name.starts_with("Dockerfile") {
+            return Language::Dockerfile;
+        }
+        if let Some(ext) = name.rsplit('.').next() {
+            Self::from_extension(ext)
+        } else {
+            Language::Unknown
+        }
+    }
+
+    /// Detect language from a file path.
     pub fn from_path(path: &Path) -> Self {
-        match path.extension().and_then(|e| e.to_str()) {
-            Some("rs") => Language::Rust,
-            Some("js") | Some("mjs") => Language::JavaScript,
-            Some("ts") | Some("tsx") => Language::TypeScript,
-            Some("py") => Language::Python,
-            Some("sql") => Language::Sql,
-            Some("html") | Some("htm") => Language::Html,
-            Some("css") => Language::Css,
-            Some("toml") => Language::Toml,
-            _ => {
-                // Check filename for Dockerfile
-                if path.file_name().and_then(|n| n.to_str())
-                    .map(|n| n.starts_with("Dockerfile"))
-                    .unwrap_or(false)
-                {
-                    Language::Dockerfile
-                } else {
-                    Language::Unknown
-                }
+        // Check filename first (handles Dockerfile)
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with("Dockerfile") {
+                return Language::Dockerfile;
             }
+        }
+        match path.extension().and_then(|e| e.to_str()) {
+            Some(ext) => Self::from_extension(ext),
+            None => Language::Unknown,
         }
     }
 
@@ -81,6 +108,7 @@ impl Language {
             "javascript" | "js" => Language::JavaScript,
             "typescript" | "ts" => Language::TypeScript,
             "python" | "py" => Language::Python,
+            "go" => Language::Go,
             "sql" => Language::Sql,
             "html" => Language::Html,
             "css" => Language::Css,
@@ -97,6 +125,7 @@ impl Language {
             Language::JavaScript => "javascript",
             Language::TypeScript => "typescript",
             Language::Python => "python",
+            Language::Go => "go",
             Language::Sql => "sql",
             Language::Html => "html",
             Language::Css => "css",
@@ -243,7 +272,7 @@ fn parse_rust(source: &str) -> (Vec<FunctionDef>, Vec<StructDef>, Vec<String>) {
     (functions, structs, imports)
 }
 
-// ─── JavaScript / TypeScript parser ──────────────────────────────────────────
+// ─── JavaScript parser ────────────────────────────────────────────────────────
 
 fn parse_javascript(source: &str) -> (Vec<FunctionDef>, Vec<StructDef>, Vec<String>) {
     let mut functions = Vec::new();
@@ -315,40 +344,6 @@ fn parse_sql(source: &str) -> Vec<SqlTable> {
     tables
 }
 
-// ─── Python parser ───────────────────────────────────────────────────────────
-
-fn parse_python(source: &str) -> (Vec<FunctionDef>, Vec<StructDef>, Vec<String>) {
-    let mut functions = Vec::new();
-    let mut structs = Vec::new();
-    let mut imports = Vec::new();
-
-    let import_re = Regex::new(r"^(?:import|from)\s+([\w.]+)").unwrap();
-    let fn_re = Regex::new(r"(?m)^(\s*)(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)").unwrap();
-    let class_re = Regex::new(r"(?m)^class\s+(\w+)").unwrap();
-
-    for line in source.lines() {
-        if let Some(cap) = import_re.captures(line.trim()) {
-            imports.push(cap[1].to_string());
-        }
-    }
-    for cap in fn_re.captures_iter(source) {
-        let indent = cap[1].len();
-        let is_public = !cap[2].starts_with('_');
-        let name = cap[2].to_string();
-        let params_raw = cap[3].trim().to_string();
-        let params: Vec<String> = params_raw.split(',').map(|s| s.trim().to_string()).collect();
-        let line = source[..cap.get(0).unwrap().start()].chars().filter(|&c| c == '\n').count() + 1;
-        let _ = indent;
-        functions.push(FunctionDef { name, is_public, is_async: false, params, return_type: None, line });
-    }
-    for cap in class_re.captures_iter(source) {
-        let line = source[..cap.get(0).unwrap().start()].chars().filter(|&c| c == '\n').count() + 1;
-        structs.push(StructDef { name: cap[1].to_string(), is_public: true, fields: vec![], derives: vec![], line });
-    }
-
-    (functions, structs, imports)
-}
-
 // ─── LOC counter ─────────────────────────────────────────────────────────────
 
 fn count_loc(source: &str) -> usize {
@@ -358,6 +353,17 @@ fn count_loc(source: &str) -> usize {
             !t.is_empty() && !t.starts_with("//") && !t.starts_with('#') && !t.starts_with("--")
         })
         .count()
+}
+
+// ─── Vendor directory filter ──────────────────────────────────────────────────
+
+fn is_vendor_dir(name: &str) -> bool {
+    matches!(name,
+        "node_modules" | "vendor" | "venv" | ".venv" |
+        "__pycache__" | ".git" | "target" | "dist" |
+        "build" | ".tox" | ".mypy_cache" | ".pytest_cache" |
+        "pkg" | "bin" | "testdata" | ".eggs" | "*.egg-info"
+    ) || name.starts_with('.')
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -405,14 +411,14 @@ fn collect_files(dir: &Path, out: &mut Vec<CodeObservation>) -> Result<()> {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            // Skip hidden dirs and common non-source dirs
             let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if !name.starts_with('.') && name != "target" && name != "node_modules" {
+            if !is_vendor_dir(name) {
                 collect_files(&path, out)?;
             }
         } else if path.is_file() {
             let lang = Language::from_path(&path);
-            if !matches!(lang, Language::Unknown) {
+            if !matches!(lang, Language::Unknown | Language::Dockerfile
+                | Language::Html | Language::Css | Language::Toml) {
                 if let Ok(obs) = parse_file(&path) {
                     out.push(obs);
                 }
@@ -429,12 +435,20 @@ fn build_observation(file_path: PathBuf, source: String, language: Language, sha
             let (f, s, i) = parse_rust(&source);
             (f, s, i, vec![])
         }
-        Language::JavaScript | Language::TypeScript => {
-            let (f, s, i) = parse_javascript(&source);
+        Language::Python => {
+            let (f, s, i) = python::parse_python(&source);
             (f, s, i, vec![])
         }
-        Language::Python => {
-            let (f, s, i) = parse_python(&source);
+        Language::TypeScript => {
+            let (f, s, i) = typescript::parse_typescript(&source);
+            (f, s, i, vec![])
+        }
+        Language::Go => {
+            let (f, s, i) = go::parse_go(&source);
+            (f, s, i, vec![])
+        }
+        Language::JavaScript => {
+            let (f, s, i) = parse_javascript(&source);
             (f, s, i, vec![])
         }
         Language::Sql => {
@@ -514,5 +528,46 @@ const createProduct = async (body) => {
         assert_eq!(Language::from_path(Path::new("app.js")), Language::JavaScript);
         assert_eq!(Language::from_path(Path::new("schema.sql")), Language::Sql);
         assert_eq!(Language::from_path(Path::new("Dockerfile")), Language::Dockerfile);
+        assert_eq!(Language::from_path(Path::new("main.go")), Language::Go);
+        assert_eq!(Language::from_path(Path::new("app.ts")), Language::TypeScript);
+        assert_eq!(Language::from_path(Path::new("service.py")), Language::Python);
+    }
+
+    #[test]
+    fn language_from_extension() {
+        assert_eq!(Language::from_extension("go"), Language::Go);
+        assert_eq!(Language::from_extension("py"), Language::Python);
+        assert_eq!(Language::from_extension("ts"), Language::TypeScript);
+        assert_eq!(Language::from_extension("tsx"), Language::TypeScript);
+    }
+
+    #[test]
+    fn parse_directory_multi_language() {
+        use std::io::Write;
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        // Rust file
+        let mut f = std::fs::File::create(root.join("main.rs")).unwrap();
+        writeln!(f, "pub fn hello() {{}}").unwrap();
+
+        // Python file
+        let mut f = std::fs::File::create(root.join("app.py")).unwrap();
+        writeln!(f, "def greet(name): pass").unwrap();
+
+        // TypeScript file
+        let mut f = std::fs::File::create(root.join("index.ts")).unwrap();
+        writeln!(f, "export function greet(name: string): void {{}}").unwrap();
+
+        // Go file
+        let mut f = std::fs::File::create(root.join("main.go")).unwrap();
+        writeln!(f, "package main\nfunc Hello() {{}}").unwrap();
+
+        let ws = parse_directory(root).unwrap();
+        let langs: std::collections::HashSet<&str> = ws.languages.iter().map(|s| s.as_str()).collect();
+        assert!(langs.contains("rust"), "rust missing: {:?}", langs);
+        assert!(langs.contains("python"), "python missing: {:?}", langs);
+        assert!(langs.contains("typescript"), "typescript missing: {:?}", langs);
+        assert!(langs.contains("go"), "go missing: {:?}", langs);
     }
 }

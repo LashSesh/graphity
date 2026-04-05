@@ -124,9 +124,16 @@ impl Codematrix {
 // Resonite Extraction
 // ═══════════════════════════════════════════════════════════════════
 
-/// Extract all Resonites from a Rust source string.
-pub fn extract_resonites(code: &str, file_path: &str) -> Vec<Resonite> {
-    let parsed = match isls_reader::parse_string(code, isls_reader::Language::Rust) {
+/// Extract all Resonites from source code in any supported language.
+///
+/// `lang` selects the parser. Pass `isls_reader::Language::Rust` to preserve
+/// the previous behaviour. All languages produce the same Resonite variants.
+pub fn extract_resonites(
+    code: &str,
+    file_path: &str,
+    lang: isls_reader::Language,
+) -> Vec<Resonite> {
+    let parsed = match isls_reader::parse_string(code, lang) {
         Ok(obs) => obs,
         Err(_) => return vec![],
     };
@@ -144,9 +151,11 @@ pub fn extract_resonites(code: &str, file_path: &str) -> Vec<Resonite> {
         });
     }
 
-    // Types (structs)
+    // Types (structs / classes / interfaces)
     for s in &parsed.structs {
-        let kind = if s.derives.iter().any(|d| d.contains("Enum")) {
+        let kind = if s.derives.iter().any(|d| d == "interface") {
+            TypeKind::Trait
+        } else if s.derives.iter().any(|d| d.contains("Enum")) {
             TypeKind::Enum
         } else {
             TypeKind::Struct
@@ -161,10 +170,10 @@ pub fn extract_resonites(code: &str, file_path: &str) -> Vec<Resonite> {
 
     // Imports
     for import in &parsed.imports {
-        resonites.push(Resonite::Import {
-            path: import.clone(),
-            is_external: !import.starts_with("crate::"),
-        });
+        let is_external = import.starts_with("ext:")
+            || (!import.starts_with("crate::") && !import.starts_with('.'));
+        let path = import.trim_start_matches("ext:").to_string();
+        resonites.push(Resonite::Import { path, is_external });
     }
 
     // Layer (inferred from file path)
@@ -178,7 +187,6 @@ pub fn extract_resonites(code: &str, file_path: &str) -> Vec<Resonite> {
     // Relations (FK from struct field patterns like "-> Entity")
     for s in &parsed.structs {
         for field in &s.fields {
-            // Detect FK patterns: field names ending with _id or types containing another entity
             if field.ends_with("_id") || field.contains("-> ") {
                 resonites.push(Resonite::Relation {
                     source: s.name.clone(),
@@ -262,8 +270,22 @@ pub fn compute_codematrix(resonites: &[Resonite], expected_layer: Option<u8>) ->
 }
 
 /// Compute the full Codematrix from raw source code and file path.
+///
+/// The language is inferred from the file extension; unknown extensions fall
+/// back to Rust (existing behaviour).
 pub fn compute_codematrix_from_code(code: &str, file_path: &str, expected_layer: Option<u8>) -> Codematrix {
-    let resonites = extract_resonites(code, file_path);
+    let lang = isls_reader::Language::from_filename(
+        std::path::Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(""),
+    );
+    let lang = if matches!(lang, isls_reader::Language::Unknown) {
+        isls_reader::Language::Rust
+    } else {
+        lang
+    };
+    let resonites = extract_resonites(code, file_path, lang);
     compute_codematrix(&resonites, expected_layer)
 }
 
@@ -482,7 +504,7 @@ pub struct Pet {
 
     #[test]
     fn test_extract_resonites_query() {
-        let resonites = extract_resonites(SAMPLE_QUERY, "backend/src/database/pet_queries.rs");
+        let resonites = extract_resonites(SAMPLE_QUERY, "backend/src/database/pet_queries.rs", isls_reader::Language::Rust);
         let fn_count = resonites.iter().filter(|r| matches!(r, Resonite::Fn { .. })).count();
         let import_count = resonites.iter().filter(|r| matches!(r, Resonite::Import { .. })).count();
         assert!(fn_count >= 3, "Expected >=3 functions, got {}", fn_count);
@@ -491,7 +513,7 @@ pub struct Pet {
 
     #[test]
     fn test_extract_resonites_model() {
-        let resonites = extract_resonites(SAMPLE_MODEL, "backend/src/models/pet.rs");
+        let resonites = extract_resonites(SAMPLE_MODEL, "backend/src/models/pet.rs", isls_reader::Language::Rust);
         let type_count = resonites.iter().filter(|r| matches!(r, Resonite::Type { .. })).count();
         assert!(type_count >= 1, "Expected >=1 type, got {}", type_count);
     }

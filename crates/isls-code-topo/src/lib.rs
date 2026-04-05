@@ -9,7 +9,7 @@
 
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
-use isls_reader::CodeObservation;
+use isls_reader::{CodeObservation, Language};
 
 pub mod bridge;
 
@@ -34,6 +34,10 @@ pub struct CodeTopology {
     pub language_breakdown: BTreeMap<String, usize>,
     /// Fiedler-like connectivity measure (approximated).
     pub connectivity: f64,
+    /// Per-language file count (I4: cross-language topology).
+    pub languages: BTreeMap<String, usize>,
+    /// The language with the most files in this corpus.
+    pub primary_language: String,
 }
 
 // ─── Topology computation ─────────────────────────────────────────────────────
@@ -44,10 +48,15 @@ pub fn compute_code_topology(observations: &[CodeObservation]) -> CodeTopology {
     let mut struct_names = Vec::new();
     let mut call_graph = Vec::new();
     let mut language_breakdown: BTreeMap<String, usize> = BTreeMap::new();
+    let mut languages: BTreeMap<String, usize> = BTreeMap::new();
     let mut layers: Vec<String> = Vec::new();
 
     for obs in observations {
-        *language_breakdown.entry(obs.language.as_str().to_string()).or_insert(0) += obs.loc;
+        let lang_key = obs.language.as_str().to_string();
+        *language_breakdown.entry(lang_key.clone()).or_insert(0) += obs.loc;
+        if !matches!(obs.language, Language::Unknown) {
+            *languages.entry(lang_key).or_insert(0) += 1;
+        }
 
         for f in &obs.functions {
             let sig = format!("{}/{}", f.name, f.params.len());
@@ -92,6 +101,13 @@ pub fn compute_code_topology(observations: &[CodeObservation]) -> CodeTopology {
         0.0
     };
 
+    // Determine primary language (most files)
+    let primary_language = languages
+        .iter()
+        .max_by_key(|(_, &count)| count)
+        .map(|(lang, _)| lang.clone())
+        .unwrap_or_default();
+
     CodeTopology {
         node_count,
         edge_count,
@@ -101,6 +117,8 @@ pub fn compute_code_topology(observations: &[CodeObservation]) -> CodeTopology {
         call_graph,
         language_breakdown,
         connectivity,
+        languages,
+        primary_language,
     }
 }
 
