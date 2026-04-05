@@ -464,7 +464,7 @@ pub async fn discover_scrape(
     });
 
     if let Some(ref url) = req.url {
-        let kw_path = state.scrape_keywords_path.clone();
+        let kw_path = state.suggested_keywords_path.clone();
         match clone_and_analyze(url, &domain, Some(state.norm_registry.clone())).await {
             Ok(data) => {
                 let auto_kws: Vec<String> = data["auto_keywords"]
@@ -485,7 +485,7 @@ pub async fn discover_scrape(
             return Json(serde_json::json!({ "ok": false, "error": "path is not a directory" }));
         }
         let domain_c = domain.clone();
-        let kw_path = state.scrape_keywords_path.clone();
+        let kw_path = state.suggested_keywords_path.clone();
         let result = tokio::task::spawn_blocking(move || {
             analyze_directory_sync(&p, &domain_c, None, true)
         })
@@ -541,7 +541,7 @@ pub async fn discover_mass_scrape(
     let jobs = state.mass_scrape_jobs.clone();
     let event_hub = state.event_hub.clone();
     let history = state.scrape_history.clone();
-    let kw_path = state.scrape_keywords_path.clone();
+    let kw_path = state.suggested_keywords_path.clone();
     let job_id_ret = job_id.clone();
 
     tokio::spawn(async move {
@@ -1490,4 +1490,480 @@ fn rand_u32() -> u32 {
     std::time::SystemTime::now().hash(&mut hasher);
     std::thread::current().id().hash(&mut hasher);
     (hasher.finish() & 0xFFFF_FFFF) as u32
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// I4/harpoon: Cascading targeted scrape
+// ═══════════════════════════════════════════════════════════════════
+
+/// Maximum repos scraped by a single harpoon run.
+pub const HARPOON_MAX_REPOS: usize = 200;
+
+/// repos-per-keyword schedule by depth level (0-indexed).
+const HARPOON_RPK: [usize; 3] = [5, 3, 2];
+
+#[derive(Debug, Deserialize)]
+pub struct HarpoonRequest {
+    /// A local path or git URL to use as seed.
+    pub seed: String,
+    /// Maximum cascade depth (1–3, default 3).
+    #[serde(default)]
+    pub depth: Option<usize>,
+    /// repos-per-keyword at depth-0 (default 5). Reduced per depth.
+    #[serde(default)]
+    pub repos_per_keyword: Option<usize>,
+    /// Stop early when norm coverage exceeds this ratio (default 0.9).
+    #[serde(default)]
+    pub stop_at_coverage: Option<f64>,
+    /// Domain tag to attach to scraped norms.
+    #[serde(default)]
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HarpoonJob {
+    pub id: String,
+    pub status: String, // "running" | "complete" | "stopped" | "error"
+    pub depth_current: usize,
+    pub depth_max: usize,
+    pub repos_scraped: usize,
+    pub repos_failed: usize,
+    pub new_candidates: usize,
+    pub new_norms: usize,
+    pub coverage: f64,
+    pub keywords_used: Vec<String>,
+    pub stop_reason: Option<String>,
+}
+
+pub type HarpoonStore = Arc<RwLock<HashMap<String, HarpoonJob>>>;
+
+pub fn new_harpoon_store() -> HarpoonStore {
+    Arc::new(RwLock::new(HashMap::new()))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AcceptKeywordRequest {
+    pub keyword: String,
+}
+
+/// POST /api/discover/harpoon — launch a cascading targeted scrape.
+pub async fn discover_harpoon(
+    State(state): State<AppState>,
+    Json(req): Json<HarpoonRequest>,
+) -> Json<serde_json::Value> {
+    let depth_max = req.depth.unwrap_or(3).clamp(1, 3);
+    let rpk0 = req.repos_per_keyword.unwrap_or(5).min(10);
+    let stop_cov = req.stop_at_coverage.unwrap_or(0.9).clamp(0.0, 1.0);
+    let domain = req.domain.clone().unwrap_or_else(|| {
+        if req.seed.starts_with("http") {
+            bridge::domain_from_url(&req.seed)
+        } else {
+            bridge::domain_from_path(std::path::Path::new(&req.seed))
+        }
+    });
+
+    let job_id = format!("harpoon-{:08x}", rand_u32());
+
+    let job = HarpoonJob {
+        id: job_id.clone(),
+        status: "running".to_string(),
+        depth_current: 0,
+        depth_max,
+        repos_scraped: 0,
+        repos_failed: 0,
+        new_candidates: 0,
+        new_norms: 0,
+        coverage: 0.0,
+        keywords_used: vec![],
+        stop_reason: None,
+    };
+    state.harpoon_jobs.write().await.insert(job_id.clone(), job);
+
+    let harpoon_jobs = state.harpoon_jobs.clone();
+    let event_hub = state.event_hub.clone();
+    let norm_registry = state.norm_registry.clone();
+    let suggested_kw_path = state.suggested_keywords_path.clone();
+    let seed = req.seed.clone();
+    let job_id_ret = job_id.clone();
+
+    tokio::spawn(async move {
+        run_harpoon(
+            harpoon_jobs,
+            event_hub,
+            norm_registry,
+            suggested_kw_path,
+            job_id,
+            seed,
+            domain,
+            depth_max,
+            rpk0,
+            stop_cov,
+        )
+        .await;
+    });
+
+    Json(serde_json::json!({
+        "ok": true,
+        "job_id": job_id_ret,
+        "depth_max": depth_max,
+        "repos_per_keyword_d0": rpk0,
+        "stop_at_coverage": stop_cov,
+    }))
+}
+
+/// GET /api/discover/harpoon/{id}/status
+pub async fn discover_harpoon_status(
+    State(state): State<AppState>,
+    AxumPath(id): AxumPath<String>,
+) -> Json<serde_json::Value> {
+    let jobs = state.harpoon_jobs.read().await;
+    match jobs.get(&id) {
+        Some(job) => Json(serde_json::json!({ "ok": true, "job": job })),
+        None => Json(serde_json::json!({ "ok": false, "error": "harpoon job not found" })),
+    }
+}
+
+/// GET /api/discover/suggested-keywords — return suggested_keywords.txt
+pub async fn discover_suggested_keywords(
+    State(state): State<AppState>,
+) -> Json<serde_json::Value> {
+    match read_keywords_file(&state.suggested_keywords_path) {
+        Ok((content, count)) => {
+            let keywords: Vec<&str> = content
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .collect();
+            Json(serde_json::json!({
+                "ok": true,
+                "keywords": keywords,
+                "count": count,
+                "path": state.suggested_keywords_path.display().to_string(),
+            }))
+        }
+        Err(e) => Json(serde_json::json!({
+            "ok": true,
+            "keywords": [],
+            "count": 0,
+            "path": state.suggested_keywords_path.display().to_string(),
+            "warning": e,
+        })),
+    }
+}
+
+/// POST /api/discover/accept-keyword — move a suggested keyword to
+/// `scrape_keywords.txt` (the curated list).
+pub async fn discover_accept_keyword(
+    State(state): State<AppState>,
+    Json(req): Json<AcceptKeywordRequest>,
+) -> Json<serde_json::Value> {
+    let kw = req.keyword.trim().to_string();
+    if kw.is_empty() {
+        return Json(serde_json::json!({ "ok": false, "error": "keyword is empty" }));
+    }
+    let added = append_new_keywords(&state.scrape_keywords_path, &[kw.clone()]).await;
+    Json(serde_json::json!({
+        "ok": true,
+        "keyword": kw,
+        "added": added > 0,
+    }))
+}
+
+/// Core harpoon cascade loop.
+async fn run_harpoon(
+    harpoon_jobs: HarpoonStore,
+    event_hub: crate::ws::EventHub,
+    norm_registry: Arc<RwLock<NormRegistry>>,
+    suggested_kw_path: PathBuf,
+    job_id: String,
+    seed: String,
+    domain: String,
+    depth_max: usize,
+    rpk0: usize,
+    stop_at_coverage: f64,
+) {
+    use crate::ws::EventType;
+
+    // ── Stage 0: analyse the seed ──────────────────────────────────
+    let seed_result = if seed.starts_with("http") {
+        tokio::task::spawn_blocking({
+            let seed_c = seed.clone();
+            let domain_c = domain.clone();
+            move || clone_and_analyze_sync(&seed_c, &domain_c, true)
+        })
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .map(|(v, _)| v)
+    } else {
+        let p = PathBuf::from(&seed);
+        tokio::task::spawn_blocking(move || analyze_directory_sync(&p, &domain, None, true))
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|(v, _)| v)
+    };
+
+    let mut current_keywords: Vec<String> = match seed_result {
+        Some(ref data) => data["auto_keywords"]
+            .as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .unwrap_or_default(),
+        None => {
+            let mut j = harpoon_jobs.write().await;
+            if let Some(job) = j.get_mut(&job_id) {
+                job.status = "error".to_string();
+                job.stop_reason = Some("Failed to analyse seed".to_string());
+            }
+            return;
+        }
+    };
+
+    if current_keywords.is_empty() {
+        let mut j = harpoon_jobs.write().await;
+        if let Some(job) = j.get_mut(&job_id) {
+            job.status = "stopped".to_string();
+            job.stop_reason = Some("No keywords extracted from seed".to_string());
+        }
+        return;
+    }
+
+    let mut total_scraped: usize = 0;
+    let mut total_failed: usize = 0;
+    let mut total_candidates: usize = 0;
+    let mut total_norms: usize = 0;
+    let mut all_keywords_used: Vec<String> = Vec::new();
+
+    // ── Cascade loop ───────────────────────────────────────────────
+    for depth in 0..depth_max {
+        let rpk = if depth < HARPOON_RPK.len() {
+            // blend with caller's rpk0 at depth 0
+            if depth == 0 { rpk0 } else { HARPOON_RPK[depth] }
+        } else {
+            1
+        };
+
+        // Publish stage event
+        event_hub.publish(crate::ws::WsEvent::new(
+            EventType::HarpoonStage,
+            serde_json::json!({
+                "job_id": &job_id,
+                "depth": depth,
+                "depth_max": depth_max,
+                "keywords": &current_keywords,
+                "repos_per_keyword": rpk,
+            }),
+        ));
+
+        // Update job depth
+        {
+            let mut j = harpoon_jobs.write().await;
+            if let Some(job) = j.get_mut(&job_id) {
+                job.depth_current = depth + 1;
+                job.keywords_used.extend(current_keywords.iter().cloned());
+            }
+        }
+
+        all_keywords_used.extend(current_keywords.iter().cloned());
+        all_keywords_used.sort();
+        all_keywords_used.dedup();
+
+        // Search + scrape repos for each keyword
+        let semaphore = Arc::new(Semaphore::new(MASS_SCRAPE_PARALLELISM));
+        let mut stage_keywords: Vec<String> = Vec::new();
+        let mut handles = Vec::new();
+
+        for keyword in &current_keywords {
+            if total_scraped >= HARPOON_MAX_REPOS {
+                break;
+            }
+
+            let repos = match github_search_repos(keyword, rpk).await {
+                Ok(data) => data["repos"].as_array().cloned().unwrap_or_default(),
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+
+            for repo in repos {
+                if total_scraped + handles.len() >= HARPOON_MAX_REPOS {
+                    break;
+                }
+                let clone_url = repo["clone_url"].as_str().unwrap_or("").to_string();
+                let full_name = repo["full_name"].as_str().unwrap_or("unknown").to_string();
+                if clone_url.is_empty() {
+                    continue;
+                }
+                let repo_domain = bridge::domain_from_url(&clone_url);
+                let sem_cl = semaphore.clone();
+                let hub_cl = event_hub.clone();
+                let job_id_cl = job_id.clone();
+                let full_name_cl = full_name.clone();
+                let kw_cl = keyword.clone();
+
+                handles.push(tokio::spawn(async move {
+                    let _permit = match sem_cl.acquire_owned().await {
+                        Ok(p) => p,
+                        Err(_) => return None,
+                    };
+                    let clone_url_owned = clone_url.clone();
+                    let domain_owned = repo_domain.clone();
+                    let result = tokio::task::spawn_blocking(move || {
+                        clone_and_analyze_sync(&clone_url_owned, &domain_owned, true)
+                    })
+                    .await;
+
+                    match result {
+                        Ok(Ok((data, _))) => {
+                            let new_cands = data["norms"]["new_candidates"].as_u64().unwrap_or(0);
+                            let new_norms = data["norms"]["new_norms"].as_u64().unwrap_or(0);
+                            let auto_kws: Vec<String> = data["auto_keywords"]
+                                .as_array()
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|v| v.as_str().map(String::from))
+                                        .collect()
+                                })
+                                .unwrap_or_default();
+
+                            hub_cl.publish(crate::ws::WsEvent::new(
+                                EventType::HarpoonRepo,
+                                serde_json::json!({
+                                    "job_id": &job_id_cl,
+                                    "repo": &full_name_cl,
+                                    "keyword": &kw_cl,
+                                    "new_candidates": new_cands,
+                                    "new_norms": new_norms,
+                                    "auto_keywords": &auto_kws,
+                                }),
+                            ));
+
+                            Some((1usize, 0usize, new_cands as usize, new_norms as usize, auto_kws))
+                        }
+                        _ => {
+                            hub_cl.publish(crate::ws::WsEvent::new(
+                                EventType::HarpoonRepo,
+                                serde_json::json!({
+                                    "job_id": &job_id_cl,
+                                    "repo": &full_name_cl,
+                                    "keyword": &kw_cl,
+                                    "error": true,
+                                }),
+                            ));
+                            Some((0usize, 1usize, 0usize, 0usize, vec![]))
+                        }
+                    }
+                }));
+            }
+
+            // Rate-limit GitHub searches
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+
+        // Collect handle results
+        for result in futures::future::join_all(handles).await {
+            if let Ok(Some((scraped, failed, cands, norms, kws))) = result {
+                total_scraped += scraped;
+                total_failed += failed;
+                total_candidates += cands;
+                total_norms += norms;
+                stage_keywords.extend(kws);
+            }
+        }
+
+        // Persist suggested keywords from this stage
+        stage_keywords.sort();
+        stage_keywords.dedup();
+        append_new_keywords(&suggested_kw_path, &stage_keywords).await;
+
+        // Compute coverage after this stage
+        let coverage = {
+            let reg = norm_registry.read().await;
+            let universe = universal_target_resonites_count();
+            let covered = reg.all_norms().len();
+            (covered as f64 / universe as f64).min(1.0)
+        };
+
+        // Update job stats
+        {
+            let mut j = harpoon_jobs.write().await;
+            if let Some(job) = j.get_mut(&job_id) {
+                job.repos_scraped = total_scraped;
+                job.repos_failed = total_failed;
+                job.new_candidates = total_candidates;
+                job.new_norms = total_norms;
+                job.coverage = coverage;
+            }
+        }
+
+        // Publish stage-complete event
+        event_hub.publish(crate::ws::WsEvent::new(
+            EventType::HarpoonStageComplete,
+            serde_json::json!({
+                "job_id": &job_id,
+                "depth": depth,
+                "repos_scraped_stage": total_scraped,
+                "coverage": coverage,
+                "new_keywords": &stage_keywords,
+            }),
+        ));
+
+        // Stop conditions
+        if total_scraped >= HARPOON_MAX_REPOS {
+            let mut j = harpoon_jobs.write().await;
+            if let Some(job) = j.get_mut(&job_id) {
+                job.status = "stopped".to_string();
+                job.stop_reason = Some(format!("Reached max repos ({})", HARPOON_MAX_REPOS));
+            }
+            break;
+        }
+        if coverage >= stop_at_coverage {
+            let mut j = harpoon_jobs.write().await;
+            if let Some(job) = j.get_mut(&job_id) {
+                job.status = "stopped".to_string();
+                job.stop_reason = Some(format!("Coverage {:.1}% >= threshold", coverage * 100.0));
+            }
+            break;
+        }
+        if stage_keywords.is_empty() || depth + 1 >= depth_max {
+            break;
+        }
+
+        // Next depth: use keywords extracted in this stage
+        current_keywords = stage_keywords;
+    }
+
+    // Mark complete if not already stopped
+    {
+        let mut j = harpoon_jobs.write().await;
+        if let Some(job) = j.get_mut(&job_id) {
+            if job.status == "running" {
+                job.status = "complete".to_string();
+            }
+        }
+    }
+
+    let final_job = harpoon_jobs.read().await.get(&job_id).cloned();
+    if let Some(job) = final_job {
+        event_hub.publish(crate::ws::WsEvent::new(
+            EventType::HarpoonComplete,
+            serde_json::json!({
+                "job_id": &job_id,
+                "repos_scraped": job.repos_scraped,
+                "repos_failed": job.repos_failed,
+                "new_candidates": job.new_candidates,
+                "new_norms": job.new_norms,
+                "coverage": job.coverage,
+                "keywords_used": &job.keywords_used,
+                "stop_reason": &job.stop_reason,
+            }),
+        ));
+    }
+}
+
+/// Number of distinct norm classes in the universal target (used for coverage %).
+fn universal_target_resonites_count() -> usize {
+    // Matches the number of entries in universal_target_resonites()
+    34
 }

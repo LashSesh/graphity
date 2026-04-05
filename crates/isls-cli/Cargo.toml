@@ -26,5 +26,6 @@ toml       = { workspace = true }
 chrono     = { workspace = true }
 dotenv = "0.15"
 tokio  = { workspace = true }
+reqwest    = { workspace = true }
 
 [dev-dependencies]

@@ -105,6 +105,12 @@ pub struct AppState {
     /// S1/ux: filesystem path of the editable scrape-keyword list
     /// (`~/.isls/scrape_keywords.txt` by default).
     pub scrape_keywords_path: PathBuf,
+    /// I4/harpoon: filesystem path for auto-suggested keywords from scraping
+    /// (`~/.isls/suggested_keywords.txt` by default). Separate from the
+    /// curated `scrape_keywords.txt` — only `isls harpoon` may cascade on it.
+    pub suggested_keywords_path: PathBuf,
+    /// I4/harpoon: in-progress and completed harpoon jobs.
+    pub harpoon_jobs: discover::HarpoonStore,
     /// Oracle configuration for session forge (OpenAI vs Ollama vs Mock).
     pub oracle_config: OracleConfig,
 }
@@ -144,6 +150,7 @@ impl AppState {
             .unwrap_or_else(|_| PathBuf::from("/tmp/isls"));
         let projects_dir = isls_home.join("projects");
         let scrape_keywords_path = isls_home.join("scrape_keywords.txt");
+        let suggested_keywords_path = isls_home.join("suggested_keywords.txt");
         Self {
             start_time: Instant::now(),
             event_hub: EventHub::default(),
@@ -160,6 +167,8 @@ impl AppState {
             mass_scrape_jobs: discover::new_mass_scrape_store(),
             scrape_history: discover::new_scrape_history_store(),
             scrape_keywords_path,
+            suggested_keywords_path,
+            harpoon_jobs: discover::new_harpoon_store(),
             oracle_config: OracleConfig::default_mock(),
         }
     }
@@ -553,6 +562,10 @@ pub fn build_router(state: AppState) -> Router {
         )
         .route("/api/discover/genealogy/{norm_id}", get(discover::discover_genealogy))
         .route("/api/discover/similarity", get(discover::discover_similarity))
+        .route("/api/discover/harpoon", post(discover::discover_harpoon))
+        .route("/api/discover/harpoon/{id}/status", get(discover::discover_harpoon_status))
+        .route("/api/discover/suggested-keywords", get(discover::discover_suggested_keywords))
+        .route("/api/discover/accept-keyword", post(discover::discover_accept_keyword))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)

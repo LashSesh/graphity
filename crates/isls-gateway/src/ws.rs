@@ -19,6 +19,10 @@ pub enum EventType {
     DiscoverKeyword,
     DiscoverRepo,
     DiscoverComplete,
+    HarpoonStage,
+    HarpoonRepo,
+    HarpoonStageComplete,
+    HarpoonComplete,
 }
 
 /// A WebSocket event message
