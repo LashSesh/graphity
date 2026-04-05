@@ -3,31 +3,59 @@
 //
 //! `isls norms` subcommand handlers for D4 CLI observability.
 
-use isls_norms::NormRegistry;
+use isls_norms::{injection::INJECT_PREFIX, NormRegistry};
 
-/// List all norms (builtin + auto-discovered).
-/// If `auto_only` is true, only show auto-discovered norms.
-pub fn cmd_norms_list(auto_only: bool) {
+/// Return the source tag (`"builtin"` / `"auto"` / `"injected"`) for a norm.
+fn norm_source_tag(id: &str) -> &'static str {
+    if id.starts_with("ISLS-NORM-AUTO-") {
+        "auto"
+    } else if id.starts_with(INJECT_PREFIX) {
+        "injected"
+    } else {
+        "builtin"
+    }
+}
+
+/// List all norms (builtin + auto-discovered + injected).
+///
+/// * `auto_only` restricts the output to auto-discovered norms (legacy flag).
+/// * `source_filter` restricts to norms of a particular origin
+///   (`"builtin" | "auto" | "injected"`), which is what I3/W2 exposes.
+pub fn cmd_norms_list(auto_only: bool, source_filter: Option<&str>) {
     let registry = NormRegistry::new();
     let all = registry.all_norms();
 
-    let (builtin_count, auto_count) = all.iter().fold((0, 0), |(b, a), n| {
-        if n.id.starts_with("ISLS-NORM-AUTO-") { (b, a + 1) } else { (b + 1, a) }
-    });
+    let mut builtin_count = 0usize;
+    let mut auto_count = 0usize;
+    let mut injected_count = 0usize;
+    for n in &all {
+        match norm_source_tag(&n.id) {
+            "auto" => auto_count += 1,
+            "injected" => injected_count += 1,
+            _ => builtin_count += 1,
+        }
+    }
 
-    println!("ISLS Norm Catalog ({} builtin, {} auto-discovered)", builtin_count, auto_count);
+    println!(
+        "ISLS Norm Catalog ({} builtin, {} auto-discovered, {} injected)",
+        builtin_count, auto_count, injected_count
+    );
     println!("---");
 
     let mut norms: Vec<_> = all.into_iter().collect();
     norms.sort_by(|a, b| a.id.cmp(&b.id));
 
     for norm in norms {
-        let is_auto = norm.id.starts_with("ISLS-NORM-AUTO-");
+        let origin = norm_source_tag(&norm.id);
+        let is_auto = origin == "auto";
         if auto_only && !is_auto {
             continue;
         }
-
-        let origin = if is_auto { "auto" } else { "builtin" };
+        if let Some(filter) = source_filter {
+            if !filter.eq_ignore_ascii_case(origin) {
+                continue;
+            }
+        }
         let layers = format_layers(norm);
 
         println!(
@@ -353,6 +381,81 @@ pub fn cmd_norms_reset() {
         } else {
             println!("Aborted.");
         }
+    }
+}
+
+// ─── I3/W2 Norm Injection ───────────────────────────────────────────────────
+
+/// Inject a norm blueprint JSON file into the registry.
+pub fn cmd_norms_inject(file: &str) {
+    let path = std::path::Path::new(file);
+    if !path.exists() {
+        eprintln!("[ERROR] Blueprint file not found: {}", file);
+        std::process::exit(1);
+    }
+    let blueprint = match isls_norms::injection::load_blueprint(path) {
+        Ok(bp) => bp,
+        Err(e) => {
+            eprintln!("[ERROR] Invalid blueprint: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let mut registry = NormRegistry::new();
+    let _ = registry.load();
+
+    match isls_norms::injection::inject_norm(&mut registry, blueprint.clone()) {
+        Ok(id) => {
+            if let Err(e) = registry.save() {
+                eprintln!("[WARN] Could not persist norms.json: {}", e);
+            }
+            // Initialise fitness at the neutral midpoint (0.5) — the
+            // fitness system will grow or shrink it through normal usage.
+            let mut fitness = isls_norms::fitness::FitnessStore::load();
+            {
+                let entry = fitness.get_or_create(&id);
+                entry.fitness = 0.5;
+            }
+            let _ = fitness.save();
+
+            println!("[OK] Injected {} \"{}\"", id, blueprint.name);
+            println!("     Fitness: 0.50 (neutral, will be validated by usage)");
+            if !blueprint.activation_keywords.is_empty() {
+                println!(
+                    "     Keywords: {}",
+                    blueprint.activation_keywords.join(", ")
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("[ERROR] {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Remove an injected norm by id. Builtins / auto-discovered norms are
+/// rejected — only `ISLS-NORM-INJECT-*` IDs are accepted.
+pub fn cmd_norms_remove(id: &str) {
+    if !id.starts_with(isls_norms::injection::INJECT_PREFIX) {
+        eprintln!(
+            "[ERROR] Only injected norms (ID prefix {}) can be removed.",
+            isls_norms::injection::INJECT_PREFIX
+        );
+        std::process::exit(1);
+    }
+
+    let mut registry = NormRegistry::new();
+    let _ = registry.load();
+
+    if isls_norms::injection::remove_injected(&mut registry, id) {
+        if let Err(e) = registry.save() {
+            eprintln!("[WARN] Could not persist norms.json: {}", e);
+        }
+        println!("[OK] Removed {}. Fitness data preserved.", id);
+    } else {
+        eprintln!("[ERROR] No injected norm with id '{}' found.", id);
+        std::process::exit(1);
     }
 }
 

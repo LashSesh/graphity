@@ -533,6 +533,8 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discover/mass-scrape/{id}/status", get(discover::discover_mass_scrape_status))
         .route("/api/discover/upload-keywords", post(discover::discover_upload_keywords))
         .route("/api/discover/gaps", get(discover::discover_gaps))
+        .route("/api/discover/spectroscopy", post(discover::discover_spectroscopy))
+        .route("/api/discover/spectroscopy/fill", post(discover::discover_spectroscopy_fill))
         .route("/api/discover/genealogy/{norm_id}", get(discover::discover_genealogy))
         .route("/api/discover/similarity", get(discover::discover_similarity))
         // WebSocket
