@@ -252,8 +252,11 @@ impl OllamaOracle {
     /// - `model`: Ollama model name, e.g. `"codellama:7b"`.
     /// - `base_url`: Ollama API base URL, e.g. `"http://localhost:11434"`.
     pub fn new(model: &str, base_url: &str) -> Self {
+        // Large models (32B) on CPU routinely exceed the previous 5 min
+        // timeout on forge-scale prompts and get HTTP 500 from Ollama.
+        // Give them 20 minutes per call so the full pipeline completes.
         let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(300))
+            .timeout(std::time::Duration::from_secs(1200))
             .build()
             .expect("failed to build HTTP client for Ollama");
         Self {

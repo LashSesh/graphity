@@ -725,14 +725,17 @@ var $btnD    = document.getElementById('btn-discover');
 var $tooltip = document.getElementById('readiness-tooltip');
 
 // ── API Key ────────────────────────────────────────────────────────
+//
+// The API key is *optional*. When the server runs with `--ollama` the
+// full pipeline (chat + forge) uses the local model and no key is
+// needed. Only honour an explicit `?key=...` URL parameter — never
+// prompt the user. If no key is present, sessions are created without
+// one and the backend falls back to its oracle_config chain
+// (OpenAI server key → Ollama → manual mode).
 function getApiKey() {
     if (apiKey) return apiKey;
     var params = new URLSearchParams(window.location.search);
     apiKey = params.get('key') || null;
-    if (!apiKey) {
-        apiKey = prompt('OpenAI API Key (oder leer fuer manuellen Modus):');
-        if (apiKey === '') apiKey = null;
-    }
     return apiKey;
 }
 
