@@ -10,6 +10,7 @@
 
 pub mod architect;
 pub mod chat;
+pub mod chat_handler;
 pub mod discover;
 pub mod session;
 pub mod ws;
@@ -512,6 +513,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/projects/{id}/file", get(api_project_file_content))
         // v3 Chat API (norm-aware)
         .route("/api/chat", post(api_chat))
+        .route("/api/chat/plain", post(chat_handler::api_chat_plain))
         .route("/api/chat/history", get(api_chat_history))
         // v3 Crystals + Health
         .route("/api/crystals", get(api_crystals))
