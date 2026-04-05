@@ -64,7 +64,13 @@ enum Command {
     /// D7: Generation metrics inspection.
     Metrics { compare: bool, last: Option<usize> },
     /// Start the Gateway / Studio web interface.
-    Serve { port: u16, api_key: Option<String> },
+    Serve {
+        port: u16,
+        api_key: Option<String>,
+        ollama: bool,
+        ollama_url: String,
+        ollama_model: String,
+    },
     /// Print help.
     Help,
 }
@@ -256,7 +262,16 @@ fn parse_args(args: &[String]) -> Command {
             let api_key = args.iter().position(|a| a == "--api-key")
                 .and_then(|i| args.get(i + 1))
                 .cloned();
-            Command::Serve { port, api_key }
+            let ollama = args.contains(&"--ollama".to_string());
+            let ollama_url = args.iter().position(|a| a == "--ollama-url")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            let ollama_model = args.iter().position(|a| a == "--ollama-model")
+                .and_then(|i| args.get(i + 1))
+                .cloned()
+                .unwrap_or_else(|| "qwen2.5-coder:32b".to_string());
+            Command::Serve { port, api_key, ollama, ollama_url, ollama_model }
         }
         "--help" | "-h" | "help" => Command::Help,
         _ => Command::Help,
@@ -717,26 +732,51 @@ fn cmd_forge_self(
 
 // ─── serve: Gateway / Studio ─────────────────────────────────────────────────
 
-fn cmd_serve(port: u16, api_key: Option<String>) {
+fn cmd_serve(
+    port: u16,
+    api_key: Option<String>,
+    ollama: bool,
+    ollama_url: String,
+    ollama_model: String,
+) {
     // Set API key in environment if provided via --api-key flag
     if let Some(ref key) = api_key {
         std::env::set_var("OPENAI_API_KEY", key);
     }
 
-    let has_key = api_key.is_some()
-        || std::env::var("OPENAI_API_KEY").is_ok()
-        || std::env::var("ANTHROPIC_API_KEY").is_ok();
+    let resolved_key = api_key.clone()
+        .or_else(|| std::env::var("OPENAI_API_KEY").ok());
+    let has_key = resolved_key.is_some();
+
+    let mode = if has_key {
+        "LLM generation (OpenAI API key)"
+    } else if ollama {
+        "LLM generation (Ollama local)"
+    } else {
+        "Mock mode (no LLM configured)"
+    };
 
     println!("ISLS Gateway v3.4 starting on port {}...", port);
-    println!("Mode: {}", if has_key { "LLM generation (API key provided)" } else { "Mock mode (no API key)" });
+    println!("Mode: {}", mode);
+    if ollama {
+        println!("Ollama: {} ({})", ollama_model, ollama_url);
+    }
     println!("Studio available at http://localhost:{}/studio", port);
     println!("API available at http://localhost:{}/", port);
     println!("WebSocket events at ws://localhost:{}/events", port);
     println!();
 
+    let oracle_config = isls_gateway::OracleConfig {
+        api_key: resolved_key,
+        use_ollama: ollama,
+        ollama_url,
+        ollama_model,
+        openai_model: "gpt-4o".to_string(),
+    };
+
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async {
-        let state = isls_gateway::AppState::new();
+        let state = isls_gateway::AppState::new().with_oracle_config(oracle_config);
         let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
         if let Err(e) = isls_gateway::serve(state, addr).await {
             eprintln!("Gateway error: {}", e);
@@ -816,7 +856,10 @@ fn print_help() {
     println!();
     println!("serve options:");
     println!("  --port <port>          Port number (default: 8420)");
-    println!("  --api-key <key>        API key for LLM generation");
+    println!("  --api-key <key>        OpenAI API key for LLM generation");
+    println!("  --ollama               Use local Ollama instead of OpenAI");
+    println!("  --ollama-url <url>     Ollama base URL (default: http://localhost:11434)");
+    println!("  --ollama-model <name>  Ollama model (default: qwen2.5-coder:32b)");
     println!();
     println!("Pipeline: forge-chat -> TOML -> forge-v2 -> cargo build -> docker-compose up");
     println!("One sentence. One app. Zero manual steps.");
@@ -860,7 +903,9 @@ fn main() {
                 cmd_metrics::cmd_metrics_summary();
             }
         }
-        Command::Serve { port, api_key } => cmd_serve(port, api_key),
+        Command::Serve { port, api_key, ollama, ollama_url, ollama_model } => {
+            cmd_serve(port, api_key, ollama, ollama_url, ollama_model)
+        }
         Command::Help => print_help(),
     }
 }
