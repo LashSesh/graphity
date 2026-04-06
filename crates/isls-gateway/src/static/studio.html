@@ -42,6 +42,198 @@ html, body {
     line-height: 1.6;
 }
 
+/* ── S1/auth: Login Page ───────────────────────────────────────── */
+#login-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    width: 100vw;
+}
+.login-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 40px 36px 32px;
+    width: 340px;
+    text-align: center;
+}
+.login-card h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 24px;
+    color: var(--text-primary);
+}
+.login-card label {
+    display: block;
+    text-align: left;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+    margin-top: 12px;
+}
+.login-card input {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+}
+.login-card input:focus { border-color: var(--accent); }
+.login-card .login-btn {
+    width: 100%;
+    margin-top: 20px;
+    padding: 10px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.login-card .login-btn:hover { opacity: 0.9; }
+.login-error {
+    color: var(--accent-error);
+    font-size: 13px;
+    margin-top: 12px;
+    min-height: 20px;
+}
+
+/* ── S1/auth: User Header Bar ──────────────────────────────────── */
+#user-header {
+    position: fixed;
+    top: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    z-index: 100;
+    font-size: 13px;
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    border-bottom-left-radius: 8px;
+    border-left: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+}
+#user-header .user-role { color: var(--text-dim); }
+#user-header button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+#user-header button:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+
+/* ── S1/auth: User Management Panel ────────────────────────────── */
+#user-mgmt-panel {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 200;
+    background: rgba(0,0,0,0.6);
+    align-items: center;
+    justify-content: center;
+}
+#user-mgmt-panel.visible { display: flex; }
+.um-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    width: 480px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+.um-card h2 { font-size: 16px; margin-bottom: 16px; }
+.um-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+}
+.um-row .um-name { flex: 1; font-weight: 600; }
+.um-row .um-role { color: var(--text-secondary); min-width: 60px; }
+.um-row select {
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+.um-row button {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+.um-row button:hover { color: var(--text-primary); }
+.um-row button.um-del { color: var(--accent-error); }
+.um-row button.um-del:hover { border-color: var(--accent-error); }
+.um-add-form {
+    display: none;
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--bg-input);
+    border-radius: 8px;
+}
+.um-add-form.visible { display: block; }
+.um-add-form input, .um-add-form select {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    margin-top: 6px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+}
+.um-add-form label { font-size: 12px; color: var(--text-secondary); margin-top: 8px; display: block; }
+.um-add-form .um-add-btn {
+    margin-top: 10px;
+    padding: 6px 16px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.um-close-btn {
+    float: right;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 18px;
+}
+.um-close-btn:hover { color: var(--text-primary); }
+.um-bottom-btn {
+    margin-top: 12px;
+    padding: 6px 14px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.um-bottom-btn:hover { color: var(--text-primary); }
+
 /* ── App Layout ─────────────────────────────────────────────────── */
 #app {
     display: grid;
@@ -1224,8 +1416,52 @@ html, body {
 </head>
 <body>
 
+<!-- S1/auth: Login Page -->
+<div id="login-page">
+    <div class="login-card">
+        <h1>ISLS Studio</h1>
+        <label for="login-user">Username</label>
+        <input id="login-user" type="text" autocomplete="username" autofocus>
+        <label for="login-pass">Passwort</label>
+        <input id="login-pass" type="password" autocomplete="current-password">
+        <button class="login-btn" onclick="studioLogin()">Login</button>
+        <div class="login-error" id="login-error"></div>
+    </div>
+</div>
+
+<!-- S1/auth: User Header (shown when logged in) -->
+<div id="user-header" style="display:none">
+    <span id="user-display"></span>
+    <span class="user-role" id="user-role-display"></span>
+    <button id="btn-user-mgmt" onclick="openUserMgmt()" style="display:none" title="Benutzer verwalten">&#9881;</button>
+    <button onclick="studioLogout()">Logout</button>
+</div>
+
+<!-- S1/auth: User Management Panel -->
+<div id="user-mgmt-panel">
+    <div class="um-card">
+        <button class="um-close-btn" onclick="closeUserMgmt()">&times;</button>
+        <h2>Benutzer verwalten</h2>
+        <div id="um-user-list"></div>
+        <button class="um-bottom-btn" onclick="umShowAddForm()">+ Benutzer hinzuf&uuml;gen</button>
+        <div class="um-add-form" id="um-add-form">
+            <label>Username</label>
+            <input id="um-new-user" type="text">
+            <label>Passwort</label>
+            <input id="um-new-pass" type="password">
+            <label>Rolle</label>
+            <select id="um-new-role">
+                <option value="admin">Admin</option>
+                <option value="editor" selected>Editor</option>
+                <option value="viewer">Viewer</option>
+            </select>
+            <button class="um-add-btn" onclick="umCreateUser()">Erstellen</button>
+        </div>
+    </div>
+</div>
+
 <div id="drop-overlay">Keywords-Datei hier ablegen</div>
-<div id="app">
+<div id="app" style="display:none">
     <!-- Mode Strip -->
     <nav id="mode-strip">
         <button class="mode-btn active" id="btn-create" onclick="switchMode('create')" title="Erschaffen">&#10022;</button>
@@ -1257,7 +1493,7 @@ html, body {
                 <div style="display:flex;gap:6px;">
                     <button class="ob-kw-btn" id="ob-kw-btn" onclick="toggleKeywordsEditor()">Keywords</button>
                     <button class="ob-kw-btn" id="ob-sugg-btn" onclick="toggleSuggestionsPanel()">Vorschl&auml;ge</button>
-                    <button class="ob-kw-btn" id="ob-inject-btn" onclick="toggleInjectEditor()">Inject</button>
+                    <button class="ob-kw-btn" id="ob-inject-btn" onclick="toggleInjectEditor()" data-auth="write">Inject</button>
                 </div>
             </div>
             <div class="ob-grid">
@@ -1320,7 +1556,7 @@ html, body {
                     <button class="sensor-tw-btn" id="tw-7d" onclick="setSensorWindow(168)">7d</button>
                     <span style="color:var(--text-dim);font-size:12px">|</span>
                     <button class="sensor-tw-btn" id="tw-30d" onclick="setSensorWindow(720)">30d</button>
-                    <button class="sensor-ae-btn" id="ae-toggle-btn" onclick="toggleAutoEvolve()">Auto-Evolve: AUS</button>
+                    <button class="sensor-ae-btn" id="ae-toggle-btn" onclick="toggleAutoEvolve()" data-auth="admin">Auto-Evolve: AUS</button>
                 </div>
             </div>
             <div class="sensor-grid">
@@ -1368,7 +1604,7 @@ html, body {
         <div id="mission-control" style="display:none;">
             <div class="sensor-header">
                 <span class="sensor-title">&#9678; Mission Control</span>
-                <button class="sensor-ae-btn" id="mc-add-btn" onclick="mcShowAddForm()">+ Neues Ziel</button>
+                <button class="sensor-ae-btn" id="mc-add-btn" onclick="mcShowAddForm()" data-auth="write">+ Neues Ziel</button>
             </div>
 
             <!-- Add Target Form (hidden by default) -->
@@ -1410,8 +1646,8 @@ html, body {
                 <div id="mc-steer-info" style="padding:8px;">
                     <div id="mc-steer-status">Lade...</div>
                     <div style="margin-top:8px;">
-                        <button class="sensor-ae-btn" id="mc-steer-toggle" onclick="mcToggleAutoSteer()">Auto-Steer: AUS</button>
-                        <button class="sensor-ae-btn" id="mc-harpoon-btn" onclick="mcManualHarpoon()" style="margin-left:8px;">Manueller Harpunen-Run</button>
+                        <button class="sensor-ae-btn" id="mc-steer-toggle" onclick="mcToggleAutoSteer()" data-auth="admin">Auto-Steer: AUS</button>
+                        <button class="sensor-ae-btn" id="mc-harpoon-btn" onclick="mcManualHarpoon()" style="margin-left:8px;" data-auth="write">Manueller Harpunen-Run</button>
                     </div>
                 </div>
             </div>
@@ -3382,13 +3618,16 @@ function renderTargetList(targets) {
         html += '<span class="mc-target-prio">P' + t.priority + '</span>';
         html += '<span style="font-size:12px;color:var(--text-secondary);min-width:45px;text-align:right;">' + pct + '%</span>';
 
-        // Forge button
-        if (t.coverage >= 0.5) {
-            html += '<button class="mc-forge-btn" onclick="mcForgeTarget(\'' + t.id + '\')" title="Forge starten">\u25B6</button>';
-        } else {
-            html += '<button class="mc-forge-btn" disabled title="Coverage zu niedrig">\u25B6</button>';
+        // Forge button (hidden for Viewer)
+        var canWrite = studioUser && studioUser.role !== 'viewer';
+        if (canWrite) {
+            if (t.coverage >= 0.5) {
+                html += '<button class="mc-forge-btn" onclick="mcForgeTarget(\'' + t.id + '\')" title="Forge starten">\u25B6</button>';
+            } else {
+                html += '<button class="mc-forge-btn" disabled title="Coverage zu niedrig">\u25B6</button>';
+            }
+            html += '<button class="mc-delete-btn" onclick="mcDeleteTarget(\'' + t.id + '\')" title="L\u00f6schen">\u2715</button>';
         }
-        html += '<button class="mc-delete-btn" onclick="mcDeleteTarget(\'' + t.id + '\')" title="L\u00f6schen">\u2715</button>';
         html += '</div>';
 
         // Progress bar
@@ -4273,8 +4512,206 @@ function toggleAutoEvolve() {
 })();
 
 // ── Init ───────────────────────────────────────────────────────────
-updateEmptyState();
-connectWs();
+// ── S1/auth: Studio Authentication ────────────────────────────────
+
+var studioUser = null;   // { user: "...", role: "..." }
+
+function checkStudioAuth() {
+    fetch('/api/studio/session')
+        .then(function(r) {
+            if (!r.ok) throw new Error('no session');
+            return r.json();
+        })
+        .then(function(d) {
+            studioUser = d;
+            showStudioApp();
+        })
+        .catch(function() {
+            showStudioLogin();
+        });
+}
+
+function showStudioLogin() {
+    studioUser = null;
+    document.getElementById('login-page').style.display = '';
+    document.getElementById('app').style.display = 'none';
+    document.getElementById('user-header').style.display = 'none';
+    document.getElementById('login-error').textContent = '';
+    document.getElementById('login-user').value = '';
+    document.getElementById('login-pass').value = '';
+    document.getElementById('login-user').focus();
+}
+
+function showStudioApp() {
+    document.getElementById('login-page').style.display = 'none';
+    document.getElementById('app').style.display = 'grid';
+    document.getElementById('user-header').style.display = '';
+    document.getElementById('user-display').textContent = studioUser.user;
+    document.getElementById('user-role-display').textContent = '(' + studioUser.role + ')';
+    document.getElementById('btn-user-mgmt').style.display =
+        studioUser.role === 'admin' ? '' : 'none';
+    applyRoleVisibility();
+    updateEmptyState();
+    connectWs();
+}
+
+function studioLogin() {
+    var user = document.getElementById('login-user').value.trim();
+    var pass = document.getElementById('login-pass').value;
+    if (!user || !pass) return;
+    document.getElementById('login-error').textContent = '';
+    fetch('/api/studio/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass })
+    })
+    .then(function(r) {
+        if (!r.ok) throw new Error('auth');
+        return r.json();
+    })
+    .then(function(d) {
+        studioUser = d;
+        showStudioApp();
+    })
+    .catch(function() {
+        document.getElementById('login-error').textContent = 'Falsches Passwort oder Benutzer';
+    });
+}
+
+function studioLogout() {
+    fetch('/api/studio/logout', { method: 'POST' })
+        .then(function() { showStudioLogin(); })
+        .catch(function() { showStudioLogin(); });
+}
+
+document.getElementById('login-pass').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') studioLogin();
+});
+document.getElementById('login-user').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('login-pass').focus();
+});
+
+// ── S1/auth: Role-based visibility ───────────────────────────────
+
+function applyRoleVisibility() {
+    if (!studioUser) return;
+    var isViewer = studioUser.role === 'viewer';
+    var writeEls = document.querySelectorAll('[data-auth="write"]');
+    for (var i = 0; i < writeEls.length; i++) {
+        writeEls[i].style.display = isViewer ? 'none' : '';
+    }
+    var adminEls = document.querySelectorAll('[data-auth="admin"]');
+    for (var i = 0; i < adminEls.length; i++) {
+        adminEls[i].style.display = studioUser.role === 'admin' ? '' : 'none';
+    }
+}
+
+// ── S1/auth: User Management ─────────────────────────────────────
+
+function openUserMgmt() {
+    document.getElementById('user-mgmt-panel').classList.add('visible');
+    umLoadUsers();
+}
+
+function closeUserMgmt() {
+    document.getElementById('user-mgmt-panel').classList.remove('visible');
+    document.getElementById('um-add-form').classList.remove('visible');
+}
+
+function umShowAddForm() {
+    document.getElementById('um-add-form').classList.add('visible');
+    document.getElementById('um-new-user').value = '';
+    document.getElementById('um-new-pass').value = '';
+    document.getElementById('um-new-user').focus();
+}
+
+function umLoadUsers() {
+    fetch('/api/studio/users')
+        .then(function(r) { return r.json(); })
+        .then(function(users) { umRenderUsers(users); })
+        .catch(function() {});
+}
+
+function umRenderUsers(users) {
+    var list = document.getElementById('um-user-list');
+    var html = '';
+    for (var i = 0; i < users.length; i++) {
+        var u = users[i];
+        var isSelf = studioUser && u.username === studioUser.user;
+        html += '<div class="um-row">';
+        html += '<span class="um-name">' + escHtml(u.username) + '</span>';
+        if (isSelf) {
+            html += '<span class="um-role">' + escHtml(u.role) + '</span>';
+        } else {
+            html += '<select onchange="umChangeRole(\'' + escHtml(u.username) + '\', this.value)">';
+            html += '<option value="admin"' + (u.role==='admin'?' selected':'') + '>Admin</option>';
+            html += '<option value="editor"' + (u.role==='editor'?' selected':'') + '>Editor</option>';
+            html += '<option value="viewer"' + (u.role==='viewer'?' selected':'') + '>Viewer</option>';
+            html += '</select>';
+        }
+        html += '<button onclick="umChangePassword(\'' + escHtml(u.username) + '\')">Passwort</button>';
+        if (!isSelf) {
+            html += '<button class="um-del" onclick="umDeleteUser(\'' + escHtml(u.username) + '\')">&times;</button>';
+        }
+        html += '</div>';
+    }
+    list.innerHTML = html;
+}
+
+function umCreateUser() {
+    var user = document.getElementById('um-new-user').value.trim();
+    var pass = document.getElementById('um-new-pass').value;
+    var role = document.getElementById('um-new-role').value;
+    if (!user || !pass) return;
+    fetch('/api/studio/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: user, password: pass, role: role })
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { alert(d.error || 'Error'); throw new Error(); });
+        document.getElementById('um-add-form').classList.remove('visible');
+        umLoadUsers();
+    })
+    .catch(function() {});
+}
+
+function umChangeRole(username, newRole) {
+    fetch('/api/studio/users/' + encodeURIComponent(username), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: newRole })
+    })
+    .then(function() { umLoadUsers(); })
+    .catch(function() {});
+}
+
+function umChangePassword(username) {
+    var pw = prompt('Neues Passwort f\u00fcr ' + username + ':');
+    if (!pw) return;
+    fetch('/api/studio/users/' + encodeURIComponent(username), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+    })
+    .then(function(r) {
+        if (!r.ok) return r.json().then(function(d) { alert(d.error || 'Error'); });
+    })
+    .catch(function() {});
+}
+
+function umDeleteUser(username) {
+    if (!confirm('Benutzer "' + username + '" wirklich l\u00f6schen?')) return;
+    fetch('/api/studio/users/' + encodeURIComponent(username), { method: 'DELETE' })
+        .then(function(r) {
+            if (!r.ok) return r.json().then(function(d) { alert(d.error || 'Error'); });
+            umLoadUsers();
+        })
+        .catch(function() {});
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+checkStudioAuth();
 </script>
 </body>
 </html>

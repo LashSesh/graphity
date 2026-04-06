@@ -99,6 +99,8 @@ enum Command {
         ollama_model: String,
         /// I5/W4: Start with auto-evolve enabled (default: off).
         auto_evolve: bool,
+        /// S1/auth: Initial admin password for Studio login.
+        studio_password: Option<String>,
     },
     /// Print help.
     Help,
@@ -399,7 +401,10 @@ fn parse_args(args: &[String]) -> Command {
                 .cloned()
                 .unwrap_or_else(|| "qwen2.5-coder:32b".to_string());
             let auto_evolve = args.contains(&"--auto-evolve".to_string());
-            Command::Serve { port, api_key, ollama, ollama_url, ollama_model, auto_evolve }
+            let studio_password = args.iter().position(|a| a == "--studio-password")
+                .and_then(|i| args.get(i + 1))
+                .cloned();
+            Command::Serve { port, api_key, ollama, ollama_url, ollama_model, auto_evolve, studio_password }
         }
         "harpoon" => {
             let seed = args.iter().position(|a| a == "--seed")
@@ -901,6 +906,7 @@ fn cmd_serve(
     ollama_url: String,
     ollama_model: String,
     auto_evolve: bool,
+    studio_password: Option<String>,
 ) {
     // Set API key in environment if provided via --api-key flag
     if let Some(ref key) = api_key {
@@ -945,7 +951,9 @@ fn cmd_serve(
     rt.block_on(async {
         let state = isls_gateway::AppState::new()
             .with_oracle_config(oracle_config)
-            .with_auto_evolve(auto_evolve);
+            .with_auto_evolve(auto_evolve)
+            .with_studio_password(studio_password)
+            .init_studio_users();
         let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
         if let Err(e) = isls_gateway::serve(state, addr).await {
             eprintln!("Gateway error: {}", e);
@@ -1057,6 +1065,7 @@ fn print_help() {
     println!("  --ollama-url <url>     Ollama base URL (default: http://localhost:11434)");
     println!("  --ollama-model <name>  Ollama model (default: qwen2.5-coder:32b)");
     println!("  --auto-evolve          I5/W4: Enable autonomous evolve cycle (default: off)");
+    println!("  --studio-password <pw> S1/auth: Initial admin password (default: admin123)");
     println!();
     println!("Pipeline: forge-chat -> TOML -> forge-v2 -> cargo build -> docker-compose up");
     println!("One sentence. One app. Zero manual steps.");
@@ -1120,8 +1129,8 @@ fn main() {
                 seed, depth, repos_per_keyword, stop_at_coverage, domain,
             });
         }
-        Command::Serve { port, api_key, ollama, ollama_url, ollama_model, auto_evolve } => {
-            cmd_serve(port, api_key, ollama, ollama_url, ollama_model, auto_evolve)
+        Command::Serve { port, api_key, ollama, ollama_url, ollama_model, auto_evolve, studio_password } => {
+            cmd_serve(port, api_key, ollama, ollama_url, ollama_model, auto_evolve, studio_password)
         }
         Command::Help => print_help(),
     }

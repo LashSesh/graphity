@@ -14,6 +14,7 @@ pub mod chat;
 pub mod chat_handler;
 pub mod discover;
 pub mod session;
+pub mod studio_auth;
 pub mod targets;
 pub mod timeseries;
 pub mod ws;
@@ -125,6 +126,12 @@ pub struct AppState {
     pub targets: Arc<RwLock<Vec<isls_norms::targets::TargetSystem>>>,
     /// MC1: Atomic flag — true when auto-steer is active.
     pub auto_steer_enabled: Arc<AtomicBool>,
+    /// S1/auth: Studio user database (in-memory + persisted to JSON).
+    pub studio_users: studio_auth::UserStore,
+    /// S1/auth: Active studio sessions (token → user info).
+    pub studio_sessions: studio_auth::SessionStore,
+    /// S1/auth: Initial admin password (from CLI --studio-password).
+    pub studio_password: Option<String>,
 }
 
 /// Configuration for constructing an LLM oracle in the session forge.
@@ -186,7 +193,28 @@ impl AppState {
             auto_evolve_enabled: Arc::new(AtomicBool::new(false)),
             targets: Arc::new(RwLock::new(isls_norms::targets::load_targets())),
             auto_steer_enabled: Arc::new(AtomicBool::new(false)),
+            studio_users: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            studio_sessions: studio_auth::new_session_store(),
+            studio_password: None,
         }
+    }
+
+    /// Builder: set the studio password and initialize users.
+    pub fn with_studio_password(mut self, password: Option<String>) -> Self {
+        self.studio_password = password;
+        self
+    }
+
+    /// Initialize the user store. Must be called after with_studio_password.
+    pub fn init_studio_users(self) -> Self {
+        let mut users = studio_auth::load_users();
+        studio_auth::ensure_initial_admin(&mut users, self.studio_password.as_deref());
+        let store = self.studio_users.clone();
+        // Use try_lock since we're in a sync context and nobody else holds it yet
+        if let Ok(mut guard) = store.try_lock() {
+            *guard = users;
+        }
+        self
     }
 
     /// Builder: set the oracle configuration for session forge.
@@ -615,6 +643,12 @@ pub fn build_router(state: AppState) -> Router {
         // I5: Auto-Evolve
         .route("/api/auto-evolve/toggle", post(auto_evolve::api_auto_evolve_toggle))
         .route("/api/auto-evolve/status", get(auto_evolve::api_auto_evolve_status))
+        // S1/auth: Studio authentication
+        .route("/api/studio/login", post(studio_auth::api_studio_login))
+        .route("/api/studio/logout", post(studio_auth::api_studio_logout))
+        .route("/api/studio/session", get(studio_auth::api_studio_session))
+        .route("/api/studio/users", get(studio_auth::api_list_users).post(studio_auth::api_create_user))
+        .route("/api/studio/users/{username}", axum::routing::put(studio_auth::api_update_user).delete(studio_auth::api_delete_user))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)
