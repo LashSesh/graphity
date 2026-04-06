@@ -546,6 +546,7 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/norms/fitness", get(api_norms_fitness))
         .route("/api/norms/genome", get(api_norms_genome))
         .route("/api/norms/inject", post(api_norms_inject))
+        .route("/api/norms/anatomy", get(api_norms_anatomy))
         .route("/api/norms/{id}", get(api_get_norm))
         // I3/W3 Evolve
         .route("/api/evolve", post(api_evolve))
@@ -1156,6 +1157,25 @@ async fn api_norms_genome(_state: State<AppState>) -> Json<serde_json::Value> {
         "min_required":  MIN_METRICS_ENTRIES,
         "genes":         genes,
         "singletons":    genome.singletons,
+    }))
+}
+
+/// GET /api/norms/anatomy — anatomical norm catalog organized by body layers.
+async fn api_norms_anatomy(State(state): State<AppState>) -> Json<serde_json::Value> {
+    // Load fresh norm data from disk
+    let reg = state.norm_registry.read().await;
+    let all_norms = reg.all_norms();
+    let candidates_owned = reg.candidates();
+    let candidates: Vec<&isls_norms::learning::NormCandidate> = candidates_owned.iter().copied().collect();
+    let fitness_store = isls_norms::fitness::FitnessStore::load();
+
+    let layers = isls_norms::anatomy::compute_anatomy(&all_norms, &candidates, &fitness_store);
+    let total = isls_norms::anatomy::total_coverage(&layers);
+
+    Json(serde_json::json!({
+        "ok": true,
+        "layers": layers,
+        "total_coverage": total,
     }))
 }
 
