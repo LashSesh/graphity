@@ -23,6 +23,7 @@
 //! assert!(!activated.is_empty());
 //! ```
 
+pub mod anatomy;
 pub mod catalog;
 pub mod composition;
 pub mod fitness;

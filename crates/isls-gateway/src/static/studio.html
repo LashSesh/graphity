@@ -1264,6 +1264,10 @@ html, body {
                     <div class="sensor-card-title">Gen-Topologie</div>
                     <div id="chart-genome"><div class="sensor-empty">Nicht genug Daten f&uuml;r Gen-Clustering.</div></div>
                 </div>
+                <div class="sensor-card" id="card-anatomy">
+                    <div class="sensor-card-title">Anatomie</div>
+                    <div id="chart-anatomy"><div class="sensor-empty">Lade anatomische Abdeckung...</div></div>
+                </div>
             </div>
             <div id="ae-history-panel" style="display:none;margin-top:12px;" class="sensor-card">
                 <div class="sensor-card-title">Auto-Evolve History</div>
@@ -2231,6 +2235,10 @@ async function sendDiscoverMessage(text) {
         else if (lower === 'genome' || lower === 'genom' || lower === 'norms genome') {
             await discoverGenome();
         }
+        // "anatomie" / "anatomy" — anatomical norm catalog
+        else if (lower === 'anatomie' || lower === 'anatomy') {
+            await discoverAnatomy();
+        }
         // "inject" — open blueprint editor
         else if (lower === 'inject' || lower === 'injizieren') {
             $obInject.classList.add('open');
@@ -2677,6 +2685,142 @@ async function discoverGenome() {
     } catch (err) {
         renderMessage({ role: 'error', content: 'Genom-Fehler: ' + err.message });
     }
+}
+
+// ── Anatomy ──────────────────────────────────────────────────────
+async function discoverAnatomy() {
+    renderMessage({ role: 'process', content: 'Lade anatomische Norm-Abdeckung...' });
+    try {
+        var resp = await fetch('/api/norms/anatomy');
+        var d = await resp.json();
+        if (!d.ok) { renderMessage({ role: 'error', content: d.error || 'Fehler.' }); return; }
+
+        var layers = d.layers || [];
+        var total = d.total_coverage || 0;
+
+        // Build anatomy visualization as a DOM element
+        var wrap = document.createElement('div');
+        wrap.className = 'msg-wrap system';
+        var el = document.createElement('div');
+        el.className = 'msg system';
+
+        // Header
+        var header = document.createElement('div');
+        header.style.cssText = 'margin-bottom:16px';
+        header.innerHTML = '<strong style="font-size:16px;color:var(--accent)">Anatomie \u2014 Norm-Abdeckung</strong><br>' +
+            '<div style="margin-top:8px">' + renderProgressBar(total, 'Gesamt: ' + pct(total)) + '</div>';
+        el.appendChild(header);
+
+        // Render each layer
+        layers.forEach(function(layer) {
+            var sec = document.createElement('div');
+            sec.style.cssText = 'margin-bottom:12px;padding:12px;background:var(--bg-input);border-radius:6px;border:1px solid var(--border)';
+
+            var layerHead = document.createElement('div');
+            layerHead.style.cssText = 'display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:8px';
+            layerHead.innerHTML = '<span><strong>' + layer.name + '</strong> <span style="color:var(--text-secondary);font-size:12px">(' + layer.description + ')</span></span>' +
+                '<span style="color:var(--accent);font-weight:600">' + pct(layer.coverage) + '</span>';
+            sec.appendChild(layerHead);
+            sec.appendChild(createProgressBarEl(layer.coverage));
+
+            var organs = document.createElement('div');
+            organs.className = 'anatomy-organs';
+            organs.style.cssText = 'margin-top:8px;display:block';
+
+            (layer.organs || []).forEach(function(organ) {
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:4px 0;font-size:13px;cursor:pointer';
+                row.onmouseenter = function() { row.style.background = 'rgba(255,255,255,0.03)'; };
+                row.onmouseleave = function() { row.style.background = 'none'; };
+
+                var dot = organ.coverage >= 0.8 ? '\u25a0' : (organ.coverage > 0 ? '\u25a0' : '\u25cb');
+                var dotColor = organ.coverage >= 0.8 ? 'var(--accent-success)' :
+                    organ.coverage >= 0.5 ? 'var(--accent)' :
+                    organ.coverage > 0 ? 'var(--text-secondary)' : 'var(--accent-error)';
+
+                var normInfo = organ.norms.length > 0
+                    ? organ.norms.length + ' Norm' + (organ.norms.length > 1 ? 'en' : '')
+                    : '0 Normen';
+                var candInfo = organ.candidates.length > 0
+                    ? organ.candidates.length + ' Kandidat' + (organ.candidates.length > 1 ? 'en' : '')
+                    : '';
+                var fitnessMax = organ.norms.length > 0
+                    ? Math.max.apply(null, organ.norms.map(function(n) { return n.fitness; })).toFixed(2)
+                    : '';
+
+                var rightText = normInfo;
+                if (fitnessMax) rightText += '  \u25a0 ' + fitnessMax;
+                else if (candInfo) rightText += '  \u25cb ' + candInfo;
+                else rightText += '  \u25cb \u2014';
+
+                row.innerHTML = '<span><span style="color:' + dotColor + ';margin-right:6px">' + dot + '</span>' + organ.name + '</span>' +
+                    '<span style="color:var(--text-secondary);font-size:12px">' + rightText + '</span>';
+
+                // Click to expand organ details
+                row.onclick = (function(o) {
+                    return function() {
+                        var existing = row.parentNode.querySelector('.anatomy-detail-' + o.name.replace(/[^a-zA-Z]/g, ''));
+                        if (existing) { existing.remove(); return; }
+                        var detail = document.createElement('div');
+                        detail.className = 'anatomy-detail-' + o.name.replace(/[^a-zA-Z]/g, '');
+                        detail.style.cssText = 'padding:8px 0 8px 24px;font-size:12px;color:var(--text-secondary);border-left:2px solid var(--border);margin:4px 0 4px 8px';
+                        var html = '';
+                        if (o.norms.length) {
+                            html += '<div style="margin-bottom:4px"><strong>Normen:</strong></div>';
+                            o.norms.forEach(function(n) {
+                                var fc = n.fitness > 0.8 ? 'var(--accent-success)' : n.fitness > 0.5 ? 'var(--accent)' : 'var(--text-secondary)';
+                                html += '<div>' + n.id + ' "' + n.name + '" <span style="color:' + fc + '">\u25a0 ' + n.fitness.toFixed(2) + '</span> (' + n.source + ')</div>';
+                            });
+                        }
+                        if (o.candidates.length) {
+                            html += '<div style="margin-top:4px;margin-bottom:4px"><strong>Kandidaten:</strong></div>';
+                            o.candidates.forEach(function(c) {
+                                html += '<div>' + c.id + ' \u2014 ' + c.observations + ' Obs, ' + c.domains + ' Domains</div>';
+                            });
+                        }
+                        html += '<div style="margin-top:4px"><strong>Keywords:</strong> ' + (o.keywords || []).join(', ') + '</div>';
+                        // Scrape button
+                        html += '<button onclick="discoverMassScrape(' + JSON.stringify(o.keywords || []) + ')" style="margin-top:6px;padding:3px 10px;font-size:11px;background:var(--accent);border:none;color:#fff;border-radius:4px;cursor:pointer">[Gezielt scrapen]</button>';
+                        detail.innerHTML = html;
+                        row.parentNode.insertBefore(detail, row.nextSibling);
+                    };
+                })(organ);
+
+                organs.appendChild(row);
+            });
+
+            // Toggle expand/collapse on layer header
+            layerHead.onclick = function() {
+                organs.style.display = organs.style.display === 'none' ? 'block' : 'none';
+            };
+
+            sec.appendChild(organs);
+            el.appendChild(sec);
+        });
+
+        wrap.appendChild(el);
+        if ($typing && $typing.parentNode === $conv) $conv.insertBefore(wrap, $typing);
+        else $conv.appendChild(wrap);
+        autoScroll();
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Anatomie-Fehler: ' + err.message });
+    }
+}
+
+function pct(v) { return Math.round((v || 0) * 100) + '%'; }
+
+function renderProgressBar(val, label) {
+    var w = Math.round((val || 0) * 100);
+    return '<div style="display:flex;align-items:center;gap:8px">' +
+        '<div style="flex:1;height:8px;background:var(--border);border-radius:4px;overflow:hidden">' +
+        '<div style="width:' + w + '%;height:100%;background:var(--accent);border-radius:4px;transition:width 0.5s"></div></div>' +
+        '<span style="font-size:12px;color:var(--text-secondary);min-width:36px">' + (label || pct(val)) + '</span></div>';
+}
+
+function createProgressBarEl(val) {
+    var div = document.createElement('div');
+    div.innerHTML = renderProgressBar(val);
+    return div.firstChild;
 }
 
 // ── WebSocket ──────────────────────────────────────────────────────
@@ -3272,6 +3416,12 @@ function loadSensorium() {
         .then(function(r) { return r.json(); })
         .then(function(d) { renderAutoEvolveStatus(d); })
         .catch(function() {});
+
+    // Anatomy coverage
+    fetch('/api/norms/anatomy')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderAnatomyCard(d); })
+        .catch(function() {});
 }
 
 function toMs(ts) {
@@ -3390,6 +3540,26 @@ function renderGenomeChart(d) {
         genes.push({ name: s, size: 1, fitness: 0 });
     });
     renderClusterMap(container, genes, { width: 320, height: 160 });
+}
+
+function renderAnatomyCard(d) {
+    var container = document.getElementById('chart-anatomy');
+    if (!d.ok) { container.innerHTML = '<div class="sensor-empty">Fehler beim Laden.</div>'; return; }
+    var layers = d.layers || [];
+    var total = d.total_coverage || 0;
+    var html = '<div style="margin-bottom:8px;font-size:13px;color:var(--text-secondary)">Gesamt: ' + Math.round(total * 100) + '%</div>';
+    html += '<div style="height:6px;background:var(--border);border-radius:3px;margin-bottom:10px;overflow:hidden">' +
+        '<div style="width:' + Math.round(total * 100) + '%;height:100%;background:var(--accent);border-radius:3px"></div></div>';
+    layers.forEach(function(l) {
+        var w = Math.round((l.coverage || 0) * 100);
+        var col = w >= 70 ? 'var(--accent-success)' : w >= 40 ? 'var(--accent)' : 'var(--text-secondary)';
+        html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;font-size:11px">' +
+            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + l.description + '">' + l.name + '</span>' +
+            '<div style="width:80px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">' +
+            '<div style="width:' + w + '%;height:100%;background:' + col + ';border-radius:2px"></div></div>' +
+            '<span style="min-width:28px;text-align:right;color:' + col + '">' + w + '%</span></div>';
+    });
+    container.innerHTML = html;
 }
 
 function renderAutoEvolveStatus(d) {
