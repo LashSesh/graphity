@@ -9,16 +9,19 @@
 // No external JS/CSS dependencies. One HTML file. Nine views (Phase 13: Swarm + Chat).
 
 pub mod architect;
+pub mod auto_evolve;
 pub mod chat;
 pub mod chat_handler;
 pub mod discover;
 pub mod session;
+pub mod timeseries;
 pub mod ws;
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use axum::{
@@ -113,6 +116,10 @@ pub struct AppState {
     pub harpoon_jobs: discover::HarpoonStore,
     /// Oracle configuration for session forge (OpenAI vs Ollama vs Mock).
     pub oracle_config: OracleConfig,
+    /// I5: Auto-evolve history and state.
+    pub auto_evolve: auto_evolve::AutoEvolveStore,
+    /// I5: Atomic flag — true when auto-evolve background task should run.
+    pub auto_evolve_enabled: Arc<AtomicBool>,
 }
 
 /// Configuration for constructing an LLM oracle in the session forge.
@@ -170,12 +177,25 @@ impl AppState {
             suggested_keywords_path,
             harpoon_jobs: discover::new_harpoon_store(),
             oracle_config: OracleConfig::default_mock(),
+            auto_evolve: auto_evolve::new_auto_evolve_store(),
+            auto_evolve_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 
     /// Builder: set the oracle configuration for session forge.
     pub fn with_oracle_config(mut self, config: OracleConfig) -> Self {
         self.oracle_config = config;
+        self
+    }
+
+    /// Builder: enable auto-evolve at startup.
+    pub fn with_auto_evolve(mut self, enabled: bool) -> Self {
+        self.auto_evolve_enabled.store(enabled, Ordering::Relaxed);
+        if enabled {
+            let next = chrono::Utc::now() + chrono::Duration::hours(6);
+            // Can't easily do async here in a sync builder, so we schedule it lazily
+            let _ = next;
+        }
         self
     }
 }
@@ -571,6 +591,11 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discover/harpoon/{id}/status", get(discover::discover_harpoon_status))
         .route("/api/discover/suggested-keywords", get(discover::discover_suggested_keywords))
         .route("/api/discover/accept-keyword", post(discover::discover_accept_keyword))
+        // I5: Timeseries
+        .route("/api/timeseries", get(timeseries::api_timeseries))
+        // I5: Auto-Evolve
+        .route("/api/auto-evolve/toggle", post(auto_evolve::api_auto_evolve_toggle))
+        .route("/api/auto-evolve/status", get(auto_evolve::api_auto_evolve_status))
         // WebSocket
         .route("/events", get(ws_handler))
         .with_state(state)
@@ -588,6 +613,19 @@ pub async fn serve(state: AppState, addr: SocketAddr) -> Result<(), Box<dyn std:
             interval.tick().await;
             hub.publish(WsEvent::heartbeat());
         }
+    });
+
+    // I5/W1: Spawn timeseries recorder (writes every 15 minutes)
+    let ts_state = state.clone();
+    tokio::spawn(async move {
+        timeseries::timeseries_recorder(ts_state).await;
+    });
+
+    // I5/W4: Spawn auto-evolve background task
+    let ae_state = state.clone();
+    let ae_enabled = state.auto_evolve_enabled.clone();
+    tokio::spawn(async move {
+        auto_evolve::auto_evolve_cycle(ae_state, ae_enabled).await;
     });
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -45,6 +45,13 @@ pub struct GenerationMetrics {
     /// `#[serde(default)]` so old JSONL entries still deserialize.
     #[serde(default)]
     pub codematrix_avg: f64,
+    // I5/W5: SGB tracking.
+    /// Structural-Generative Boundary: structural_files / file_count.
+    /// Represents the fraction of generated files produced structurally
+    /// (norm-driven) vs LLM-generated. Approaches 1.0 as the system
+    /// converges. Persisted with `#[serde(default)]` for JSONL compat.
+    #[serde(default)]
+    pub sgb: f64,
 }
 
 /// Source of a generation run.
@@ -234,6 +241,7 @@ mod tests {
             mikro_gate_pass_rate: 1.0,
             meso_gate_pass_rate: 1.0,
             codematrix_avg: 0.0,
+            sgb: 0.0,
         }
     }
 

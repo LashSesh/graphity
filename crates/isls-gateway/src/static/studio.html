@@ -932,6 +932,148 @@ html, body {
     display: flex;
 }
 
+/* ── Sensorium (I5) ───────────────────────────────────────��─────── */
+#sensorium {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+#sensorium.visible {
+    display: block;
+}
+
+.sensor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.sensor-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.sensor-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.sensor-tw-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 13px;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: inherit;
+    transition: color 0.15s, background 0.15s;
+}
+
+.sensor-tw-btn:hover {
+    color: var(--text-secondary);
+    background: var(--bg-input);
+}
+
+.sensor-tw-btn.active {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.sensor-ae-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-family: inherit;
+    transition: border-color 0.15s, color 0.15s;
+}
+
+.sensor-ae-btn.active {
+    border-color: var(--accent-success);
+    color: var(--accent-success);
+}
+
+.sensor-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 12px;
+}
+
+.sensor-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    overflow: hidden;
+}
+
+.sensor-card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}
+
+.sensor-card svg {
+    width: 100%;
+    display: block;
+}
+
+.sensor-empty {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-style: italic;
+    padding: 16px 0;
+    text-align: center;
+}
+
+.sensor-alert {
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-top: 6px;
+}
+
+.sensor-alert.warn {
+    border-left: 3px solid var(--accent);
+    color: var(--accent);
+    background: rgba(212,135,27,0.06);
+}
+
+.sensor-alert.success {
+    border-left: 3px solid var(--accent-success);
+    color: var(--accent-success);
+    background: rgba(63,185,80,0.06);
+}
+
+.sensor-ae-history {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.8;
+}
+
+.sensor-ae-history .ae-pass { color: var(--accent-success); }
+.sensor-ae-history .ae-fail { color: var(--accent-error); }
+
 /* ── Responsive: Mobile ─────────────────────────────────────────── */
 @media (max-width: 768px) {
     #app {
@@ -989,6 +1131,10 @@ html, body {
     #conversation {
         padding: 16px 12px;
     }
+
+    .sensor-grid {
+        grid-template-columns: 1fr;
+    }
 }
 </style>
 </head>
@@ -1001,6 +1147,7 @@ html, body {
         <button class="mode-btn active" id="btn-create" onclick="switchMode('create')" title="Erschaffen">&#10022;</button>
         <button class="mode-btn" id="btn-discover" onclick="switchMode('discover')" title="Entdecken">&#9673;</button>
         <button class="mode-btn" id="btn-chat" onclick="switchMode('chat')" title="Chat">&#128172;</button>
+        <button class="mode-btn" id="btn-sensor" onclick="switchMode('sensor')" title="Sensorium">&#9670;</button>
     </nav>
 
     <!-- Main Area -->
@@ -1078,6 +1225,52 @@ html, body {
             </div>
         </div>
 
+        <!-- I5: Sensorium Dashboard -->
+        <div id="sensorium">
+            <div class="sensor-header">
+                <span class="sensor-title">&#9670; Sensorium</span>
+                <div class="sensor-controls">
+                    <button class="sensor-tw-btn active" id="tw-24h" onclick="setSensorWindow(24)">24h</button>
+                    <span style="color:var(--text-dim);font-size:12px">|</span>
+                    <button class="sensor-tw-btn" id="tw-7d" onclick="setSensorWindow(168)">7d</button>
+                    <span style="color:var(--text-dim);font-size:12px">|</span>
+                    <button class="sensor-tw-btn" id="tw-30d" onclick="setSensorWindow(720)">30d</button>
+                    <button class="sensor-ae-btn" id="ae-toggle-btn" onclick="toggleAutoEvolve()">Auto-Evolve: AUS</button>
+                </div>
+            </div>
+            <div class="sensor-grid">
+                <div class="sensor-card" id="card-sgb">
+                    <div class="sensor-card-title">SGB-Trajektorie</div>
+                    <div id="chart-sgb"><div class="sensor-empty">Keine Daten.</div></div>
+                    <div id="alert-sgb"></div>
+                </div>
+                <div class="sensor-card" id="card-norms">
+                    <div class="sensor-card-title">Norm-Wachstum</div>
+                    <div id="chart-norms"><div class="sensor-empty">Keine Daten.</div></div>
+                </div>
+                <div class="sensor-card" id="card-fitness">
+                    <div class="sensor-card-title">Fitness-Verteilung</div>
+                    <div id="chart-fitness"><div class="sensor-empty">Keine Daten.</div></div>
+                </div>
+                <div class="sensor-card" id="card-scrape">
+                    <div class="sensor-card-title">Scrape-Rate</div>
+                    <div id="chart-scrape"><div class="sensor-empty">Keine Daten.</div></div>
+                </div>
+                <div class="sensor-card" id="card-radar">
+                    <div class="sensor-card-title">Codematrix-Radar</div>
+                    <div id="chart-radar"><div class="sensor-empty">Kein Forge-Run vorhanden.</div></div>
+                </div>
+                <div class="sensor-card" id="card-genome">
+                    <div class="sensor-card-title">Gen-Topologie</div>
+                    <div id="chart-genome"><div class="sensor-empty">Nicht genug Daten f&uuml;r Gen-Clustering.</div></div>
+                </div>
+            </div>
+            <div id="ae-history-panel" style="display:none;margin-top:12px;" class="sensor-card">
+                <div class="sensor-card-title">Auto-Evolve History</div>
+                <div class="sensor-ae-history" id="ae-history-content"></div>
+            </div>
+        </div>
+
         <!-- Readiness Tooltip -->
         <div id="readiness-tooltip"></div>
 
@@ -1105,8 +1298,8 @@ html, body {
 
 // ── State ──────────────────────────────────────────────────────────
 var currentMode = 'create';
-var hasMessages = { create: false, discover: false, chat: false };
-var messages = { create: [], discover: [], chat: [] };
+var hasMessages = { create: false, discover: false, chat: false, sensor: false };
+var messages = { create: [], discover: [], chat: [], sensor: [] };
 var sessionId = null;
 var readinessData = null;
 var userScrolledUp = false;
@@ -1154,6 +1347,9 @@ var $ring    = document.getElementById('readiness-ring');
 var $btnC    = document.getElementById('btn-create');
 var $btnD    = document.getElementById('btn-discover');
 var $btnChat = document.getElementById('btn-chat');
+var $btnSensor = document.getElementById('btn-sensor');
+var $sensorium = document.getElementById('sensorium');
+var $inputArea = document.getElementById('input-area');
 var $tooltip = document.getElementById('readiness-tooltip');
 var $typing  = document.getElementById('typing-indicator');
 var $sendBtn = document.getElementById('send-btn');
@@ -1180,22 +1376,39 @@ function switchMode(mode) {
     $btnC.classList.toggle('active', mode === 'create');
     $btnD.classList.toggle('active', mode === 'discover');
     $btnChat.classList.toggle('active', mode === 'chat');
+    $btnSensor.classList.toggle('active', mode === 'sensor');
     $ring.classList.toggle('hidden', mode !== 'create');
     $tooltip.classList.remove('visible');
-    // Placeholder text per mode
-    if (mode === 'chat') {
-        $input.placeholder = 'Frag mich etwas...';
-    } else if (mode === 'discover') {
-        $input.placeholder = 'Suchen, Scrapen, Fragen...';
+
+    // Sensorium: no input field, no conversation
+    var isSensor = (mode === 'sensor');
+    $sensorium.classList.toggle('visible', isSensor);
+    $conv.style.display = isSensor ? 'none' : '';
+    $inputArea.style.display = isSensor ? 'none' : '';
+    $empty.classList.toggle('hidden', isSensor);
+
+    if (!isSensor) {
+        // Placeholder text per mode
+        if (mode === 'chat') {
+            $input.placeholder = 'Frag mich etwas...';
+        } else if (mode === 'discover') {
+            $input.placeholder = 'Suchen, Scrapen, Fragen...';
+        } else {
+            $input.placeholder = 'Nachricht eingeben...';
+        }
+        updateEmptyState();
+        renderAllMessages();
     } else {
-        $input.placeholder = 'Nachricht eingeben...';
+        loadSensorium();
     }
-    updateEmptyState();
-    renderAllMessages();
     updateOlbohrinselVisibility();
 }
 
 function updateEmptyState() {
+    if (currentMode === 'sensor') {
+        $empty.classList.add('hidden');
+        return;
+    }
     var ph = placeholders[currentMode];
     var hasMsg = hasMessages[currentMode];
     if (hasMsg) {
@@ -2583,7 +2796,7 @@ $input.addEventListener('input', autoResize);
 
 // ── Touch Swipe (mobile mode switch) ───────────────────────────────
 (function() {
-    var MODES = ['create', 'discover', 'chat'];
+    var MODES = ['create', 'discover', 'chat', 'sensor'];
     var startX = 0;
     document.addEventListener('touchstart', function(e) {
         startX = e.touches[0].clientX;
@@ -2725,6 +2938,528 @@ function handleEvolveWsEvent(event) {
         };
         reader.readAsText(file);
     });
+})();
+
+// ═══════════════════════════════════════════════════════════════════
+// I5: Sensorium — SVG Rendering Engine + Dashboard Logic
+// ═══════════════════════════════════════════════════════════════════
+
+var sensorWindow = 24;       // current time window in hours
+var sensorRefreshTimer = null;
+var autoEvolveActive = false;
+
+// ── SVG helpers ────────────────────────────────────────────────────
+function svgEl(tag, attrs) {
+    var el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    if (attrs) {
+        Object.keys(attrs).forEach(function(k) { el.setAttribute(k, attrs[k]); });
+    }
+    return el;
+}
+
+// ── renderLineChart ────────────────────────────────────────────────
+// data: [{x: timestamp_ms, y: value}, ...]
+// options: {width, height, color, yMin, yMax, targetLine, label}
+function renderLineChart(container, data, options) {
+    var W = options.width || 320, H = options.height || 120;
+    var PAD = { top: 8, right: 8, bottom: 22, left: 36 };
+    var innerW = W - PAD.left - PAD.right;
+    var innerH = H - PAD.top - PAD.bottom;
+
+    container.innerHTML = '';
+    if (!data || data.length === 0) {
+        container.innerHTML = '<div class="sensor-empty">Keine Daten.</div>';
+        return;
+    }
+
+    var xMin = data[0].x, xMax = data[data.length - 1].x;
+    var yVals = data.map(function(d) { return d.y; });
+    var yMin = options.yMin !== undefined ? options.yMin : Math.min.apply(null, yVals);
+    var yMax = options.yMax !== undefined ? options.yMax : Math.max.apply(null, yVals);
+    if (yMax === yMin) { yMax = yMin + 1; }
+
+    var xScale = function(x) { return PAD.left + (x - xMin) / (xMax - xMin) * innerW; };
+    var yScale = function(y) { return PAD.top + (1 - (y - yMin) / (yMax - yMin)) * innerH; };
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, style: 'overflow:visible' });
+
+    // Grid lines (3 horizontal)
+    var gridColor = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#30363d';
+    for (var gi = 0; gi <= 3; gi++) {
+        var gy = PAD.top + gi * (innerH / 3);
+        var gv = yMax - (gi / 3) * (yMax - yMin);
+        var gl = svgEl('line', { x1: PAD.left, y1: gy, x2: PAD.left + innerW, y2: gy,
+            stroke: gridColor, 'stroke-width': '0.5', 'stroke-dasharray': '3,3' });
+        svg.appendChild(gl);
+        var gt = svgEl('text', { x: PAD.left - 4, y: gy + 4, 'font-size': '9',
+            'text-anchor': 'end', fill: '#8b949e' });
+        gt.textContent = gv.toFixed(gv < 1 ? 2 : 0);
+        svg.appendChild(gt);
+    }
+
+    // Target line (optional)
+    if (options.targetLine !== undefined) {
+        var tly = yScale(options.targetLine);
+        if (tly >= PAD.top && tly <= PAD.top + innerH) {
+            var tlel = svgEl('line', { x1: PAD.left, y1: tly, x2: PAD.left + innerW, y2: tly,
+                stroke: '#484f58', 'stroke-width': '1', 'stroke-dasharray': '4,4' });
+            svg.appendChild(tlel);
+        }
+    }
+
+    // X-axis
+    var xaxis = svgEl('line', { x1: PAD.left, y1: PAD.top + innerH, x2: PAD.left + innerW, y2: PAD.top + innerH,
+        stroke: gridColor, 'stroke-width': '1' });
+    svg.appendChild(xaxis);
+
+    // X labels (first and last)
+    var fmtX = function(ms) {
+        var d = new Date(ms);
+        return (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+               (d.getHours() < 10 ? '0' : '') + d.getHours() + ':00';
+    };
+    var xl1 = svgEl('text', { x: PAD.left, y: H - 4, 'font-size': '9', fill: '#8b949e' });
+    xl1.textContent = fmtX(xMin);
+    svg.appendChild(xl1);
+    var xl2 = svgEl('text', { x: PAD.left + innerW, y: H - 4, 'font-size': '9', 'text-anchor': 'end', fill: '#8b949e' });
+    xl2.textContent = fmtX(xMax);
+    svg.appendChild(xl2);
+
+    // Data polyline
+    var pts = data.map(function(d) { return xScale(d.x) + ',' + yScale(d.y); }).join(' ');
+    var pl = svgEl('polyline', { points: pts, fill: 'none',
+        stroke: options.color || '#d4871b', 'stroke-width': '1.5', 'stroke-linejoin': 'round' });
+    svg.appendChild(pl);
+
+    container.appendChild(svg);
+}
+
+// ── renderMultiLineChart ───────────────────────────────────────────
+// lines: [{data: [{x,y}], color, label}, ...]
+function renderMultiLineChart(container, lines, options) {
+    var W = options.width || 320, H = options.height || 120;
+    var PAD = { top: 8, right: 8, bottom: 22, left: 40 };
+    var innerW = W - PAD.left - PAD.right;
+    var innerH = H - PAD.top - PAD.bottom;
+
+    container.innerHTML = '';
+    var allData = [].concat.apply([], lines.map(function(l) { return l.data; }));
+    if (!allData.length) {
+        container.innerHTML = '<div class="sensor-empty">Keine Daten.</div>';
+        return;
+    }
+
+    var xMin = Math.min.apply(null, allData.map(function(d) { return d.x; }));
+    var xMax = Math.max.apply(null, allData.map(function(d) { return d.x; }));
+    var yMin = 0;
+    var yMax = Math.max.apply(null, allData.map(function(d) { return d.y; }));
+    if (yMax === 0) yMax = 1;
+
+    var xScale = function(x) { return PAD.left + (x - xMin) / (xMax - xMin) * innerW; };
+    var yScale = function(y) { return PAD.top + (1 - y / yMax) * innerH; };
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H });
+    var gridColor = '#30363d';
+
+    for (var gi = 0; gi <= 3; gi++) {
+        var gy = PAD.top + gi * (innerH / 3);
+        var gv = yMax * (1 - gi / 3);
+        var gl = svgEl('line', { x1: PAD.left, y1: gy, x2: PAD.left + innerW, y2: gy,
+            stroke: gridColor, 'stroke-width': '0.5', 'stroke-dasharray': '3,3' });
+        svg.appendChild(gl);
+        var gt = svgEl('text', { x: PAD.left - 4, y: gy + 4, 'font-size': '9',
+            'text-anchor': 'end', fill: '#8b949e' });
+        gt.textContent = Math.round(gv);
+        svg.appendChild(gt);
+    }
+
+    lines.forEach(function(line) {
+        if (!line.data.length) return;
+        var pts = line.data.map(function(d) { return xScale(d.x) + ',' + yScale(d.y); }).join(' ');
+        var pl = svgEl('polyline', { points: pts, fill: 'none',
+            stroke: line.color, 'stroke-width': '1.5', 'stroke-linejoin': 'round' });
+        svg.appendChild(pl);
+    });
+
+    // Legend
+    var lx = PAD.left;
+    lines.forEach(function(line) {
+        var lb = svgEl('rect', { x: lx, y: 3, width: 10, height: 3, fill: line.color, rx: 1 });
+        svg.appendChild(lb);
+        var lt = svgEl('text', { x: lx + 13, y: 8, 'font-size': '8', fill: '#8b949e' });
+        lt.textContent = line.label || '';
+        svg.appendChild(lt);
+        lx += 60;
+    });
+
+    container.appendChild(svg);
+}
+
+// ── renderBarChart ─────────────────────────────────────────────────
+// data: [{label, value, color}, ...]
+function renderBarChart(container, data, options) {
+    var W = options.width || 320;
+    var ROW_H = 18, PAD_L = 100, PAD_R = 8, PAD_T = 4;
+    var maxItems = options.maxItems || 20;
+    data = data.slice(0, maxItems);
+    var H = PAD_T + data.length * ROW_H;
+
+    container.innerHTML = '';
+    if (!data.length) {
+        container.innerHTML = '<div class="sensor-empty">Keine Fitnessdaten.</div>';
+        return;
+    }
+
+    var maxVal = Math.max.apply(null, data.map(function(d) { return d.value; }));
+    if (maxVal === 0) maxVal = 1;
+    var barW = W - PAD_L - PAD_R;
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H });
+
+    data.forEach(function(item, i) {
+        var y = PAD_T + i * ROW_H;
+        var bw = (item.value / maxVal) * barW;
+
+        var bar = svgEl('rect', { x: PAD_L, y: y + 3, width: Math.max(bw, 1), height: ROW_H - 6,
+            fill: item.color || '#d4871b', rx: 2 });
+        svg.appendChild(bar);
+
+        var lbl = svgEl('text', { x: PAD_L - 4, y: y + ROW_H - 7, 'font-size': '9',
+            'text-anchor': 'end', fill: '#8b949e' });
+        lbl.textContent = (item.label || '').slice(0, 14);
+        svg.appendChild(lbl);
+
+        var val = svgEl('text', { x: PAD_L + bw + 4, y: y + ROW_H - 7, 'font-size': '9', fill: '#8b949e' });
+        val.textContent = item.value.toFixed(2);
+        svg.appendChild(val);
+    });
+
+    container.appendChild(svg);
+}
+
+// ── renderRadarChart ───────────────────────────────────────────────
+// axes: string[], values: number[] (0.0 – 1.0)
+function renderRadarChart(container, axes, values, options) {
+    var W = options.width || 200, H = options.height || 160;
+    var cx = W / 2, cy = H / 2, R = Math.min(cx, cy) - 20;
+    var n = axes.length;
+
+    container.innerHTML = '';
+    if (!axes.length) {
+        container.innerHTML = '<div class="sensor-empty">Kein Forge-Run vorhanden.</div>';
+        return;
+    }
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H });
+
+    // Background rings
+    [0.25, 0.5, 0.75, 1.0].forEach(function(f) {
+        var pts = axes.map(function(_, i) {
+            var a = (i / n) * 2 * Math.PI - Math.PI / 2;
+            return (cx + Math.cos(a) * R * f) + ',' + (cy + Math.sin(a) * R * f);
+        }).join(' ');
+        var bg = svgEl('polygon', { points: pts, fill: 'none', stroke: '#30363d', 'stroke-width': '0.5' });
+        svg.appendChild(bg);
+    });
+
+    // Axes lines
+    axes.forEach(function(ax, i) {
+        var a = (i / n) * 2 * Math.PI - Math.PI / 2;
+        var xl = svgEl('line', { x1: cx, y1: cy,
+            x2: cx + Math.cos(a) * R, y2: cy + Math.sin(a) * R,
+            stroke: '#30363d', 'stroke-width': '0.5' });
+        svg.appendChild(xl);
+        // Labels
+        var lx = cx + Math.cos(a) * (R + 12);
+        var ly = cy + Math.sin(a) * (R + 12);
+        var lt = svgEl('text', { x: lx, y: ly + 4, 'font-size': '10',
+            'text-anchor': 'middle', fill: '#8b949e' });
+        lt.textContent = ax;
+        svg.appendChild(lt);
+    });
+
+    // Data polygon
+    if (values.length === n) {
+        var dataPts = values.map(function(v, i) {
+            var a = (i / n) * 2 * Math.PI - Math.PI / 2;
+            var r = Math.min(Math.max(v, 0), 1) * R;
+            return (cx + Math.cos(a) * r) + ',' + (cy + Math.sin(a) * r);
+        }).join(' ');
+        var dpoly = svgEl('polygon', { points: dataPts,
+            fill: 'rgba(212,135,27,0.25)', stroke: '#d4871b', 'stroke-width': '1.5' });
+        svg.appendChild(dpoly);
+    }
+
+    container.appendChild(svg);
+}
+
+// ── renderClusterMap ───────────────────────────────────────────────
+// clusters: [{name, size, fitness}, ...]
+function renderClusterMap(container, clusters, options) {
+    var W = options.width || 320, H = options.height || 160;
+
+    container.innerHTML = '';
+    if (!clusters.length) {
+        container.innerHTML = '<div class="sensor-empty">Nicht genug Daten f\u00fcr Gen-Clustering.</div>';
+        return;
+    }
+
+    var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H });
+
+    var maxSize = Math.max.apply(null, clusters.map(function(c) { return c.size || 1; }));
+    var cols = Math.ceil(Math.sqrt(clusters.length));
+    var rows = Math.ceil(clusters.length / cols);
+    var cellW = W / cols, cellH = H / rows;
+
+    clusters.forEach(function(c, i) {
+        var col = i % cols, row = Math.floor(i / cols);
+        var cx = cellW * col + cellW / 2;
+        var cy = cellH * row + cellH / 2;
+        var size = c.size || 1;
+        var r = 6 + (size / maxSize) * 18;
+        var fitness = c.fitness || 0;
+        var color = fitness > 0.8 ? '#3fb950' : (fitness > 0.5 ? '#d4871b' : (fitness > 0 ? '#f85149' : '#484f58'));
+        var singleton = size <= 1;
+
+        var circle = svgEl('circle', { cx: cx, cy: cy, r: r,
+            fill: color, opacity: singleton ? '0.4' : '0.7' });
+        svg.appendChild(circle);
+
+        var lbl = svgEl('text', { x: cx, y: cy + 4, 'font-size': singleton ? '8' : '9',
+            'text-anchor': 'middle',
+            fill: singleton ? '#484f58' : '#e6edf3' });
+        lbl.textContent = (c.name || '').slice(0, 12);
+        svg.appendChild(lbl);
+    });
+
+    container.appendChild(svg);
+}
+
+// ── Sensorium data loading ─────────────────────────────────────────
+function loadSensorium() {
+    fetch('/api/timeseries?hours=' + sensorWindow)
+        .then(function(r) { return r.json(); })
+        .then(function(tsData) {
+            var entries = tsData.entries || [];
+            renderSgbChart(entries);
+            renderNormsChart(entries);
+            renderScrapeChart(entries);
+        })
+        .catch(function() {});
+
+    fetch('/api/norms/fitness')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderFitnessChart(d.norms || []); })
+        .catch(function() {});
+
+    fetch('/api/norms/genome')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderGenomeChart(d); })
+        .catch(function() {});
+
+    // Radar: use last timeseries entry for codematrix
+    fetch('/api/timeseries?hours=720')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var entries = d.entries || [];
+            var last = entries.length ? entries[entries.length - 1] : null;
+            renderRadarFromEntry(last);
+        })
+        .catch(function() {});
+
+    // Auto-evolve status
+    fetch('/api/auto-evolve/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderAutoEvolveStatus(d); })
+        .catch(function() {});
+}
+
+function toMs(ts) {
+    return new Date(ts).getTime();
+}
+
+function renderSgbChart(entries) {
+    var container = document.getElementById('chart-sgb');
+    var alertEl = document.getElementById('alert-sgb');
+    alertEl.innerHTML = '';
+
+    var data = entries
+        .filter(function(e) { return e.sgb != null; })
+        .map(function(e) { return { x: toMs(e.timestamp), y: e.sgb }; });
+
+    renderLineChart(container, data, {
+        color: '#d4871b', yMin: 0, yMax: 1,
+        targetLine: 1.0, label: 'SGB'
+    });
+
+    // SGB convergence alarm
+    if (data.length >= 3) {
+        var last3 = data.slice(-3);
+        if (last3[0].y > last3[1].y && last3[1].y > last3[2].y) {
+            alertEl.innerHTML = '<div class="sensor-alert warn">' +
+                '! SGB sinkt: ' + last3[0].y.toFixed(2) + ' \u2192 ' +
+                last3[1].y.toFixed(2) + ' \u2192 ' + last3[2].y.toFixed(2) +
+                ' (3 Snapshots)</div>';
+        }
+        var latest = data[data.length - 1].y;
+        if (latest > 0.95) {
+            alertEl.innerHTML = '<div class="sensor-alert success">' +
+                '&#9733; Meilenstein: SGB = ' + latest.toFixed(2) +
+                ' &mdash; Ziel SGB = 1.0 fast erreicht!</div>';
+        }
+    }
+}
+
+function renderNormsChart(entries) {
+    var container = document.getElementById('chart-norms');
+    if (!entries.length) { container.innerHTML = '<div class="sensor-empty">Keine Daten.</div>'; return; }
+
+    var lines = [
+        { label: 'Builtin', color: '#484f58',
+          data: entries.map(function(e) { return { x: toMs(e.timestamp), y: e.norms_builtin }; }) },
+        { label: 'Auto',    color: '#3fb950',
+          data: entries.map(function(e) { return { x: toMs(e.timestamp), y: e.norms_auto }; }) },
+        { label: 'Cands',   color: '#58a6ff',
+          data: entries.map(function(e) { return { x: toMs(e.timestamp), y: e.candidates_total }; }) },
+    ];
+    renderMultiLineChart(container, lines, { width: 320, height: 120 });
+}
+
+function renderScrapeChart(entries) {
+    var container = document.getElementById('chart-scrape');
+    if (entries.length < 2) { container.innerHTML = '<div class="sensor-empty">Keine Daten.</div>'; return; }
+
+    // Rate = delta repos_scraped between consecutive entries
+    var data = [];
+    for (var i = 1; i < entries.length; i++) {
+        var dt = (toMs(entries[i].timestamp) - toMs(entries[i-1].timestamp)) / 3600000; // hours
+        var delta = entries[i].repos_scraped_total - entries[i-1].repos_scraped_total;
+        var rate = dt > 0 ? delta / dt : 0;
+        data.push({ x: toMs(entries[i].timestamp), y: Math.max(rate, 0) });
+    }
+    renderLineChart(container, data, { color: '#58a6ff', yMin: 0, label: 'Repos/h' });
+}
+
+function renderFitnessChart(norms) {
+    var container = document.getElementById('chart-fitness');
+    if (!norms.length) { container.innerHTML = '<div class="sensor-empty">Keine Fitnessdaten.</div>'; return; }
+
+    var sorted = norms.slice().sort(function(a, b) { return b.fitness - a.fitness; });
+    var data = sorted.slice(0, 20).map(function(n) {
+        var f = n.fitness;
+        return {
+            label: (n.id || '').replace('ISLS-NORM-', ''),
+            value: f,
+            color: f > 0.8 ? '#3fb950' : (f > 0.5 ? '#d4871b' : '#f85149'),
+        };
+    });
+    var extra = sorted.length - 20;
+    renderBarChart(container, data, { width: 320, maxItems: 20 });
+    if (extra > 0) {
+        var note = document.createElement('div');
+        note.style.cssText = 'font-size:11px;color:#484f58;padding:4px 0;';
+        note.textContent = '+' + extra + ' weitere';
+        container.appendChild(note);
+    }
+}
+
+function renderRadarFromEntry(last) {
+    var container = document.getElementById('chart-radar');
+    if (!last || !last.last_codematrix_resonance) {
+        container.innerHTML = '<div class="sensor-empty">Kein Forge-Run vorhanden.</div>';
+        return;
+    }
+    // We only have the aggregate resonance. Show a symmetric pentagon
+    // as a placeholder with the mean value.
+    var v = last.last_codematrix_resonance;
+    renderRadarChart(container, ['R','F','T','S','E'], [v,v,v,v,v], { width: 200, height: 160 });
+}
+
+function renderGenomeChart(d) {
+    var container = document.getElementById('chart-genome');
+    if (!d.enough_data) {
+        container.innerHTML = '<div class="sensor-empty">Nicht genug Daten f\u00fcr Gen-Clustering (' +
+            (d.total_metrics || 0) + '/' + (d.min_required || 10) + ' Metriken).</div>';
+        return;
+    }
+    var genes = (d.genes || []).map(function(g) {
+        return { name: g.name, size: (g.norms || []).length, fitness: g.fitness || 0 };
+    });
+    // Add singletons
+    (d.singletons || []).forEach(function(s) {
+        genes.push({ name: s, size: 1, fitness: 0 });
+    });
+    renderClusterMap(container, genes, { width: 320, height: 160 });
+}
+
+function renderAutoEvolveStatus(d) {
+    var btn = document.getElementById('ae-toggle-btn');
+    var panel = document.getElementById('ae-history-panel');
+    var content = document.getElementById('ae-history-content');
+
+    autoEvolveActive = d.active;
+    btn.textContent = 'Auto-Evolve: ' + (d.active ? 'AN' : 'AUS');
+    btn.classList.toggle('active', d.active);
+
+    if (d.active && d.history && d.history.length) {
+        panel.style.display = '';
+        var html = '';
+        if (d.last_run) {
+            var lr = d.last_run;
+            var ago = formatAgo(lr.timestamp);
+            html += '<div>Letzter Auto-Evolve: vor ' + ago + '</div>';
+            html += '<div>&nbsp;&nbsp;"' + (lr.description || '') + '" &mdash; ' +
+                (lr.files || 0) + ' files, ' + Math.round(lr.duration_secs || 0) + 's, ' +
+                (lr.success ? '<span class="ae-pass">PASS</span>' : '<span class="ae-fail">FAIL</span>') +
+                '</div>';
+        }
+        if (d.next_run_at) {
+            html += '<div>N&auml;chster Auto-Evolve: in ' + formatUntil(d.next_run_at) + '</div>';
+        }
+        html += '<div>Gesamt: ' + (d.history_pass || 0) + '/' + (d.history_total || 0) +
+            ' PASS (' + (d.history_total ? Math.round(d.history_pass / d.history_total * 100) : 0) + '%)</div>';
+        content.innerHTML = html;
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+function formatAgo(isoStr) {
+    var diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+    if (diff < 60) return Math.round(diff) + 's';
+    if (diff < 3600) return Math.round(diff / 60) + 'min';
+    return Math.round(diff / 3600) + 'h';
+}
+
+function formatUntil(isoStr) {
+    var diff = (new Date(isoStr).getTime() - Date.now()) / 1000;
+    if (diff <= 0) return 'gleich';
+    if (diff < 3600) return Math.round(diff / 60) + 'min';
+    return Math.round(diff / 3600) + 'h';
+}
+
+// ── Time window switching ──────────────────────────────────────────
+function setSensorWindow(hours) {
+    sensorWindow = hours;
+    document.getElementById('tw-24h').classList.toggle('active', hours === 24);
+    document.getElementById('tw-7d').classList.toggle('active', hours === 168);
+    document.getElementById('tw-30d').classList.toggle('active', hours === 720);
+    loadSensorium();
+}
+
+// ── Auto-evolve toggle ─────────────────────────────────────────────
+function toggleAutoEvolve() {
+    fetch('/api/auto-evolve/toggle', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderAutoEvolveStatus(d); loadSensorium(); })
+        .catch(function() {});
+}
+
+// ── 30-second auto-refresh ─────────────────────────────────────────
+(function() {
+    setInterval(function() {
+        if (currentMode === 'sensor') loadSensorium();
+    }, 30000);
 })();
 
 // ── Init ───────────────────────────────────────────────────────────
