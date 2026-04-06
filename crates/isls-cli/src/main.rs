@@ -124,6 +124,14 @@ enum NormsSubcmd {
     Inject { file: String },
     /// I3/W2: Remove an injected norm by id.
     Remove { id: String },
+    /// N1/W1: Compute and display norm relations.
+    Relations,
+    /// N1/W2: Detect and display norm groups.
+    Groups,
+    /// N1/W3: Compute configuration energy for a set of norms.
+    Energy { norms: Vec<String> },
+    /// N1/W4: Optimize norm configuration for requirements.
+    Optimize { requirements: Vec<String> },
 }
 
 // ─── Argument Parsing ────────────────────────────────────────────────────────
@@ -239,9 +247,33 @@ fn parse_args(args: &[String]) -> Command {
                 "fitness" => NormsSubcmd::Fitness,
                 "genome" => NormsSubcmd::Genome,
                 "reset" => NormsSubcmd::Reset,
+                "relations" => NormsSubcmd::Relations,
+                "groups" => NormsSubcmd::Groups,
+                "energy" => {
+                    let norms_str = args.iter().position(|a| a == "--norms")
+                        .and_then(|i| args.get(i + 1))
+                        .cloned()
+                        .unwrap_or_default();
+                    let norms: Vec<String> = norms_str.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    NormsSubcmd::Energy { norms }
+                }
+                "optimize" => {
+                    let req_str = args.iter().position(|a| a == "--require")
+                        .and_then(|i| args.get(i + 1))
+                        .cloned()
+                        .unwrap_or_default();
+                    let requirements: Vec<String> = req_str.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    NormsSubcmd::Optimize { requirements }
+                }
                 _ => {
                     eprintln!("[ERROR] Unknown norms subcommand: {}", subcmd);
-                    eprintln!("Available: list, inspect, candidates, stats, fitness, genome, reset, inject, remove");
+                    eprintln!("Available: list, inspect, candidates, stats, fitness, genome, reset, inject, remove, relations, groups, energy, optimize");
                     std::process::exit(1);
                 }
             };
@@ -1063,6 +1095,10 @@ fn main() {
             NormsSubcmd::Reset => cmd_norms::cmd_norms_reset(),
             NormsSubcmd::Inject { file } => cmd_norms::cmd_norms_inject(&file),
             NormsSubcmd::Remove { id } => cmd_norms::cmd_norms_remove(&id),
+            NormsSubcmd::Relations => cmd_norms::cmd_norms_relations(),
+            NormsSubcmd::Groups => cmd_norms::cmd_norms_groups(),
+            NormsSubcmd::Energy { norms } => cmd_norms::cmd_norms_energy(&norms),
+            NormsSubcmd::Optimize { requirements } => cmd_norms::cmd_norms_optimize(&requirements),
         },
         Command::Spectroscopy { path, scrape } => {
             cmd_spectroscopy::cmd_spectroscopy(path.as_deref(), scrape);

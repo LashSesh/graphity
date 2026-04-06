@@ -459,6 +459,217 @@ pub fn cmd_norms_remove(id: &str) {
     }
 }
 
+// ─── N1: Relations, Groups, Energy, Optimize ────────────────────────────────
+
+/// N1/W1: Compute and display norm relations.
+pub fn cmd_norms_relations() {
+    let registry = NormRegistry::new();
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let _ = isls_norms::relations::save_relations(&matrix, None);
+
+    let compatible = matrix.relations.iter().filter(|r| r.relation == isls_norms::relations::RelationType::Compatible).count();
+    let dependent = matrix.relations.iter().filter(|r| r.relation == isls_norms::relations::RelationType::Dependent).count();
+    let conflicting = matrix.relations.iter().filter(|r| r.relation == isls_norms::relations::RelationType::Conflicting).count();
+
+    println!("ISLS Norm Relations ({} norms, {} relations)", matrix.norm_count, matrix.relations.len());
+    println!("---");
+    println!("Compatible:  {}", compatible);
+    println!("Dependent:   {}", dependent);
+    println!("Conflicting: {}", conflicting);
+
+    // Top valence
+    println!("\nTop Valenz:");
+    let mut valences: Vec<(String, String, usize)> = norms.iter()
+        .map(|n| (n.id.clone(), n.name.clone(), isls_norms::groups::compute_valence(&n.id, &matrix)))
+        .collect();
+    valences.sort_by(|a, b| b.2.cmp(&a.2));
+    for (id, name, v) in valences.iter().take(5) {
+        println!("  {} ({})       V={}", id, name, v);
+    }
+
+    // Conflicts
+    let conflicts: Vec<&isls_norms::relations::NormRelation> = matrix.relations.iter()
+        .filter(|r| r.relation == isls_norms::relations::RelationType::Conflicting)
+        .collect();
+    if !conflicts.is_empty() {
+        println!("\nKonflikte:");
+        for c in &conflicts {
+            let a_name = norms.iter().find(|n| n.id == c.norm_a).map(|n| n.name.as_str()).unwrap_or(&c.norm_a);
+            let b_name = norms.iter().find(|n| n.id == c.norm_b).map(|n| n.name.as_str()).unwrap_or(&c.norm_b);
+            println!("  {} <> {}  (shared: {})", a_name, b_name, c.shared_resonites.join(", "));
+        }
+    }
+
+    // Dependencies
+    let deps: Vec<&isls_norms::relations::NormRelation> = matrix.relations.iter()
+        .filter(|r| r.relation == isls_norms::relations::RelationType::Dependent)
+        .collect();
+    if !deps.is_empty() {
+        println!("\nAbhaengigkeiten:");
+        for d in deps.iter().take(10) {
+            let a_name = norms.iter().find(|n| n.id == d.norm_a).map(|n| n.name.as_str()).unwrap_or(&d.norm_a);
+            let b_name = norms.iter().find(|n| n.id == d.norm_b).map(|n| n.name.as_str()).unwrap_or(&d.norm_b);
+            println!("  {} -> {}", a_name, b_name);
+        }
+    }
+}
+
+/// N1/W2: Detect and display norm groups.
+pub fn cmd_norms_groups() {
+    let registry = NormRegistry::new();
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let groups = isls_norms::groups::detect_groups(&norms, &matrix);
+    let _ = isls_norms::groups::save_groups(&groups, None);
+
+    let grouped: usize = groups.iter().map(|g| g.members.len()).sum();
+    let singletons = norms.len() - grouped;
+
+    println!("ISLS Norm Groups ({} groups, {} grouped norms, {} singletons)", groups.len(), grouped, singletons);
+    println!("---");
+
+    if groups.is_empty() {
+        println!("No groups detected (no conflicting norm pairs with shared dependencies).");
+    } else {
+        for g in &groups {
+            let member_names: Vec<String> = g.members.iter()
+                .filter_map(|id| norms.iter().find(|n| n.id == *id).map(|n| n.name.clone()))
+                .collect();
+            println!("{}  \"{}\"   [{}]", g.id, g.name, member_names.join(", "));
+            if !g.shared_deps.is_empty() {
+                println!("  Shared deps: {}", g.shared_deps.join(", "));
+            }
+        }
+    }
+}
+
+/// N1/W3: Compute configuration energy for a set of norms.
+pub fn cmd_norms_energy(norm_ids: &[String]) {
+    if norm_ids.is_empty() {
+        eprintln!("[ERROR] No norm IDs provided. Usage: isls norms energy --norms ID1,ID2,ID3");
+        std::process::exit(1);
+    }
+
+    let registry = NormRegistry::new();
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let fitness_store = isls_norms::fitness::FitnessStore::load();
+    let fitness: std::collections::HashMap<String, f64> = norms.iter()
+        .map(|n| (n.id.clone(), fitness_store.get_fitness(&n.id)))
+        .collect();
+
+    let energy = isls_norms::energy::configuration_energy(norm_ids, &matrix, &fitness);
+
+    let names: Vec<String> = norm_ids.iter()
+        .map(|id| norms.iter().find(|n| n.id == *id).map(|n| n.name.clone()).unwrap_or_else(|| id.clone()))
+        .collect();
+
+    println!("Configuration Energy Analysis");
+    println!("---");
+    println!("Norms: {}", names.join(", "));
+    println!("Energy: {:.2}", energy.total);
+    println!("  Conflict:        {:.2}{}", energy.conflict,
+        if energy.conflicts.is_empty() { "  (keine Konflikte)" } else { "" });
+    println!("  Deficit:         {:.2}{}", energy.deficit,
+        if energy.missing_deps.is_empty() { "  (alle Abhaengigkeiten erfuellt)" } else { "" });
+    println!("  Fitness-Entropy: {:.2}", energy.fitness_entropy);
+    println!();
+
+    if energy.is_valid {
+        println!("Status: GUELTIG");
+    } else {
+        println!("Status: UNVOLLSTAENDIG");
+        if !energy.conflicts.is_empty() {
+            println!("  Konflikte:");
+            for (a, b) in &energy.conflicts {
+                println!("    {} <> {}", a, b);
+            }
+        }
+        if !energy.missing_deps.is_empty() {
+            println!("  Fehlende Abhaengigkeiten:");
+            for (a, b) in &energy.missing_deps {
+                println!("    {} -> {}", a, b);
+            }
+        }
+    }
+}
+
+/// N1/W4: Optimize norm configuration for requirements.
+pub fn cmd_norms_optimize(requirements: &[String]) {
+    if requirements.is_empty() {
+        eprintln!("[ERROR] No requirements provided. Usage: isls norms optimize --require CrudEntity,Authentication");
+        std::process::exit(1);
+    }
+
+    let registry = NormRegistry::new();
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let groups = isls_norms::groups::detect_groups(&norms, &matrix);
+    let fitness_store = isls_norms::fitness::FitnessStore::load();
+    let fitness: std::collections::HashMap<String, f64> = norms.iter()
+        .map(|n| (n.id.clone(), fitness_store.get_fitness(&n.id)))
+        .collect();
+
+    // Parse requirements as ResoniteClass
+    let req_classes: Vec<isls_norms::spectroscopy::ResoniteClass> = requirements.iter()
+        .map(|r| parse_resonite_class(r))
+        .collect();
+
+    let result = isls_norms::optimizer::optimize_configuration(
+        &req_classes, &norms, &matrix, &fitness, &groups,
+    );
+
+    println!("Optimal Configuration");
+    println!("---");
+    println!("Selected ({} norms, Energy: {:.2}):", result.norms.len(), result.energy.total);
+    for id in &result.norms {
+        let name = norms.iter().find(|n| n.id == *id).map(|n| n.name.as_str()).unwrap_or(id);
+        let phi = fitness.get(id).unwrap_or(&0.5);
+        println!("  {}  {}  phi={:.2}", id, name, phi);
+    }
+
+    println!("\nEnergy Breakdown:");
+    println!("  Conflict:        {:.2}", result.energy.conflict);
+    println!("  Deficit:         {:.2}", result.energy.deficit);
+    println!("  Fitness-Entropy: {:.2}", result.energy.fitness_entropy);
+
+    if !result.uncovered.is_empty() {
+        println!("\nUncovered: {}", result.uncovered.join(", "));
+    } else {
+        println!("\nUncovered: (none)");
+    }
+}
+
+fn parse_resonite_class(s: &str) -> isls_norms::spectroscopy::ResoniteClass {
+    use isls_norms::spectroscopy::ResoniteClass;
+    match s {
+        "CrudEntity" => ResoniteClass::CrudEntity,
+        "Authentication" => ResoniteClass::Authentication,
+        "Authorization" => ResoniteClass::Authorization,
+        "Pagination" => ResoniteClass::Pagination,
+        "Search" => ResoniteClass::Search,
+        "FileUpload" => ResoniteClass::FileUpload,
+        "Notification" => ResoniteClass::Notification,
+        "StateMachine" => ResoniteClass::StateMachine,
+        "Workflow" => ResoniteClass::Workflow,
+        "Caching" => ResoniteClass::Caching,
+        "RateLimiting" => ResoniteClass::RateLimiting,
+        "EventBus" => ResoniteClass::EventBus,
+        "RealtimeWebSocket" => ResoniteClass::RealtimeWebSocket,
+        "GraphQLApi" => ResoniteClass::GraphQLApi,
+        "ExportImport" => ResoniteClass::ExportImport,
+        "Scheduling" => ResoniteClass::Scheduling,
+        "HealthCheck" => ResoniteClass::HealthCheck,
+        "Logging" => ResoniteClass::Logging,
+        "Metrics" => ResoniteClass::Metrics,
+        "Docker" => ResoniteClass::Docker,
+        "Migration" => ResoniteClass::Migration,
+        "Configuration" => ResoniteClass::Configuration,
+        other => ResoniteClass::Custom(other.to_string()),
+    }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn format_layers(norm: &isls_norms::Norm) -> String {

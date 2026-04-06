@@ -106,6 +106,49 @@ impl StagedClosure {
         eprintln!("[HDAG S0] Ingest: AppSpec ready (app={})", spec.app_name);
         tracing::info!(app = %spec.app_name, "S0 Ingest: AppSpec ready");
 
+        // N1/W5: Optimizer-based norm selection (between S0 and S1)
+        {
+            let entities: Vec<isls_norms::optimizer::SimpleEntity> = spec.entities.iter()
+                .map(|e| isls_norms::optimizer::SimpleEntity {
+                    name: e.name.clone(),
+                    field_names: e.fields.iter().map(|f| f.name.clone()).collect(),
+                })
+                .collect();
+            let requirements = isls_norms::optimizer::extract_requirements_from_entities(&entities);
+
+            let registry = isls_norms::NormRegistry::new_without_persistence();
+            let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+            let matrix = isls_norms::relations::compute_relations(&norms);
+            let groups = isls_norms::groups::detect_groups(&norms, &matrix);
+            let fitness_store = isls_norms::fitness::FitnessStore::load();
+            let fitness: std::collections::HashMap<String, f64> = norms.iter()
+                .map(|n| (n.id.clone(), fitness_store.get_fitness(&n.id)))
+                .collect();
+
+            let optimal = isls_norms::optimizer::optimize_configuration(
+                &requirements, &norms, &matrix, &fitness, &groups,
+            );
+
+            if !optimal.norms.is_empty() {
+                self.plan.norm_ids = optimal.norms.clone();
+                tracing::info!(
+                    "N1 Norm selection: {} norms, E={:.2}, {} uncovered",
+                    optimal.norms.len(), optimal.energy.total, optimal.uncovered.len()
+                );
+                eprintln!(
+                    "[N1] Optimizer: {} norms selected (E={:.2})",
+                    optimal.norms.len(), optimal.energy.total
+                );
+            } else {
+                // FALLBACK: keep existing keyword-based norm_ids
+                tracing::warn!(
+                    "N1 Optimizer returned empty config, using keyword-based fallback ({} norms)",
+                    self.plan.norm_ids.len()
+                );
+                eprintln!("[N1] Optimizer: empty config, falling back to keyword activation");
+            }
+        }
+
         // S1: Canon — entity names already canonicalized by lib.rs::to_snake_case
         eprintln!("[HDAG S1] Canon: entity names canonicalized");
         tracing::info!("S1 Canon: entity names canonicalized");

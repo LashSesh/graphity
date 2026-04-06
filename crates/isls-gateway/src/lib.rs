@@ -547,6 +547,10 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/norms/genome", get(api_norms_genome))
         .route("/api/norms/inject", post(api_norms_inject))
         .route("/api/norms/anatomy", get(api_norms_anatomy))
+        .route("/api/norms/relations", get(api_norms_relations))
+        .route("/api/norms/groups", get(api_norms_groups))
+        .route("/api/norms/energy", post(api_norms_energy_compute))
+        .route("/api/norms/optimize", post(api_norms_optimize))
         .route("/api/norms/{id}", get(api_get_norm))
         // I3/W3 Evolve
         .route("/api/evolve", post(api_evolve))
@@ -1411,6 +1415,98 @@ async fn api_get_norm(
         Some(n) => Json(serde_json::json!({ "ok": true, "norm": n })),
         None    => Json(serde_json::json!({ "ok": false, "error": "norm not found" })),
     }
+}
+
+// ─── N1: Relations, Groups, Energy, Optimize API handlers ───────────────────
+
+/// GET /api/norms/relations — compute and return norm relation matrix.
+async fn api_norms_relations(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let registry = state.norm_registry.read().await;
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let _ = isls_norms::relations::save_relations(&matrix, None);
+    Json(serde_json::json!({ "ok": true, "relations": matrix }))
+}
+
+/// GET /api/norms/groups — detect and return norm groups.
+async fn api_norms_groups(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let registry = state.norm_registry.read().await;
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let groups = isls_norms::groups::detect_groups(&norms, &matrix);
+    let _ = isls_norms::groups::save_groups(&groups, None);
+    Json(serde_json::json!({ "ok": true, "groups": groups }))
+}
+
+/// POST /api/norms/energy — compute configuration energy.
+async fn api_norms_energy_compute(
+    State(state): State<AppState>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let norm_ids: Vec<String> = req.get("norms")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    if norm_ids.is_empty() {
+        return Json(serde_json::json!({ "ok": false, "error": "No norm IDs provided" }));
+    }
+
+    let registry = state.norm_registry.read().await;
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let fitness_store = isls_norms::fitness::FitnessStore::load();
+    let fitness: std::collections::HashMap<String, f64> = norms.iter()
+        .map(|n| (n.id.clone(), fitness_store.get_fitness(&n.id)))
+        .collect();
+
+    let energy = isls_norms::energy::configuration_energy(&norm_ids, &matrix, &fitness);
+    Json(serde_json::json!({ "ok": true, "energy": energy }))
+}
+
+/// POST /api/norms/optimize — find optimal configuration for requirements.
+async fn api_norms_optimize(
+    State(state): State<AppState>,
+    Json(req): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let requirements: Vec<String> = req.get("requirements")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .unwrap_or_default();
+
+    if requirements.is_empty() {
+        return Json(serde_json::json!({ "ok": false, "error": "No requirements provided" }));
+    }
+
+    let registry = state.norm_registry.read().await;
+    let norms: Vec<isls_norms::Norm> = registry.all_norms().into_iter().cloned().collect();
+    let matrix = isls_norms::relations::compute_relations(&norms);
+    let groups = isls_norms::groups::detect_groups(&norms, &matrix);
+    let fitness_store = isls_norms::fitness::FitnessStore::load();
+    let fitness: std::collections::HashMap<String, f64> = norms.iter()
+        .map(|n| (n.id.clone(), fitness_store.get_fitness(&n.id)))
+        .collect();
+
+    let req_classes: Vec<isls_norms::spectroscopy::ResoniteClass> = requirements.iter()
+        .map(|r| match r.as_str() {
+            "CrudEntity" => isls_norms::spectroscopy::ResoniteClass::CrudEntity,
+            "Authentication" => isls_norms::spectroscopy::ResoniteClass::Authentication,
+            "Pagination" => isls_norms::spectroscopy::ResoniteClass::Pagination,
+            "Search" => isls_norms::spectroscopy::ResoniteClass::Search,
+            "FileUpload" => isls_norms::spectroscopy::ResoniteClass::FileUpload,
+            "Notification" => isls_norms::spectroscopy::ResoniteClass::Notification,
+            "StateMachine" => isls_norms::spectroscopy::ResoniteClass::StateMachine,
+            "Workflow" => isls_norms::spectroscopy::ResoniteClass::Workflow,
+            "Caching" => isls_norms::spectroscopy::ResoniteClass::Caching,
+            "RealtimeWebSocket" => isls_norms::spectroscopy::ResoniteClass::RealtimeWebSocket,
+            other => isls_norms::spectroscopy::ResoniteClass::Custom(other.to_string()),
+        })
+        .collect();
+
+    let result = isls_norms::optimizer::optimize_configuration(
+        &req_classes, &norms, &matrix, &fitness, &groups,
+    );
+    Json(serde_json::json!({ "ok": true, "optimal": result }))
 }
 
 // ─── v3 Projects API handlers ─────────────────────────────────────────────
