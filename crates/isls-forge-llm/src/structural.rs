@@ -253,12 +253,149 @@ pub fn generate_migration(spec: &AppSpec) -> String {
         sql.push_str(");\n\n");
     }
 
+    // F1/W3: Demo data — 5 rows per entity with deterministic NATO-alphabet values
+    sql.push_str(&generate_demo_data(&ordered));
+
     // D6: Conditional norm seed — only when a "Norm" entity with "is_builtin" field exists
     if let Some(seed_sql) = generate_norm_seed(spec) {
         sql.push_str(&seed_sql);
     }
 
     sql
+}
+
+/// F1/W3: Generate 5 deterministic demo rows per entity.
+///
+/// Uses NATO alphabet for names, deterministic values for all types.
+/// FK fields use subqueries to reference the first entries of the target entity.
+fn generate_demo_data(entities: &[&EntityDef]) -> String {
+    let names = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"];
+    let emails_prefix = ["alpha", "bravo", "charlie", "delta", "echo"];
+    let prices: [&str; 5] = ["10.50", "25.99", "42.00", "99.95", "7.25"];
+    let bools: [&str; 5] = ["true", "true", "false", "true", "true"];
+    let statuses: [&str; 5] = ["active", "active", "pending", "inactive", "active"];
+    let days: [u32; 5] = [30, 20, 10, 5, 1];
+
+    let mut sql = String::from("\n-- F1/W3: Demo data (5 rows per entity, NATO alphabet)\n");
+
+    for entity in entities {
+        let table = pluralize(&entity.snake_name);
+        let fields: Vec<&isls_hypercube::domain::FieldDef> = entity
+            .fields
+            .iter()
+            .filter(|f| {
+                f.name != "id"
+                    && f.name != "created_at"
+                    && f.name != "updated_at"
+                    && !f.sql_type.contains("SERIAL")
+            })
+            .collect();
+
+        if fields.is_empty() {
+            continue;
+        }
+
+        let col_names: Vec<&str> = fields.iter().map(|f| f.name.as_str()).collect();
+
+        for i in 0..5 {
+            let mut values: Vec<String> = Vec::new();
+            for f in &fields {
+                let v = demo_value(&f.name, &f.rust_type, &f.sql_type, i, names[i], emails_prefix[i], prices[i], bools[i], statuses[i], days[i]);
+                values.push(v);
+            }
+            sql.push_str(&format!(
+                "INSERT INTO {} ({}) VALUES ({}) ON CONFLICT DO NOTHING;\n",
+                table,
+                col_names.join(", "),
+                values.join(", ")
+            ));
+        }
+        sql.push('\n');
+    }
+    sql
+}
+
+/// Produce a deterministic SQL value for a single field in a demo row.
+fn demo_value(
+    name: &str,
+    rust_type: &str,
+    sql_type: &str,
+    idx: usize,
+    nato: &str,
+    email_prefix: &str,
+    price: &str,
+    bool_val: &str,
+    status: &str,
+    days_ago: u32,
+) -> String {
+    let lower = name.to_lowercase();
+    let rt = rust_type.replace("Option<", "").replace('>', "");
+
+    // FK references — use subquery
+    if sql_type.contains("REFERENCES ") {
+        if let Some(pos) = sql_type.find("REFERENCES ") {
+            let rest = &sql_type[pos + 11..];
+            if let Some(table) = rest.split('(').next() {
+                let table = table.trim();
+                return format!("(SELECT id FROM {} LIMIT 1 OFFSET {})", table, idx % 5);
+            }
+        }
+    }
+
+    // Name-based
+    if lower.contains("email") {
+        return format!("'{}@example.com'", email_prefix);
+    }
+    if lower.contains("password") || lower.contains("passwd") {
+        return "'$2b$12$demo_password_hash_placeholder'".to_string();
+    }
+    if lower == "name" || lower == "title" || lower.ends_with("_name") || lower == "first_name" || lower == "last_name" {
+        return format!("'{}'", nato);
+    }
+    if lower == "description" || lower == "notes" || lower == "bio"
+        || lower == "content" || lower == "body" || lower == "text"
+        || lower == "comment" || lower == "message"
+    {
+        return format!("'Demo {} entry {}'", nato.to_lowercase(), idx + 1);
+    }
+    if lower == "status" || lower == "role" || lower == "type"
+        || lower == "category" || lower == "priority" || lower == "level"
+    {
+        return format!("'{}'", status);
+    }
+    if lower.contains("url") || lower.contains("website") || lower.contains("link") {
+        return format!("'https://example.com/{}'", email_prefix);
+    }
+    if lower.contains("phone") || lower.contains("tel") || lower.contains("mobile") {
+        return format!("'+1-555-{:04}'", 1000 + idx);
+    }
+
+    // Type-based
+    match rt.as_str() {
+        "bool" => bool_val.to_string(),
+        "f64" | "f32" | "Decimal" => price.to_string(),
+        "i32" | "i64" | "u32" | "u64" => format!("{}", (idx + 1) * 10),
+        "NaiveDateTime" | "DateTime<Utc>" | "chrono::DateTime<Utc>" => {
+            format!("NOW() - INTERVAL '{} days'", days_ago)
+        }
+        "NaiveDate" => format!("CURRENT_DATE - INTERVAL '{} days'", days_ago),
+        _ => {
+            // String fallback
+            if sql_type.contains("BOOL") {
+                bool_val.to_string()
+            } else if sql_type.contains("INT") {
+                format!("{}", (idx + 1) * 10)
+            } else if sql_type.contains("FLOAT") || sql_type.contains("NUMERIC") || sql_type.contains("DECIMAL") || sql_type.contains("REAL") || sql_type.contains("DOUBLE") {
+                price.to_string()
+            } else if sql_type.contains("TIMESTAMP") {
+                format!("NOW() - INTERVAL '{} days'", days_ago)
+            } else if sql_type.contains("DATE") {
+                format!("CURRENT_DATE - INTERVAL '{} days'", days_ago)
+            } else {
+                format!("'{} {}'", nato, idx + 1)
+            }
+        }
+    }
 }
 
 /// D6: Generate INSERT statements for the 24 builtin norms.
@@ -1679,8 +1816,9 @@ pub fn generate_for_path_with_blueprint(path: &str, spec: &AppSpec, bp: &InfraBl
             generate_api_tests(spec)
         };
     }
-    if path.ends_with("index.html") {
-        return generate_frontend_index(spec);
+    // F1: Single-file SPA frontend
+    if path.ends_with("frontend.html") || path.ends_with("index.html") {
+        return generate_frontend_html(spec);
     }
     if path.ends_with("style.css") {
         return generate_frontend_style();
@@ -1699,6 +1837,907 @@ pub fn generate_for_path_with_blueprint(path: &str, spec: &AppSpec, bp: &InfraBl
     // Fallback: empty placeholder (static-file generators handle Cargo.toml etc.)
     tracing::warn!(path = %path, "structural::generate_for_path: no generator matched");
     String::new()
+}
+
+// ─── F1/W1: Frontend CSS ─────────────────────────────────────────────────────
+
+/// Generate the complete ISLS Design System CSS.
+///
+/// Static CSS — identical for every generated app. Uses CSS custom properties
+/// for theming. Responsive at 768px breakpoint.
+fn generate_frontend_css() -> String {
+    r##"
+:root {
+    --bg-primary: #0d1117;
+    --bg-card: #161b22;
+    --bg-input: #1c2128;
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent: #d4871b;
+    --success: #3fb950;
+    --error: #f85149;
+    --border: #30363d;
+    --radius: 6px;
+    --nav-width: 220px;
+}
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    line-height: 1.5;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.app-container { display: flex; min-height: 100vh; }
+.nav {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: var(--nav-width);
+    background: var(--bg-card);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 16px 0;
+    overflow-y: auto;
+    z-index: 100;
+    transition: transform 0.3s ease;
+}
+.main {
+    margin-left: var(--nav-width);
+    flex: 1; min-height: 100vh;
+    display: flex; flex-direction: column;
+}
+.nav-brand {
+    color: var(--accent); font-size: 18px; font-weight: 700;
+    padding: 8px 20px 20px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+}
+.nav-link {
+    display: block; padding: 10px 20px;
+    color: var(--text-secondary); font-size: 14px;
+    cursor: pointer; border-left: 3px solid transparent;
+    transition: all 0.15s ease;
+}
+.nav-link:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+.nav-link.active {
+    color: var(--accent); border-left-color: var(--accent);
+    background: rgba(212,135,27,0.08);
+}
+.header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+}
+.header-title { font-size: 18px; font-weight: 600; }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.header-user { color: var(--text-secondary); font-size: 13px; }
+.hamburger {
+    display: none; background: none; border: none;
+    color: var(--text-primary); font-size: 24px;
+    cursor: pointer; padding: 4px 8px;
+}
+.card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+}
+.page-content { padding: 24px; }
+table { width: 100%; border-collapse: collapse; background: var(--bg-card); border-radius: var(--radius); overflow: hidden; }
+th {
+    text-align: left; padding: 10px 14px; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-secondary); background: rgba(255,255,255,0.03);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none;
+}
+th:hover { color: var(--accent); }
+th .sort-arrow { font-size: 10px; margin-left: 4px; }
+td {
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 14px; max-width: 250px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+tr:hover td { background: rgba(255,255,255,0.02); }
+.table-actions { display: flex; gap: 6px; }
+.btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border: 1px solid var(--border);
+    border-radius: var(--radius); font-size: 14px;
+    cursor: pointer; background: var(--bg-card);
+    color: var(--text-primary); transition: all 0.15s ease;
+}
+.btn:hover { border-color: var(--text-secondary); }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn-primary:hover { background: #b8731a; border-color: #b8731a; }
+.btn-secondary { background: transparent; border-color: var(--accent); color: var(--accent); }
+.btn-secondary:hover { background: rgba(212,135,27,0.1); }
+.btn-danger { background: transparent; border-color: var(--error); color: var(--error); }
+.btn-danger:hover { background: rgba(248,81,73,0.1); }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.btn-group { display: flex; gap: 8px; margin-top: 16px; }
+.form-group { margin-bottom: 16px; }
+.form-label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.form-input {
+    width: 100%; padding: 8px 12px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text-primary);
+    font-size: 14px; font-family: inherit;
+    transition: border-color 0.15s ease;
+}
+.form-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(212,135,27,0.2); }
+select.form-input { appearance: auto; }
+textarea.form-input { min-height: 100px; resize: vertical; }
+.toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--border); border-radius: 12px;
+    cursor: pointer; transition: background 0.2s ease;
+}
+.toggle-slider::before {
+    content: ''; position: absolute;
+    width: 18px; height: 18px; left: 3px; bottom: 3px;
+    background: #fff; border-radius: 50%;
+    transition: transform 0.2s ease;
+}
+.toggle input:checked + .toggle-slider { background: var(--accent); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+.dashboard-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px; margin-bottom: 24px;
+}
+.stat-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px;
+    text-align: center; cursor: pointer;
+    transition: border-color 0.15s ease;
+}
+.stat-card:hover { border-color: var(--accent); }
+.stat-value { font-size: 32px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+.stat-label { font-size: 13px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+.pagination {
+    display: flex; align-items: center; justify-content: center;
+    gap: 4px; margin-top: 16px; padding: 12px 0;
+}
+.page-btn {
+    padding: 6px 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--bg-card);
+    color: var(--text-secondary); font-size: 13px;
+    cursor: pointer; transition: all 0.15s ease;
+}
+.page-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+.page-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.toast-container {
+    position: fixed; top: 16px; right: 16px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px;
+}
+.toast {
+    padding: 12px 20px; border-radius: var(--radius);
+    font-size: 14px; color: #fff; animation: fadeIn 0.3s ease;
+    min-width: 250px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.toast-success { background: var(--success); }
+.toast-error { background: var(--error); }
+.toast.fade-out { animation: fadeOut 0.3s ease forwards; }
+.login-container { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.login-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 40px;
+    width: 100%; max-width: 400px;
+}
+.login-title { font-size: 24px; font-weight: 700; color: var(--accent); text-align: center; margin-bottom: 24px; }
+.login-error { color: var(--error); font-size: 13px; margin-top: 8px; text-align: center; }
+.search-bar { position: relative; margin-bottom: 16px; }
+.search-input {
+    width: 100%; padding: 8px 12px 8px 36px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: var(--radius); color: var(--text-primary); font-size: 14px;
+}
+.search-input:focus { outline: none; border-color: var(--accent); }
+.search-icon {
+    position: absolute; left: 10px; top: 50%;
+    transform: translateY(-50%); color: var(--text-secondary); font-size: 14px;
+}
+.detail-grid { display: grid; grid-template-columns: 160px 1fr; gap: 12px; margin-bottom: 20px; }
+.detail-label { font-size: 13px; font-weight: 600; color: var(--text-secondary); padding: 4px 0; }
+.detail-value { font-size: 14px; color: var(--text-primary); padding: 4px 0; word-break: break-word; }
+.nav-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5); z-index: 99;
+}
+.nav-overlay.open { display: block; }
+.toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 768px) {
+    .nav { transform: translateX(-100%); width: 260px; }
+    .nav.open { transform: translateX(0); }
+    .main { margin-left: 0; }
+    .hamburger { display: block; }
+    .page-content { padding: 16px; }
+    .dashboard-grid { grid-template-columns: 1fr 1fr; }
+    .detail-grid { grid-template-columns: 1fr; }
+    table { font-size: 13px; }
+    td, th { padding: 8px 10px; }
+    .login-card { margin: 16px; }
+}
+@media (max-width: 480px) {
+    .dashboard-grid { grid-template-columns: 1fr; }
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeOut {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(-8px); }
+}
+"##.to_string()
+}
+
+// ─── F1/W1: Frontend HTML (Single-File SPA) ─────────────────────────────────
+
+/// Generate a complete single-file SPA: `frontend.html`.
+///
+/// Combines inline CSS (from `generate_frontend_css()`), generated HTML body
+/// with login + nav + content areas, and inline JS (from `generate_frontend_js()`).
+/// Zero external dependencies. No React, no Vue, no npm.
+pub fn generate_frontend_html(spec: &AppSpec) -> String {
+    let app_name = &spec.app_name;
+    let css = generate_frontend_css();
+    let js = generate_frontend_js(app_name, &spec.entities);
+
+    let non_user: Vec<&EntityDef> = spec.entities.iter().filter(|e| e.name != "User").collect();
+
+    // Build nav links
+    let mut nav_links = String::new();
+    nav_links.push_str("        <div class=\"nav-link\" data-route=\"dashboard\" onclick=\"location.hash='#/dashboard'\">Dashboard</div>\n");
+    for entity in &non_user {
+        let sn = &entity.snake_name;
+        let display_plural = pluralize_name(&to_title_case(sn));
+        nav_links.push_str(&format!(
+            "        <div class=\"nav-link\" data-route=\"{}\" onclick=\"location.hash='#/{}'\">{}</div>\n",
+            sn, sn, display_plural
+        ));
+    }
+
+    format!(
+        r##"<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{app_name}</title>
+    <style>{css}</style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="app-login" class="login-container">
+        <div class="login-card">
+            <div class="login-title">{app_name}</div>
+            <div class="form-group">
+                <label class="form-label">Email</label>
+                <input class="form-input" type="email" id="login-email" value="admin@example.com">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Password</label>
+                <input class="form-input" type="password" id="login-password" value="admin123">
+            </div>
+            <button class="btn btn-primary" id="login-btn" style="width:100%">Login</button>
+            <div id="login-error" class="login-error"></div>
+        </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app-main" class="app-container" style="display:none">
+        <nav class="nav">
+            <div class="nav-brand">{app_name}</div>
+{nav_links}        </nav>
+        <div class="nav-overlay" onclick="toggleNav()"></div>
+        <div class="main">
+            <div class="header">
+                <div style="display:flex;align-items:center;gap:12px">
+                    <button class="hamburger" onclick="toggleNav()">&#9776;</button>
+                    <span class="header-title" id="header-title">Dashboard</span>
+                </div>
+                <div class="header-right">
+                    <span class="header-user" id="header-user"></span>
+                    <button class="btn btn-sm" onclick="doLogout()">Logout</button>
+                </div>
+            </div>
+            <div class="page-content" id="page-content"></div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script>
+{js}
+    </script>
+</body>
+</html>"##,
+        app_name = app_name,
+        css = css,
+        nav_links = nav_links,
+        js = js,
+    )
+}
+
+// ─── F1/W1: Frontend JavaScript ──────────────────────────────────────────────
+
+/// Generate the complete SPA JavaScript code.
+///
+/// The entity configs (ENTITIES object) are generated from the EntityDef list.
+/// Everything else (auth, router, renderers, toast) is static.
+fn generate_frontend_js(app_name: &str, entities: &[EntityDef]) -> String {
+    let non_user: Vec<&EntityDef> = entities.iter().filter(|e| e.name != "User").collect();
+
+    // ── Build ENTITIES config object ─────────────────────────────────
+    let mut entity_configs = String::new();
+    for entity in &non_user {
+        let sn = &entity.snake_name;
+        let plural = pluralize_name(sn);
+        let display = to_title_case(sn);
+        let display_plural = pluralize_name(&display);
+
+        entity_configs.push_str(&format!("  '{}': {{\n", sn));
+        entity_configs.push_str(&format!("    name: '{}',\n", display));
+        entity_configs.push_str(&format!("    plural: '{}',\n", display_plural));
+        entity_configs.push_str(&format!("    apiPath: '/api/{}',\n", plural));
+        entity_configs.push_str("    fields: [\n");
+
+        for field in &entity.fields {
+            if field.name == "id" || field.name == "created_at" || field.name == "updated_at" {
+                continue;
+            }
+            let input_type = field_to_input_type(&field.name, &field.rust_type);
+            let label = to_title_case(&field.name);
+            let required = !field.nullable;
+            let step = if input_type == "number" {
+                format!(", step: '{}'", field_number_step(&field.rust_type))
+            } else {
+                String::new()
+            };
+            // For fk-select, extract the referenced entity from the field name
+            let fk_ref = if input_type == "fk-select" {
+                let ref_name = field.name.trim_end_matches("_id");
+                format!(", ref: '{}'", ref_name)
+            } else {
+                String::new()
+            };
+            entity_configs.push_str(&format!(
+                "      {{ name: '{}', label: '{}', type: '{}', required: {}{}{} }},\n",
+                field.name, label, input_type, required, step, fk_ref
+            ));
+        }
+        entity_configs.push_str("    ],\n");
+        entity_configs.push_str("  },\n");
+    }
+
+    // ── First entity key for default route ───────────────────────────
+    let first_key = non_user.first().map(|e| e.snake_name.as_str()).unwrap_or("item");
+
+    // ── Build the full JS ────────────────────────────────────────────
+    format!(
+        r##"'use strict';
+
+const ENTITIES = {{
+{entity_configs}}};
+
+const FIRST_ENTITY = '{first_key}';
+const PER_PAGE = 20;
+let currentUser = null;
+let sortState = {{}};
+
+// ── Auth ──────────────────────────────────────────────────────────
+
+function getToken() {{ return localStorage.getItem('token'); }}
+
+async function apiFetch(method, path, body) {{
+  const headers = {{ 'Content-Type': 'application/json' }};
+  const token = getToken();
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const opts = {{ method, headers }};
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(path, opts);
+  if (resp.status === 401) {{ doLogout(); throw new Error('Session expired'); }}
+  if (!resp.ok) {{
+    const err = await resp.json().catch(() => ({{ error: resp.statusText }}));
+    throw new Error(err.error || err.errors?.join(', ') || resp.statusText);
+  }}
+  if (resp.status === 204) return null;
+  return resp.json();
+}}
+
+async function doLogin() {{
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.textContent = '';
+  try {{
+    const data = await apiFetch('POST', '/api/auth/login', {{ email, password }});
+    localStorage.setItem('token', data.token);
+    await showApp();
+  }} catch (e) {{
+    errEl.textContent = e.message;
+  }}
+}}
+
+function doLogout() {{
+  localStorage.removeItem('token');
+  currentUser = null;
+  document.getElementById('app-login').style.display = '';
+  document.getElementById('app-main').style.display = 'none';
+}}
+
+async function showApp() {{
+  document.getElementById('app-login').style.display = 'none';
+  document.getElementById('app-main').style.display = '';
+  try {{
+    currentUser = await apiFetch('GET', '/api/auth/me');
+    document.getElementById('header-user').textContent = currentUser.email + ' (' + currentUser.role + ')';
+  }} catch (_) {{}}
+  if (!location.hash || location.hash === '#/') location.hash = '#/dashboard';
+  else route();
+}}
+
+// ── Router ────────────────────────────────────────────────────────
+
+function route() {{
+  const hash = location.hash.slice(2) || 'dashboard';
+  const parts = hash.split('/');
+  const page = document.getElementById('page-content');
+
+  // Update active nav
+  document.querySelectorAll('.nav-link').forEach(el => {{
+    el.classList.toggle('active', el.dataset.route === parts[0] || (parts[0] === 'dashboard' && el.dataset.route === 'dashboard'));
+  }});
+  document.getElementById('header-title').textContent = parts[0] === 'dashboard' ? 'Dashboard' : (ENTITIES[parts[0]]?.plural || parts[0]);
+
+  if (parts[0] === 'dashboard') {{ renderDashboard(page); return; }}
+  const entity = ENTITIES[parts[0]];
+  if (!entity) {{ page.innerHTML = '<p>Page not found</p>'; return; }}
+
+  if (parts.length === 1) {{ renderList(page, parts[0]); }}
+  else if (parts[1] === 'new') {{ renderForm(page, parts[0], null); }}
+  else if (parts.length === 2) {{ renderDetail(page, parts[0], parts[1]); }}
+  else if (parts[2] === 'edit') {{ renderForm(page, parts[0], parts[1]); }}
+}}
+
+window.addEventListener('hashchange', route);
+
+// ── Dashboard ─────────────────────────────────────────────────────
+
+async function renderDashboard(container) {{
+  container.innerHTML = '<h2 style="margin-bottom:20px">Dashboard</h2><div class="dashboard-grid" id="dash-grid"></div><div id="dash-tables"></div>';
+  const grid = document.getElementById('dash-grid');
+  const tables = document.getElementById('dash-tables');
+
+  for (const [key, cfg] of Object.entries(ENTITIES)) {{
+    try {{
+      const data = await apiFetch('GET', cfg.apiPath + '?per_page=5');
+      const count = data.total || data.items?.length || 0;
+      const card = document.createElement('div');
+      card.className = 'stat-card';
+      card.onclick = () => location.hash = '#/' + key;
+      card.innerHTML = '<div class="stat-value">' + count + '</div><div class="stat-label">' + cfg.plural + '</div>';
+      grid.appendChild(card);
+
+      if (data.items && data.items.length > 0) {{
+        const sec = document.createElement('div');
+        sec.className = 'card';
+        sec.style.marginBottom = '16px';
+        const fields = cfg.fields.slice(0, 4);
+        let th = fields.map(f => '<th>' + f.label + '</th>').join('');
+        let rows = data.items.map(item =>
+          '<tr>' + fields.map(f => '<td>' + (item[f.name] ?? '') + '</td>').join('') + '</tr>'
+        ).join('');
+        sec.innerHTML = '<h3 style="margin-bottom:12px">Recent ' + cfg.plural + '</h3>' +
+          '<table><thead><tr>' + th + '</tr></thead><tbody>' + rows + '</tbody></table>';
+        tables.appendChild(sec);
+      }}
+    }} catch (_) {{}}
+  }}
+}}
+
+// ── List View ─────────────────────────────────────────────────────
+
+async function renderList(container, key) {{
+  const cfg = ENTITIES[key];
+  container.innerHTML = '<div class="toolbar"><h2>' + cfg.plural + '</h2><button class="btn btn-primary" onclick="location.hash=\'#/' + key + '/new\'">+ Neu</button></div>' +
+    '<div class="search-bar"><span class="search-icon">&#128269;</span><input class="search-input" id="search-input" placeholder="Search ' + cfg.plural + '..." oninput="filterList()"></div>' +
+    '<div id="list-container"><p>Loading...</p></div>';
+
+  try {{
+    const data = await apiFetch('GET', cfg.apiPath + '?per_page=1000');
+    const items = data.items || [];
+    window._listData = items;
+    window._listKey = key;
+    window._listPage = 1;
+    sortState = {{}};
+    renderListTable();
+  }} catch (e) {{
+    document.getElementById('list-container').innerHTML = '<p style="color:var(--error)">Error: ' + e.message + '</p>';
+  }}
+}}
+
+function filterList() {{
+  window._listPage = 1;
+  renderListTable();
+}}
+
+function sortBy(field) {{
+  if (sortState.field === field) {{
+    sortState.dir = sortState.dir === 'asc' ? 'desc' : 'asc';
+  }} else {{
+    sortState = {{ field, dir: 'asc' }};
+  }}
+  renderListTable();
+}}
+
+function goToPage(p) {{
+  window._listPage = p;
+  renderListTable();
+}}
+
+function renderListTable() {{
+  const key = window._listKey;
+  const cfg = ENTITIES[key];
+  const search = (document.getElementById('search-input')?.value || '').toLowerCase();
+  let items = window._listData || [];
+
+  // Filter
+  if (search) {{
+    items = items.filter(item =>
+      cfg.fields.some(f => String(item[f.name] ?? '').toLowerCase().includes(search))
+    );
+  }}
+
+  // Sort
+  if (sortState.field) {{
+    items = [...items].sort((a, b) => {{
+      const va = a[sortState.field] ?? '';
+      const vb = b[sortState.field] ?? '';
+      const cmp = String(va).localeCompare(String(vb), undefined, {{ numeric: true }});
+      return sortState.dir === 'desc' ? -cmp : cmp;
+    }});
+  }}
+
+  // Pagination
+  const total = items.length;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const page = Math.min(window._listPage || 1, totalPages);
+  const start = (page - 1) * PER_PAGE;
+  const pageItems = items.slice(start, start + PER_PAGE);
+
+  // Build table
+  const fields = cfg.fields;
+  let html = '<table><thead><tr>';
+  for (const f of fields) {{
+    const arrow = sortState.field === f.name ? (sortState.dir === 'asc' ? ' &#9650;' : ' &#9660;') : '';
+    html += '<th onclick="sortBy(\'' + f.name + '\')">' + f.label + '<span class="sort-arrow">' + arrow + '</span></th>';
+  }}
+  html += '<th>Actions</th></tr></thead><tbody>';
+
+  for (const item of pageItems) {{
+    html += '<tr>';
+    for (const f of fields) {{
+      let val = item[f.name];
+      if (val === null || val === undefined) val = '';
+      if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
+      html += '<td>' + val + '</td>';
+    }}
+    html += '<td class="table-actions">' +
+      '<button class="btn btn-sm btn-secondary" onclick="location.hash=\'#/' + key + '/' + 'item.id' + '/edit\'".replace("item.id", item.id)>Edit</button>' +
+      '<button class="btn btn-sm btn-danger" onclick="deleteItem(\'' + key + '\',' + 'item.id' + ')".replace("item.id", item.id)>Delete</button>' +
+      '</td></tr>';
+  }}
+  html += '</tbody></table>';
+
+  // Pagination controls
+  if (totalPages > 1) {{
+    html += '<div class="pagination">';
+    html += '<button class="page-btn" onclick="goToPage(' + (page - 1) + ')" ' + (page <= 1 ? 'disabled' : '') + '>&laquo; Prev</button>';
+    for (let i = 1; i <= totalPages; i++) {{
+      if (totalPages > 7 && Math.abs(i - page) > 2 && i !== 1 && i !== totalPages) {{
+        if (i === 2 || i === totalPages - 1) html += '<span style="color:var(--text-secondary);padding:0 4px">...</span>';
+        continue;
+      }}
+      html += '<button class="page-btn' + (i === page ? ' active' : '') + '" onclick="goToPage(' + i + ')">' + i + '</button>';
+    }}
+    html += '<button class="page-btn" onclick="goToPage(' + (page + 1) + ')" ' + (page >= totalPages ? 'disabled' : '') + '>Next &raquo;</button>';
+    html += '</div>';
+  }}
+  html += '<p style="color:var(--text-secondary);font-size:12px;margin-top:8px">Total: ' + total + '</p>';
+
+  document.getElementById('list-container').innerHTML = html;
+
+  // Fix onclick with actual item.id (we build them via data attributes instead)
+  // Rebuild action buttons with proper closures
+  const rows = document.querySelectorAll('#list-container tbody tr');
+  const pageData = pageItems;
+  rows.forEach((row, idx) => {{
+    const item = pageData[idx];
+    if (!item) return;
+    const btns = row.querySelectorAll('.table-actions button');
+    if (btns[0]) btns[0].onclick = () => location.hash = '#/' + key + '/' + item.id + '/edit';
+    if (btns[1]) btns[1].onclick = () => deleteItem(key, item.id);
+  }});
+}}
+
+// ── Form View ─────────────────────────────────────────────────────
+
+async function renderForm(container, key, id) {{
+  const cfg = ENTITIES[key];
+  const isEdit = id !== null;
+  let existing = null;
+
+  container.innerHTML = '<h2>' + (isEdit ? 'Edit' : 'New') + ' ' + cfg.name + '</h2><div id="form-container"><p>Loading...</p></div>';
+
+  if (isEdit) {{
+    try {{ existing = await apiFetch('GET', cfg.apiPath + '/' + id); }} catch (e) {{
+      container.innerHTML = '<p style="color:var(--error)">Error: ' + e.message + '</p>';
+      return;
+    }}
+  }}
+
+  let html = '<form id="entity-form" class="card" style="max-width:600px">';
+  for (const f of cfg.fields) {{
+    const val = existing ? (existing[f.name] ?? '') : '';
+    html += '<div class="form-group">';
+    html += '<label class="form-label">' + f.label + (f.required ? ' *' : '') + '</label>';
+
+    if (f.type === 'textarea') {{
+      html += '<textarea class="form-input" name="' + f.name + '"' + (f.required ? ' required' : '') + '>' + val + '</textarea>';
+    }} else if (f.type === 'checkbox') {{
+      const checked = val === true || val === 'true' ? 'checked' : '';
+      html += '<label class="toggle"><input type="checkbox" name="' + f.name + '" ' + checked + '><span class="toggle-slider"></span></label>';
+    }} else if (f.type === 'select') {{
+      html += '<select class="form-input" name="' + f.name + '"' + (f.required ? ' required' : '') + '>';
+      ['Active', 'Inactive', 'Pending', 'Draft', 'Completed', 'Cancelled'].forEach(opt => {{
+        const sel = String(val).toLowerCase() === opt.toLowerCase() ? ' selected' : '';
+        html += '<option value="' + opt.toLowerCase() + '"' + sel + '>' + opt + '</option>';
+      }});
+      html += '</select>';
+    }} else if (f.type === 'fk-select') {{
+      html += '<select class="form-input" name="' + f.name + '"' + (f.required ? ' required' : '') + ' data-fk-ref="' + (f.ref || '') + '" data-fk-val="' + val + '"><option value="">Loading...</option></select>';
+    }} else {{
+      const step = f.step ? ' step="' + f.step + '"' : '';
+      const inputVal = f.type === 'datetime-local' && val ? val.replace('Z', '').split('.')[0] : val;
+      html += '<input class="form-input" type="' + f.type + '" name="' + f.name + '" value="' + inputVal + '"' + (f.required ? ' required' : '') + step + '>';
+    }}
+    html += '</div>';
+  }}
+  html += '<div class="btn-group">';
+  html += '<button type="submit" class="btn btn-primary">' + (isEdit ? 'Save' : 'Create') + '</button>';
+  html += '<button type="button" class="btn btn-secondary" onclick="location.hash=\'#/' + key + '\'">Cancel</button>';
+  html += '</div></form>';
+
+  document.getElementById('form-container').innerHTML = html;
+
+  // Load FK dropdowns
+  document.querySelectorAll('[data-fk-ref]').forEach(async (select) => {{
+    const refEntity = select.dataset.fkRef;
+    const currentVal = select.dataset.fkVal;
+    if (!refEntity) return;
+    const refCfg = ENTITIES[refEntity];
+    if (!refCfg) return;
+    try {{
+      const data = await apiFetch('GET', refCfg.apiPath + '?per_page=100');
+      const items = data.items || [];
+      select.innerHTML = '<option value="">-- Select --</option>';
+      items.forEach(item => {{
+        const label = item.name || item.title || item.email || item.id;
+        const sel = String(item.id) === String(currentVal) ? ' selected' : '';
+        select.innerHTML += '<option value="' + item.id + '"' + sel + '>' + label + '</option>';
+      }});
+    }} catch (_) {{
+      select.innerHTML = '<option value="">Error loading</option>';
+    }}
+  }});
+
+  // Form submit
+  document.getElementById('entity-form').onsubmit = async (e) => {{
+    e.preventDefault();
+    const formData = {{}};
+    for (const f of cfg.fields) {{
+      const el = e.target.elements[f.name];
+      if (!el) continue;
+      if (f.type === 'checkbox') {{
+        formData[f.name] = el.checked;
+      }} else if (f.type === 'number') {{
+        formData[f.name] = el.value === '' ? null : Number(el.value);
+      }} else if (f.type === 'fk-select') {{
+        formData[f.name] = el.value === '' ? null : (isNaN(el.value) ? el.value : Number(el.value));
+      }} else {{
+        formData[f.name] = el.value || null;
+      }}
+    }}
+    try {{
+      if (isEdit) {{
+        await apiFetch('PUT', cfg.apiPath + '/' + id, formData);
+        toast(cfg.name + ' updated', 'success');
+      }} else {{
+        await apiFetch('POST', cfg.apiPath, formData);
+        toast(cfg.name + ' created', 'success');
+      }}
+      location.hash = '#/' + key;
+    }} catch (e) {{
+      toast('Error: ' + e.message, 'error');
+    }}
+  }};
+}}
+
+// ── Detail View ───────────────────────────────────────────────────
+
+async function renderDetail(container, key, id) {{
+  const cfg = ENTITIES[key];
+  container.innerHTML = '<p>Loading...</p>';
+  try {{
+    const item = await apiFetch('GET', cfg.apiPath + '/' + id);
+    let html = '<h2>' + cfg.name + ' #' + id + '</h2><div class="card" style="max-width:700px"><div class="detail-grid">';
+
+    // Show all fields including id, created_at, updated_at
+    html += '<div class="detail-label">ID</div><div class="detail-value">' + item.id + '</div>';
+    for (const f of cfg.fields) {{
+      let val = item[f.name];
+      if (val === null || val === undefined) val = '—';
+      if (typeof val === 'boolean') val = val ? 'Yes' : 'No';
+      html += '<div class="detail-label">' + f.label + '</div><div class="detail-value">' + val + '</div>';
+    }}
+    if (item.created_at) html += '<div class="detail-label">Created</div><div class="detail-value">' + item.created_at + '</div>';
+    if (item.updated_at) html += '<div class="detail-label">Updated</div><div class="detail-value">' + item.updated_at + '</div>';
+
+    html += '</div><div class="btn-group">';
+    html += '<button class="btn btn-secondary" onclick="location.hash=\'#/' + key + '/' + id + '/edit\'">Bearbeiten</button>';
+    html += '<button class="btn btn-danger" onclick="deleteItem(\'' + key + '\',' + id + ')">L\u00f6schen</button>';
+    html += '<button class="btn" onclick="location.hash=\'#/' + key + '\'">Back</button>';
+    html += '</div></div>';
+    container.innerHTML = html;
+  }} catch (e) {{
+    container.innerHTML = '<p style="color:var(--error)">Error: ' + e.message + '</p>';
+  }}
+}}
+
+// ── Delete ────────────────────────────────────────────────────────
+
+async function deleteItem(key, id) {{
+  if (!confirm('Wirklich l\u00f6schen?')) return;
+  const cfg = ENTITIES[key];
+  try {{
+    await apiFetch('DELETE', cfg.apiPath + '/' + id);
+    toast(cfg.name + ' deleted', 'success');
+    location.hash = '#/' + key;
+  }} catch (e) {{
+    toast('Error: ' + e.message, 'error');
+  }}
+}}
+
+// ── Toast ─────────────────────────────────────────────────────────
+
+function toast(msg, type) {{
+  const container = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + (type || 'success');
+  el.textContent = msg;
+  container.appendChild(el);
+  setTimeout(() => {{ el.classList.add('fade-out'); setTimeout(() => el.remove(), 300); }}, 3000);
+}}
+
+// ── Mobile Nav ────────────────────────────────────────────────────
+
+function toggleNav() {{
+  document.querySelector('.nav').classList.toggle('open');
+  document.querySelector('.nav-overlay').classList.toggle('open');
+}}
+
+// ── Init ──────────────────────────────────────────────────────────
+
+if (getToken()) {{ showApp(); }}
+document.getElementById('login-btn').onclick = doLogin;
+document.getElementById('login-password').onkeydown = (e) => {{ if (e.key === 'Enter') doLogin(); }};
+"##,
+        entity_configs = entity_configs,
+        first_key = first_key,
+    )
+}
+
+
+// ─── F1/W2: Feldtyp-Mapping ─────────────────────────────────────────────────────
+
+/// Map an entity field to an HTML input type based on field name and Rust type.
+///
+/// Name-based rules take priority over type-based rules.
+/// Returns one of: "email", "password", "url", "tel", "color", "textarea",
+/// "select", "number", "checkbox", "datetime-local", "date", "fk-select", "text".
+fn field_to_input_type(name: &str, rust_type: &str) -> &'static str {
+    let lower = name.to_lowercase();
+
+    // Name-based rules (higher priority)
+    if lower.contains("email") {
+        return "email";
+    }
+    if lower.contains("password") || lower.contains("passwd") {
+        return "password";
+    }
+    if lower.contains("url") || lower.contains("website") || lower.contains("link") {
+        return "url";
+    }
+    if lower.contains("phone") || lower.contains("tel") || lower.contains("mobile") {
+        return "tel";
+    }
+    if lower.contains("color") || lower.contains("colour") {
+        return "color";
+    }
+    if lower == "description" || lower == "notes" || lower == "bio"
+        || lower == "content" || lower == "body" || lower == "text"
+        || lower == "comment" || lower == "message"
+    {
+        return "textarea";
+    }
+    if lower == "status" || lower == "role" || lower == "type"
+        || lower == "category" || lower == "priority" || lower == "level"
+    {
+        return "select";
+    }
+
+    // Type-based rules
+    let rt = rust_type.replace("Option<", "").replace('>', "");
+    match rt.as_str() {
+        "f64" | "f32" | "Decimal" => "number",
+        "i32" | "i64" | "u32" | "u64" => "number",
+        "bool" => "checkbox",
+        "NaiveDateTime" | "DateTime<Utc>" | "chrono::DateTime<Utc>" => "datetime-local",
+        "NaiveDate" => "date",
+        _ => {
+            // Uuid FK field
+            if (rt == "Uuid" || rt == "String" || rt == "i64") && lower.ends_with("_id") {
+                "fk-select"
+            } else {
+                "text"
+            }
+        }
+    }
+}
+
+/// Return the HTML step attribute for number inputs.
+fn field_number_step(rust_type: &str) -> &'static str {
+    let rt = rust_type.replace("Option<", "").replace('>', "");
+    match rt.as_str() {
+        "f64" | "f32" | "Decimal" => "0.01",
+        _ => "1",
+    }
+}
+
+/// Simple English pluralization for frontend display / API paths.
+fn pluralize_name(name: &str) -> String {
+    if name.ends_with('s') {
+        format!("{}es", name)
+    } else if name.ends_with('y')
+        && !name.ends_with("ay")
+        && !name.ends_with("ey")
+        && !name.ends_with("oy")
+        && !name.ends_with("uy")
+    {
+        format!("{}ies", &name[..name.len() - 1])
+    } else {
+        format!("{}s", name)
+    }
+}
+
+/// Convert a snake_case name to Title Case for labels.
+fn to_title_case(s: &str) -> String {
+    s.split('_')
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────

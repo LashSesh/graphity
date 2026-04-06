@@ -1301,10 +1301,8 @@ pub async fn discover_scrape_status(
     let active_jobs = jobs.values().filter(|j| j.status == "running").count();
     drop(jobs);
 
-    // ── History ────────────────────────────────────────────────────
+    // ── History (RAM — only for "recent activity" within current session) ──
     let history_guard = state.scrape_history.lock().await;
-    let total_repos_scraped: usize = history_guard.iter().map(|e| e.repos.len()).sum();
-    let total_observations: usize = history_guard.iter().map(|e| e.artifacts).sum();
     let recent: Vec<ScrapeHistoryEntry> =
         history_guard.iter().rev().take(10).cloned().collect();
     let (last_scrape, last_keyword) = history_guard
@@ -1312,6 +1310,13 @@ pub async fn discover_scrape_status(
         .map(|e| (e.timestamp.clone(), e.keyword.clone()))
         .unwrap_or_default();
     drop(history_guard);
+
+    // ── F1/W4: Persisted counters (survive restarts) ────────────────
+    // Repos scraped: from last timeseries.jsonl entry
+    let total_repos_scraped: usize = {
+        let entries = crate::timeseries::read_timeseries_entries(24 * 365);
+        entries.last().map(|e| e.repos_scraped_total).unwrap_or(0)
+    };
 
     // ── Norm registry: FRESH load from disk (spec: no caching) ───────
     // We load a fresh registry on every request so the auto-norm counter
@@ -1331,6 +1336,9 @@ pub async fn discover_scrape_status(
 
     let candidates = fresh_reg.candidates();
     let candidates_total = candidates.len();
+
+    // F1/W4: Observations count from norms.json (persisted)
+    let total_observations: usize = candidates.iter().map(|c| c.observation_count).sum();
 
     // Top-5 candidates — sorted by how close they are to promotion.
     // We approximate "closeness" as a blend of observation count and
