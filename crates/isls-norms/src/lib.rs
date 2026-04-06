@@ -26,10 +26,14 @@
 pub mod anatomy;
 pub mod catalog;
 pub mod composition;
+pub mod energy;
 pub mod fitness;
 pub mod genome;
+pub mod groups;
 pub mod injection;
 pub mod learning;
+pub mod optimizer;
+pub mod relations;
 pub mod spectroscopy;
 pub mod types;
 
