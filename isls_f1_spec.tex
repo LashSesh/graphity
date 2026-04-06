@@ -1,0 +1,171 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{amsmath,amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\definecolor{isls-blue}{HTML}{1a5276}
+\definecolor{isls-orange}{HTML}{e67e22}
+\definecolor{isls-green}{HTML}{27ae60}
+\definecolor{isls-gray}{HTML}{7f8c8d}
+\definecolor{code-bg}{HTML}{f7f9fb}
+\lstdefinestyle{rust}{language=C,basicstyle=\ttfamily\small,keywordstyle=\color{isls-blue}\bfseries,commentstyle=\color{isls-gray}\itshape,stringstyle=\color{isls-green},backgroundcolor=\color{code-bg},frame=single,rulecolor=\color{isls-gray!30},breaklines=true,showstringspaces=false,tabsize=4,morekeywords={fn,let,mut,pub,struct,impl,enum,use,mod,self,Self,crate,super,where,trait,for,in,if,else,match,return,async,await,Ok,Err,Some,None,Vec,String,HashMap,BTreeMap,Result,Option,PathBuf,f64,f32,usize,bool,u32,u64,i64,Box,dyn,Arc}}
+\lstdefinestyle{bash}{language=bash,basicstyle=\ttfamily\small,backgroundcolor=\color{code-bg},frame=single,rulecolor=\color{isls-gray!30},breaklines=true,showstringspaces=false}
+\pagestyle{fancy}\fancyhf{}
+\fancyhead[L]{\small\textcolor{isls-gray}{ISLS F1 Spec --- Frontend-Synthese}}
+\fancyhead[R]{\small\textcolor{isls-gray}{v1.0.0 --- \today}}
+\fancyfoot[C]{\thepage}
+\titleformat{\section}{\Large\bfseries\color{isls-blue}}{\thesection}{1em}{}
+\titleformat{\subsection}{\large\bfseries\color{isls-blue!80}}{\thesubsection}{1em}{}
+\hypersetup{colorlinks=true,linkcolor=isls-blue,urlcolor=isls-orange}
+\begin{document}
+\begin{titlepage}\centering\vspace*{2.5cm}
+{\Huge\bfseries\color{isls-blue} ISLS F1 Specification}\\[0.5cm]
+{\LARGE\color{isls-orange} Frontend-Synthese}\\[0.3cm]
+{\large\color{isls-gray} Deterministische Full-Stack-UI-Generierung als struktureller HDAG-Layer}\\[2cm]
+{\large\begin{tabular}{rl}
+\textbf{System:} & ISLS --- Intelligent Semantic Ledger Substrate \\
+\textbf{Version:} & v7.0 (F1) \\
+\textbf{Author:} & Sebastian Klemm \\
+\textbf{Date:} & \today \\
+\textbf{Status:} & Specification \\
+\textbf{Depends:} & I5 (complete) \\
+\textbf{Branch:} & \texttt{claude/implement-isls-f1-spec} \\
+\textbf{Regel 13:} & Jedes Feature MUSS im Studio erreichbar sein.
+\end{tabular}}
+\vfill{\small\color{isls-gray}Mithras Substructure University\\License: MIT}
+\end{titlepage}
+\tableofcontents\newpage
+
+\section{Executive Summary}
+F1 transforms ISLS from a backend-generator to a full-stack-generator. After F1: type a description, Forge, open browser, Login, see tables with demo data, create/edit/delete entries. No code. No build tools. No framework. Four work packages: (1) Frontend-Generator replacing the HTML stub with a complete SPA, (2) Feldtyp-Mapping for intelligent input types, (3) Demo-Daten in seed SQL, (4) Scrape-Counter persistence fix. All frontend generation is structural. Zero LLM tokens. Frontend SGB $= 1.0$.
+
+\section{W1: Frontend-Generator}
+\subsection{Location in HDAG}
+The existing \texttt{generate\_frontend\_html()} in \texttt{isls-forge-llm/src/structural.rs} produces a stub. F1 replaces it entirely. It remains structural ($\sigma = \text{Structural}$, 0 tokens).
+
+\subsection{Architecture: Single-File SPA}
+One HTML file, inline CSS ($\sim$300 lines), inline JS ($\sim$500 lines). No React, no Vue, no npm. Hash-based routing (\texttt{\#/trades}, \texttt{\#/trades/new}, \texttt{\#/trades/\{id\}/edit}). JWT auth via localStorage. Fetch API for backend communication.
+
+\subsection{CSS: The ISLS Design System}
+Static CSS, identical for every app. CSS custom properties for theming. Colors: \texttt{\#0d1117} (bg), \texttt{\#161b22} (cards), \texttt{\#d4871b} (accent), \texttt{\#e6edf3} (text), \texttt{\#30363d} (border). Components: tables with hover, forms with focus-accent, toggle switches for booleans, toast notifications, pagination, search bar. Responsive breakpoint at 768px: hamburger menu, stacked cards, full-width forms.
+
+The CSS must include: \texttt{.app-container}, \texttt{.nav} (fixed left sidebar, 220px), \texttt{.main} (content area), \texttt{.header} (top bar with title + logout), \texttt{.card}, \texttt{table/th/td}, \texttt{.btn/.btn-primary/.btn-secondary/.btn-danger/.btn-sm}, \texttt{.form-group/.form-label/.form-input}, \texttt{.toggle} (checkbox as switch), \texttt{.dashboard-grid/.stat-card/.stat-value/.stat-label}, \texttt{.pagination/.page-btn}, \texttt{.toast-container/.toast/.toast-success/.toast-error}, \texttt{.login-container/.login-card/.login-title}, \texttt{.search-bar/.search-input}, \texttt{.detail-grid/.detail-label/.detail-value}. Mobile: \texttt{.hamburger}, \texttt{.nav.open}, \texttt{.nav-overlay.open}.
+
+\subsection{HTML Body Generation}
+Generated from entities: Login screen (app name as title, username + password fields, Login button). Main app: fixed left nav with app brand + Dashboard link + one link per entity. Top header with hamburger (mobile) + page title + user info + Logout button. Content area (\texttt{\#page-content}) filled by JS router. Toast container.
+
+\subsection{JavaScript: SPA Router + CRUD}
+The JS is partially static (router, API layer, renderers) and partially generated (entity configs). Structure:
+
+\textbf{Entity Config (generated):} A JS object \texttt{ENTITIES} with one entry per entity. Each entry has: name, plural, apiPath (\texttt{/api/\{plural\}}), fields array (name, label, type from W2 mapping, required flag). Fields \texttt{id}, \texttt{created\_at}, \texttt{updated\_at} are excluded from forms but shown in detail view.
+
+\textbf{Auth (static):} \texttt{doLogin()} POSTs to \texttt{/api/auth/login}, stores token. \texttt{doLogout()} clears token. \texttt{showApp()} toggles login/main visibility. All \texttt{apiFetch()} calls inject Bearer token, handle 401 $\to$ logout.
+
+\textbf{Router (static):} \texttt{hashchange} listener. Routes: \texttt{\#/dashboard} $\to$ \texttt{renderDashboard()}, \texttt{\#/\{entity\}} $\to$ \texttt{renderList(entity)}, \texttt{\#/\{entity\}/new} $\to$ \texttt{renderForm(entity, null)}, \texttt{\#/\{entity\}/\{id\}} $\to$ \texttt{renderDetail(entity, id)}, \texttt{\#/\{entity\}/\{id\}/edit} $\to$ \texttt{renderForm(entity, id)}.
+
+\textbf{renderDashboard() (static logic):} Fetches count for each entity (GET apiPath, count results). Shows stat cards in a grid. Shows last 5 entries of each entity in a mini-table.
+
+\textbf{renderList(entity) (static logic):} GET apiPath $\to$ rows. Render table with headers from fields. Each row: field values + Edit/Delete buttons. Search bar filters client-side. Column headers clickable for sort (asc/desc toggle). Pagination: 20 per page. [Neu] button top-right.
+
+\textbf{renderForm(entity, id) (static logic):} If id: GET apiPath/id, pre-fill values. For each field: render input by type (W2 mapping). Submit: POST (create) or PUT (update). On success: toast + navigate to list. FK-select fields: fetch referenced entity list, populate dropdown.
+
+\textbf{renderDetail(entity, id) (static logic):} GET apiPath/id. Render all fields as label-value pairs in a grid. Show created\_at, updated\_at. [Bearbeiten] and [L\"oschen] buttons.
+
+\textbf{Delete flow:} \texttt{confirm('Wirklich l\"oschen?')} $\to$ DELETE apiPath/id $\to$ toast $\to$ navigate to list.
+
+\textbf{Toast (static):} \texttt{toast(msg, type)} creates a div in toast-container, auto-removes after 3s.
+
+\textbf{Mobile nav (static):} \texttt{toggleNav()} toggles \texttt{.open} class on nav and overlay.
+
+\subsection{Pluralization}
+Simple English pluralization for API paths:
+\begin{lstlisting}[style=rust]
+fn pluralize(name: &str) -> String {
+    if name.ends_with('s') { format!("{}es", name) }
+    else if name.ends_with('y') {
+        format!("{}ies", &name[..name.len()-1])
+    }
+    else { format!("{}s", name) }
+}
+\end{lstlisting}
+
+\section{W2: Feldtyp-Mapping}
+A function \texttt{field\_to\_input\_type(name, field\_type) -> \&str} maps EntityDef fields to HTML input types. Name-based rules (higher priority): email $\to$ ``email'', password $\to$ ``password'', url/website/link $\to$ ``url'', phone/tel/mobile $\to$ ``tel'', color $\to$ ``color'', description/notes/bio/content/body/text/comment/message $\to$ ``textarea'', status/role/type/category/priority/level $\to$ ``select''. Type-based rules: f64/f32 $\to$ ``number'' step=0.01, i32/i64 $\to$ ``number'' step=1, bool $\to$ ``checkbox'' (rendered as toggle switch), NaiveDateTime $\to$ ``datetime-local'', NaiveDate $\to$ ``date'', Uuid ending with \_id $\to$ ``fk-select'' (dropdown loading referenced entity). Default: ``text''.
+
+The select input for status/role/type fields shows options: Active, Inactive, Pending, Draft, Completed, Cancelled. This is a reasonable default. If the EntityDef has enum values, use those instead.
+
+\section{W3: Demo-Daten}
+Extend \texttt{generate\_seed\_sql()} to insert 5 demo rows per entity after the admin user insert. Values are deterministic: NATO alphabet for names (Alpha, Bravo, Charlie, Delta, Echo), \texttt{alpha@example.com} etc. for emails, realistic numbers for prices (10.50, 25.99, 42.00, 99.95, 7.25), \texttt{true/true/false/true/true} for booleans, \texttt{NOW() - INTERVAL 'N days'} for dates, Active/Active/Pending/Inactive/Active for status fields. FK fields reference the first entries of the target entity (use subquery: \texttt{(SELECT id FROM target LIMIT 1 OFFSET N)}).
+
+\section{W4: Scrape-Counter-Persistenz}
+The \texttt{/api/discover/scrape-status} endpoint must read from persisted sources: Auto-Norms count from \texttt{norms.json}, Candidates count from \texttt{norms.json}, Observations count from \texttt{norms.json}, Repos scraped from \texttt{timeseries.jsonl} (last entry), Keywords from \texttt{scrape\_keywords.txt} (line count). No RAM counters for these values. RAM counters are only for ``active jobs'' and ``recent activity'' within the current session.
+
+\section{Modified Files}
+\begin{longtable}{lp{10cm}}
+\toprule
+\textbf{File} & \textbf{Change} \\
+\midrule
+\texttt{isls-forge-llm/src/structural.rs} & Replace \texttt{generate\_frontend\_html()} with full SPA generator ($\sim$800 lines). Extend \texttt{generate\_seed\_sql()} with demo data. Add \texttt{field\_to\_input\_type()}, \texttt{pluralize()}, \texttt{generate\_demo\_data()}, \texttt{demo\_value()}. \\
+\texttt{isls-gateway/src/discover.rs} & \texttt{scrape\_status()} reads from persisted sources instead of RAM. \\
+\bottomrule
+\end{longtable}
+
+\section{Constraints for Claude Code}
+\begin{enumerate}
+\item \textbf{Regel 13:} The generated frontend IS the interface. Must work without tools.
+\item \textbf{Single-file HTML.} No React, no Vue, no npm. One file, inline CSS/JS.
+\item \textbf{Zero LLM tokens.} Frontend is structural. No oracle calls.
+\item \textbf{CSS is static.} Identical for every app. One \texttt{generate\_css()} function.
+\item \textbf{Responsive.} Must work at 375px. Hamburger menu. Stacked layout.
+\item \textbf{ISLS palette.} \texttt{\#0d1117}, \texttt{\#161b22}, \texttt{\#d4871b}. Same as Studio.
+\item \textbf{Demo data} uses NATO alphabet, deterministic, no randomness.
+\item \textbf{FK dropdowns} load referenced entity via API, populate select.
+\item \textbf{Toast notifications} for all CRUD actions + errors.
+\item \textbf{Pagination:} 20 per page, Prev/Next + page numbers.
+\item \textbf{Search:} Client-side filter on loaded data.
+\item \textbf{Sort:} Column header click, asc/desc toggle.
+\item \textbf{Do not modify} any file except \texttt{structural.rs} and \texttt{discover.rs}.
+\item All existing tests MUST pass.
+\item Branch: \texttt{claude/implement-isls-f1-spec}.
+\item Commit: \texttt{F1/W\{n\}: <description>}.
+\end{enumerate}
+
+\section{Acceptance Criteria}
+\begin{longtable}{clp{9cm}}
+\toprule
+\# & Pass & Criterion \\
+\midrule
+1 & & \texttt{cargo build --workspace} compiles. \\
+2 & & \texttt{cargo test --workspace} passes. \\
+3 & & Forge ``Pet shop'': \texttt{frontend.html} $>$ 1000 lines. \\
+4 & & Browser: Login page visible. \\
+5 & & Login admin/admin123: Dashboard with entity counts. \\
+6 & & Nav click: Table with demo data. \\
+7 & & [Neu]: Form with correct input types. \\
+8 & & Create entry: toast, appears in table. \\
+9 & & Edit entry: form pre-filled, save works. \\
+10 & & Delete entry: confirmation, removed. \\
+11 & & Pagination with $>$20 entries. \\
+12 & & Search filters rows. \\
+13 & & Column sort works. \\
+14 & & Mobile (375px): hamburger, stacked. \\
+15 & & Scrape counter persists across restart. \\
+16 & & All existing tests pass. \\
+\bottomrule
+\end{longtable}
+
+\vfill
+\begin{center}
+\color{isls-gray}\rule{0.5\textwidth}{0.4pt}\\[0.5em]
+{\small End of F1 Specification.\\[0.3em]
+Beschreiben. Forgen. \"Offnen. Benutzen.\\Kein Code. Nie wieder.}
+\end{center}
+\end{document}
