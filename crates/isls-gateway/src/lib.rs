@@ -14,6 +14,7 @@ pub mod chat;
 pub mod chat_handler;
 pub mod discover;
 pub mod session;
+pub mod targets;
 pub mod timeseries;
 pub mod ws;
 
@@ -120,6 +121,10 @@ pub struct AppState {
     pub auto_evolve: auto_evolve::AutoEvolveStore,
     /// I5: Atomic flag — true when auto-evolve background task should run.
     pub auto_evolve_enabled: Arc<AtomicBool>,
+    /// MC1: Target systems for Mission Control.
+    pub targets: Arc<RwLock<Vec<isls_norms::targets::TargetSystem>>>,
+    /// MC1: Atomic flag — true when auto-steer is active.
+    pub auto_steer_enabled: Arc<AtomicBool>,
 }
 
 /// Configuration for constructing an LLM oracle in the session forge.
@@ -179,6 +184,8 @@ impl AppState {
             oracle_config: OracleConfig::default_mock(),
             auto_evolve: auto_evolve::new_auto_evolve_store(),
             auto_evolve_enabled: Arc::new(AtomicBool::new(false)),
+            targets: Arc::new(RwLock::new(isls_norms::targets::load_targets())),
+            auto_steer_enabled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -597,6 +604,13 @@ pub fn build_router(state: AppState) -> Router {
         .route("/api/discover/suggested-keywords", get(discover::discover_suggested_keywords))
         .route("/api/discover/accept-keyword", post(discover::discover_accept_keyword))
         // I5: Timeseries
+        .route("/api/targets", get(targets::api_list_targets).post(targets::api_create_target))
+        .route("/api/targets/convergence", get(targets::api_targets_convergence))
+        .route("/api/targets/auto-steer", get(targets::api_get_auto_steer).post(targets::api_set_auto_steer))
+        .route("/api/targets/{id}", axum::routing::put(targets::api_update_target).delete(targets::api_delete_target))
+        .route("/api/targets/{id}/coverage", get(targets::api_target_coverage))
+        .route("/api/targets/{id}/forge", post(targets::api_target_forge))
+
         .route("/api/timeseries", get(timeseries::api_timeseries))
         // I5: Auto-Evolve
         .route("/api/auto-evolve/toggle", post(auto_evolve::api_auto_evolve_toggle))

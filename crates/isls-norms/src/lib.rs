@@ -35,6 +35,7 @@ pub mod learning;
 pub mod optimizer;
 pub mod relations;
 pub mod spectroscopy;
+pub mod targets;
 pub mod types;
 
 pub use injection::{

@@ -1981,3 +1981,19 @@ fn universal_target_resonites_count() -> usize {
     // Matches the number of entries in universal_target_resonites()
     34
 }
+
+// ─── MC1: Auto-Steer keyword extraction ─────────────────────────────────────
+
+/// Get keywords to scrape based on the highest-priority target deficit.
+/// Returns empty if auto-steer is off or no targets have deficits.
+pub async fn auto_steer_keywords(state: &crate::AppState) -> Vec<String> {
+    use std::sync::atomic::Ordering;
+    if !state.auto_steer_enabled.load(Ordering::Relaxed) {
+        return vec![];
+    }
+    let targets = state.targets.read().await;
+    match isls_norms::targets::highest_priority_deficit(&targets) {
+        Some(t) => isls_norms::targets::keywords_for_missing_classes(&t.missing),
+        None => vec![],
+    }
+}

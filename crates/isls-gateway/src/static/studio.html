@@ -932,6 +932,90 @@ html, body {
     display: flex;
 }
 
+/* ── Mission Control (MC1) ────────────────────────────────────── */
+#mission-control {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+.mc-target {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+}
+.mc-target-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+.mc-target-name {
+    font-weight: bold;
+    color: var(--text-primary);
+    flex: 1;
+}
+.mc-target-prio {
+    font-size: 11px;
+    color: var(--text-dim);
+    background: var(--bg-input);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+.mc-bar-bg {
+    height: 16px;
+    background: var(--bg-input);
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 4px 0;
+}
+.mc-bar-fill {
+    height: 100%;
+    border-radius: 8px;
+    transition: width 0.5s ease;
+}
+.mc-classes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+}
+.mc-class-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+.mc-class-tag.covered { color: var(--accent-success); border-color: var(--accent-success); }
+.mc-class-tag.missing { color: var(--accent-error); border-color: var(--accent-error); opacity: 0.7; }
+.mc-forge-btn {
+    padding: 4px 12px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    color: #fff;
+    background: var(--accent-success);
+}
+.mc-forge-btn:disabled {
+    background: var(--border);
+    cursor: not-allowed;
+    color: var(--text-dim);
+}
+.mc-delete-btn {
+    padding: 4px 8px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--text-dim);
+    background: transparent;
+}
+.mc-delete-btn:hover { color: var(--accent-error); }
+
 /* ── Sensorium (I5) ───────────────────────────────────────��─────── */
 #sensorium {
     display: none;
@@ -1148,6 +1232,7 @@ html, body {
         <button class="mode-btn" id="btn-discover" onclick="switchMode('discover')" title="Entdecken">&#9673;</button>
         <button class="mode-btn" id="btn-chat" onclick="switchMode('chat')" title="Chat">&#128172;</button>
         <button class="mode-btn" id="btn-sensor" onclick="switchMode('sensor')" title="Sensorium">&#9670;</button>
+        <button class="mode-btn" id="btn-mission" onclick="switchMode('mission')" title="Mission Control">&#9678;</button>
     </nav>
 
     <!-- Main Area -->
@@ -1279,6 +1364,59 @@ html, body {
             </div>
         </div>
 
+        <!-- MC1: Mission Control -->
+        <div id="mission-control" style="display:none;">
+            <div class="sensor-header">
+                <span class="sensor-title">&#9678; Mission Control</span>
+                <button class="sensor-ae-btn" id="mc-add-btn" onclick="mcShowAddForm()">+ Neues Ziel</button>
+            </div>
+
+            <!-- Add Target Form (hidden by default) -->
+            <div id="mc-add-form" style="display:none;margin:8px 0;padding:12px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;">
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:12px;color:var(--text-dim);">Name</label><br>
+                    <input type="text" id="mc-name" placeholder="z.B. Trading Journal" style="width:100%;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);margin-top:4px;">
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:12px;color:var(--text-dim);">Beschreibung (1-2 S&auml;tze)</label><br>
+                    <textarea id="mc-desc" rows="2" placeholder="z.B. Trading Journal mit Charts, WebSocket-Feeds und Risiko-Analyse" style="width:100%;padding:6px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);margin-top:4px;resize:vertical;"></textarea>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label style="font-size:12px;color:var(--text-dim);">Priorit&auml;t</label>
+                    <select id="mc-prio" style="padding:4px;background:var(--bg-input);border:1px solid var(--border);border-radius:4px;color:var(--text-primary);margin-left:8px;">
+                        <option value="1">1 (h&ouml;chste)</option>
+                        <option value="2">2</option>
+                        <option value="3" selected>3</option>
+                        <option value="4">4</option>
+                        <option value="5">5 (niedrigste)</option>
+                    </select>
+                </div>
+                <button onclick="mcCreateTarget()" style="padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:4px;cursor:pointer;">Speichern</button>
+                <button onclick="mcHideAddForm()" style="padding:6px 16px;background:transparent;color:var(--text-dim);border:1px solid var(--border);border-radius:4px;cursor:pointer;margin-left:8px;">Abbrechen</button>
+            </div>
+
+            <!-- Target List -->
+            <div id="mc-target-list" style="margin-top:12px;"></div>
+
+            <!-- Convergence Graph -->
+            <div class="sensor-card" style="margin-top:16px;">
+                <div class="sensor-card-title">Konvergenz (24h)</div>
+                <div id="mc-convergence-chart"><div class="sensor-empty">Keine Konvergenz-Daten vorhanden.</div></div>
+            </div>
+
+            <!-- Scraping Direction -->
+            <div class="sensor-card" style="margin-top:12px;">
+                <div class="sensor-card-title">Scraping-Richtung</div>
+                <div id="mc-steer-info" style="padding:8px;">
+                    <div id="mc-steer-status">Lade...</div>
+                    <div style="margin-top:8px;">
+                        <button class="sensor-ae-btn" id="mc-steer-toggle" onclick="mcToggleAutoSteer()">Auto-Steer: AUS</button>
+                        <button class="sensor-ae-btn" id="mc-harpoon-btn" onclick="mcManualHarpoon()" style="margin-left:8px;">Manueller Harpunen-Run</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Readiness Tooltip -->
         <div id="readiness-tooltip"></div>
 
@@ -1356,7 +1494,9 @@ var $btnC    = document.getElementById('btn-create');
 var $btnD    = document.getElementById('btn-discover');
 var $btnChat = document.getElementById('btn-chat');
 var $btnSensor = document.getElementById('btn-sensor');
+var $btnMission = document.getElementById('btn-mission');
 var $sensorium = document.getElementById('sensorium');
+var $missionControl = document.getElementById('mission-control');
 var $inputArea = document.getElementById('input-area');
 var $tooltip = document.getElementById('readiness-tooltip');
 var $typing  = document.getElementById('typing-indicator');
@@ -1385,17 +1525,21 @@ function switchMode(mode) {
     $btnD.classList.toggle('active', mode === 'discover');
     $btnChat.classList.toggle('active', mode === 'chat');
     $btnSensor.classList.toggle('active', mode === 'sensor');
+    $btnMission.classList.toggle('active', mode === 'mission');
     $ring.classList.toggle('hidden', mode !== 'create');
     $tooltip.classList.remove('visible');
 
     // Sensorium: no input field, no conversation
     var isSensor = (mode === 'sensor');
+    var isMission = (mode === 'mission');
+    var isFullscreen = isSensor || isMission;
     $sensorium.classList.toggle('visible', isSensor);
-    $conv.style.display = isSensor ? 'none' : '';
-    $inputArea.style.display = isSensor ? 'none' : '';
-    $empty.classList.toggle('hidden', isSensor);
+    $missionControl.style.display = isMission ? '' : 'none';
+    $conv.style.display = isFullscreen ? 'none' : '';
+    $inputArea.style.display = isFullscreen ? 'none' : '';
+    $empty.classList.toggle('hidden', isFullscreen);
 
-    if (!isSensor) {
+    if (!isFullscreen) {
         // Placeholder text per mode
         if (mode === 'chat') {
             $input.placeholder = 'Frag mich etwas...';
@@ -1406,14 +1550,16 @@ function switchMode(mode) {
         }
         updateEmptyState();
         renderAllMessages();
-    } else {
+    } else if (isSensor) {
         loadSensorium();
+    } else if (isMission) {
+        loadMissionControl();
     }
     updateOlbohrinselVisibility();
 }
 
 function updateEmptyState() {
-    if (currentMode === 'sensor') {
+    if (currentMode === 'sensor' || currentMode === 'mission') {
         $empty.classList.add('hidden');
         return;
     }
@@ -3098,6 +3244,264 @@ function handleEvolveWsEvent(event) {
         reader.readAsText(file);
     });
 })();
+
+// ═══════════════════════════════════════════════════════════════════
+// MC1: Mission Control — Target-driven norm acquisition steering
+// ═══════════════════════════════════════════════════════════════════
+
+var mcRefreshTimer = null;
+
+function mcShowAddForm() {
+    document.getElementById('mc-add-form').style.display = '';
+    document.getElementById('mc-name').value = '';
+    document.getElementById('mc-desc').value = '';
+    document.getElementById('mc-prio').value = '3';
+    document.getElementById('mc-name').focus();
+}
+
+function mcHideAddForm() {
+    document.getElementById('mc-add-form').style.display = 'none';
+}
+
+async function mcCreateTarget() {
+    var name = document.getElementById('mc-name').value.trim();
+    var desc = document.getElementById('mc-desc').value.trim();
+    var prio = parseInt(document.getElementById('mc-prio').value) || 3;
+    if (!name || !desc) return;
+
+    try {
+        var resp = await fetch('/api/targets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: name, description: desc, priority: prio })
+        });
+        var data = await resp.json();
+        if (data.ok) {
+            mcHideAddForm();
+            loadMissionControl();
+        }
+    } catch (err) { /* silent */ }
+}
+
+async function mcDeleteTarget(id) {
+    try {
+        await fetch('/api/targets/' + id, { method: 'DELETE' });
+        loadMissionControl();
+    } catch (err) { /* silent */ }
+}
+
+async function mcForgeTarget(id) {
+    try {
+        var resp = await fetch('/api/targets/' + id + '/forge', { method: 'POST' });
+        var data = await resp.json();
+        if (data.ok) {
+            // Switch to create mode and pre-fill with target description
+            switchMode('create');
+            var $input = document.getElementById('chat-input');
+            $input.value = data.description;
+            $input.focus();
+        } else if (data.error) {
+            alert(data.error);
+        }
+    } catch (err) { /* silent */ }
+}
+
+async function mcToggleAutoSteer() {
+    try {
+        var resp = await fetch('/api/targets/auto-steer');
+        var data = await resp.json();
+        var newState = !data.enabled;
+        await fetch('/api/targets/auto-steer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled: newState })
+        });
+        loadMissionControl();
+    } catch (err) { /* silent */ }
+}
+
+async function mcManualHarpoon() {
+    try {
+        var resp = await fetch('/api/targets/auto-steer');
+        var data = await resp.json();
+        if (!data.current_class) {
+            alert('Kein Defizit gefunden \u2014 alle Zielsysteme sind abgedeckt.');
+            return;
+        }
+
+        // Get targets and find highest-priority deficit
+        var tResp = await fetch('/api/targets');
+        var tData = await tResp.json();
+        var targets = tData.targets || [];
+
+        // Find the deficit target
+        var deficit = targets.filter(function(t) { return t.status !== 'Ready'; })
+            .sort(function(a, b) { return a.priority - b.priority || a.coverage - b.coverage; })[0];
+
+        if (!deficit || !deficit.missing || deficit.missing.length === 0) {
+            alert('Kein Defizit \u2014 alle abgedeckt.');
+            return;
+        }
+
+        // Build seed keywords from missing classes
+        var seed = deficit.missing.map(function(m) {
+            if (typeof m === 'string') return m;
+            if (m.Custom) return m.Custom;
+            return Object.keys(m)[0] || '';
+        }).filter(Boolean).join(' ');
+
+        // Switch to discover mode and trigger harpoon
+        switchMode('discover');
+        var $input = document.getElementById('chat-input');
+        $input.value = 'harpoon rust ' + seed.toLowerCase();
+        $input.focus();
+    } catch (err) { /* silent */ }
+}
+
+function renderTargetList(targets) {
+    var container = document.getElementById('mc-target-list');
+    if (!targets || targets.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:24px;">Keine Zielsysteme definiert. Klicke [+ Neues Ziel] um zu starten.</div>';
+        return;
+    }
+
+    // Sort by priority, then coverage desc
+    targets.sort(function(a, b) {
+        return a.priority - b.priority || b.coverage - a.coverage;
+    });
+
+    var html = '';
+    targets.forEach(function(t) {
+        var pct = Math.round(t.coverage * 100);
+        var barColor = pct >= 100 ? 'var(--accent-success)' : pct >= 50 ? 'var(--accent)' : 'var(--accent-error)';
+        var statusLabel = t.status === 'Ready' ? 'forgebar' : t.status === 'Partial' ? 'teilweise' : 'nicht m\u00f6glich';
+
+        html += '<div class="mc-target">';
+        html += '<div class="mc-target-header">';
+        html += '<span class="mc-target-name">\u25B8 ' + escHtml(t.name) + '</span>';
+        html += '<span class="mc-target-prio">P' + t.priority + '</span>';
+        html += '<span style="font-size:12px;color:var(--text-secondary);min-width:45px;text-align:right;">' + pct + '%</span>';
+
+        // Forge button
+        if (t.coverage >= 0.5) {
+            html += '<button class="mc-forge-btn" onclick="mcForgeTarget(\'' + t.id + '\')" title="Forge starten">\u25B6</button>';
+        } else {
+            html += '<button class="mc-forge-btn" disabled title="Coverage zu niedrig">\u25B6</button>';
+        }
+        html += '<button class="mc-delete-btn" onclick="mcDeleteTarget(\'' + t.id + '\')" title="L\u00f6schen">\u2715</button>';
+        html += '</div>';
+
+        // Progress bar
+        html += '<div class="mc-bar-bg"><div class="mc-bar-fill" style="width:' + pct + '%;background:' + barColor + '"></div></div>';
+
+        // Class tags
+        html += '<div class="mc-classes">';
+        (t.required_classes || []).forEach(function(rc) {
+            var name = typeof rc === 'string' ? rc : (rc.Custom || Object.keys(rc)[0] || '?');
+            var isMissing = (t.missing || []).some(function(m) {
+                var mName = typeof m === 'string' ? m : (m.Custom || Object.keys(m)[0] || '');
+                return mName === name;
+            });
+            var cls = isMissing ? 'missing' : 'covered';
+            var icon = isMissing ? '\u25CB' : '\u25A0';
+            html += '<span class="mc-class-tag ' + cls + '">' + icon + ' ' + escHtml(name) + '</span>';
+        });
+        html += '</div>';
+        html += '</div>';
+    });
+
+    container.innerHTML = html;
+}
+
+async function loadMissionControl() {
+    // Load targets
+    try {
+        var resp = await fetch('/api/targets');
+        var data = await resp.json();
+        renderTargetList(data.targets || []);
+    } catch (err) {
+        document.getElementById('mc-target-list').innerHTML = '<div class="sensor-empty">Fehler beim Laden.</div>';
+    }
+
+    // Load auto-steer status
+    try {
+        var sResp = await fetch('/api/targets/auto-steer');
+        var sData = await sResp.json();
+        var btn = document.getElementById('mc-steer-toggle');
+        btn.textContent = 'Auto-Steer: ' + (sData.enabled ? 'AN' : 'AUS');
+        var info = '';
+        if (sData.current_target) {
+            info = 'N\u00e4chstes Ziel-Defizit: <b>' + escHtml(sData.current_target) + '</b>';
+            if (sData.current_class) info += ' (' + escHtml(sData.current_class) + ')';
+        } else {
+            info = 'Alle Zielsysteme abgedeckt oder keine definiert.';
+        }
+        document.getElementById('mc-steer-status').innerHTML = info;
+    } catch (err) { /* silent */ }
+
+    // Load convergence graph
+    try {
+        var cResp = await fetch('/api/targets/convergence?hours=24');
+        var cData = await cResp.json();
+        renderConvergenceChart(cData.convergence || []);
+    } catch (err) { /* silent */ }
+
+    // Auto-refresh every 30 seconds
+    if (mcRefreshTimer) clearInterval(mcRefreshTimer);
+    mcRefreshTimer = setInterval(function() {
+        if (currentMode === 'mission') loadMissionControl();
+    }, 30000);
+}
+
+function renderConvergenceChart(convergence) {
+    var container = document.getElementById('mc-convergence-chart');
+    if (!convergence || convergence.length === 0) {
+        container.innerHTML = '<div class="sensor-empty">Keine Konvergenz-Daten vorhanden. Snapshots werden alle 15 Min erfasst.</div>';
+        return;
+    }
+
+    // Collect all target IDs
+    var targetIds = new Set();
+    convergence.forEach(function(c) {
+        Object.keys(c.coverages || {}).forEach(function(k) { targetIds.add(k); });
+    });
+
+    if (targetIds.size === 0) {
+        container.innerHTML = '<div class="sensor-empty">Keine Targets in den Snapshots.</div>';
+        return;
+    }
+
+    var W = 320, H = 120, PL = 40, PR = 10, PT = 10, PB = 20;
+    var plotW = W - PL - PR, plotH = H - PT - PB;
+    var n = convergence.length;
+
+    var colors = ['#d4871b', '#27ae60', '#3498db', '#e74c3c', '#9b59b6', '#1abc9c'];
+    var ids = Array.from(targetIds);
+
+    var parts = ['<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;max-width:' + W + 'px;">'];
+
+    // Y-axis labels
+    [0, 50, 100].forEach(function(v) {
+        var y = PT + plotH - (v / 100) * plotH;
+        parts.push('<text x="' + (PL - 4) + '" y="' + (y + 3) + '" fill="#8899aa" font-size="9" text-anchor="end">' + v + '%</text>');
+        parts.push('<line x1="' + PL + '" y1="' + y + '" x2="' + (PL + plotW) + '" y2="' + y + '" stroke="#30363d" stroke-width="0.5"/>');
+    });
+
+    // Lines per target
+    ids.forEach(function(tid, ci) {
+        var color = colors[ci % colors.length];
+        var points = convergence.map(function(c, i) {
+            var v = (c.coverages || {})[tid] || 0;
+            var x = PL + (i / Math.max(n - 1, 1)) * plotW;
+            var y = PT + plotH - v * plotH;
+            return x + ',' + y;
+        }).join(' ');
+        parts.push('<polyline points="' + points + '" fill="none" stroke="' + color + '" stroke-width="1.5"/>');
+    });
+
+    parts.push('</svg>');
+    container.innerHTML = parts.join('');
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // N1: Periodensystem + Norm-Energie Visualizations

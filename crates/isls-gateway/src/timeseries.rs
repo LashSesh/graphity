@@ -52,6 +52,10 @@ pub struct TimeseriesEntry {
     // Genom
     pub genes_count: usize,
     pub cross_language_norms: usize,
+
+    // MC1: Target system coverages
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_coverages: Option<std::collections::HashMap<String, f64>>,
 }
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
@@ -232,6 +236,31 @@ pub fn collect_timeseries_snapshot(state: &AppState) -> TimeseriesEntry {
         genome.genes.len()
     };
 
+    // ── MC1: Target coverages ────────────────────────────────────
+    let target_coverages = {
+        let targets = state.targets.try_read();
+        match targets {
+            Ok(tgts) if !tgts.is_empty() => {
+                let mut coverages = std::collections::HashMap::new();
+                // Recompute using norms from registry
+                if let Ok(reg) = state.norm_registry.try_read() {
+                    let norms: Vec<isls_norms::Norm> = reg.all_norms().into_iter().cloned().collect();
+                    let fitness_store = isls_norms::fitness::FitnessStore::load();
+                    let fitness: std::collections::HashMap<String, f64> = norms.iter()
+                        .map(|n| (n.id.clone(), fitness_store.get_fitness(&n.id)))
+                        .collect();
+                    for t in tgts.iter() {
+                        let mut t_clone = t.clone();
+                        isls_norms::targets::compute_target_coverage(&mut t_clone, &norms, &fitness);
+                        coverages.insert(t.id.clone(), t_clone.coverage);
+                    }
+                }
+                Some(coverages)
+            }
+            _ => None,
+        }
+    };
+
     TimeseriesEntry {
         timestamp: chrono::Utc::now().to_rfc3339(),
         norms_builtin,
@@ -255,6 +284,7 @@ pub fn collect_timeseries_snapshot(state: &AppState) -> TimeseriesEntry {
         keywords_suggested,
         genes_count,
         cross_language_norms,
+        target_coverages,
     }
 }
 
