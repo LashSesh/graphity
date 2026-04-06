@@ -571,7 +571,7 @@ struct QueuedRepo {
     domain: String,
 }
 
-async fn run_mass_scrape(
+pub async fn run_mass_scrape(
     jobs: MassScrapeStore,
     event_hub: crate::ws::EventHub,
     history: ScrapeHistoryStore,
@@ -1313,15 +1313,23 @@ pub async fn discover_scrape_status(
         .unwrap_or_default();
     drop(history_guard);
 
-    // ── Norm registry: candidate + auto-norm totals ────────────────
-    let registry = state.norm_registry.read().await;
-    let all_norms = registry.all_norms();
+    // ── Norm registry: FRESH load from disk (spec: no caching) ───────
+    // We load a fresh registry on every request so the auto-norm counter
+    // reflects scraping done by background jobs that use their own
+    // NormRegistry instances (clone_and_analyze_sync).
+    let fresh_reg = tokio::task::spawn_blocking(|| {
+        let mut r = NormRegistry::new();
+        let _ = r.load();
+        r
+    }).await.unwrap_or_default();
+
+    let all_norms = fresh_reg.all_norms();
     let auto_norms = all_norms
         .iter()
         .filter(|n| n.id.starts_with("ISLS-NORM-AUTO-"))
         .count();
 
-    let candidates = registry.candidates();
+    let candidates = fresh_reg.candidates();
     let candidates_total = candidates.len();
 
     // Top-5 candidates — sorted by how close they are to promotion.
@@ -1375,8 +1383,6 @@ pub async fn discover_scrape_status(
             })
         })
         .collect();
-    drop(registry);
-
     // ── Keyword count (file-backed) ────────────────────────────────
     let keywords_count = read_keywords_file(&state.scrape_keywords_path)
         .map(|(_, n)| n)

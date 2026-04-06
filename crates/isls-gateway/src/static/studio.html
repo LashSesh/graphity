@@ -757,6 +757,138 @@ html, body {
 .ob-kw-save:hover { filter: brightness(1.1); }
 .ob-kw-save:disabled { opacity: 0.5; cursor: default; }
 
+/* Vorschläge panel (same slide-under style as keywords editor) */
+#ob-suggestions {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.2s ease-out;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    margin-top: 0;
+}
+#ob-suggestions.open {
+    max-height: 420px;
+    margin-top: 10px;
+    border-color: var(--border);
+    background: var(--bg-card);
+}
+#ob-suggestions-inner { padding: 12px; overflow-y: auto; max-height: 380px; }
+.sugg-list { display: flex; flex-direction: column; gap: 4px; }
+.sugg-empty { color: var(--text-dim); font-style: italic; font-size: 13px; }
+.sugg-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+.sugg-item-kw { flex: 1; font-family: ui-monospace, Menlo, Consolas, monospace; }
+.sugg-accept {
+    background: var(--accent);
+    color: #0d1117;
+    border: none;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    font-weight: 600;
+    margin-left: 8px;
+}
+.sugg-accept:hover { filter: brightness(1.1); }
+
+/* Blueprint inject panel */
+#ob-inject {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.2s ease-out;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    margin-top: 0;
+}
+#ob-inject.open {
+    max-height: 540px;
+    margin-top: 10px;
+    border-color: var(--border);
+    background: var(--bg-card);
+}
+#ob-inject-inner { padding: 12px; }
+#ob-inject-area {
+    width: 100%;
+    min-height: 320px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+}
+#ob-inject-area:focus { border-color: var(--accent); }
+.inject-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+}
+.inject-hint { color: var(--text-dim); font-size: 12px; }
+.inject-btn {
+    background: var(--accent);
+    color: #0d1117;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.inject-btn:hover { filter: brightness(1.1); }
+.inject-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* Evolve report card */
+.evolve-card {
+    background: var(--bg-card);
+    border-left: 4px solid #a78bfa;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin: 8px 0;
+}
+.evolve-title { font-weight: 700; color: #a78bfa; font-size: 14px; margin-bottom: 6px; }
+.evolve-body { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+
+/* Harpoon report card */
+.harpoon-card {
+    background: var(--bg-card);
+    border-left: 4px solid #38bdf8;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin: 8px 0;
+}
+.harpoon-title { font-weight: 700; color: #38bdf8; font-size: 14px; margin-bottom: 6px; }
+.harpoon-body { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+
+/* Spectroscopy fill button */
+.spec-fill-btn {
+    background: none;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    color: var(--accent);
+    font-size: 12px;
+    font-family: inherit;
+    padding: 2px 8px;
+    cursor: pointer;
+    margin-top: 4px;
+}
+.spec-fill-btn:hover { background: var(--accent); color: #0d1117; }
+
 /* Promotion highlight card */
 .promo-card {
     background: var(--bg-card);
@@ -890,7 +1022,11 @@ html, body {
                     <span class="ob-dot" id="ob-dot"></span>
                     <span id="ob-status-label">Ölbohrinsel wartet...</span>
                 </div>
-                <button class="ob-kw-btn" id="ob-kw-btn" onclick="toggleKeywordsEditor()">Keywords</button>
+                <div style="display:flex;gap:6px;">
+                    <button class="ob-kw-btn" id="ob-kw-btn" onclick="toggleKeywordsEditor()">Keywords</button>
+                    <button class="ob-kw-btn" id="ob-sugg-btn" onclick="toggleSuggestionsPanel()">Vorschl&auml;ge</button>
+                    <button class="ob-kw-btn" id="ob-inject-btn" onclick="toggleInjectEditor()">Inject</button>
+                </div>
             </div>
             <div class="ob-grid">
                 <div>Repos gescrapt: <b id="ob-repos">0</b></div>
@@ -911,6 +1047,25 @@ html, body {
                     <div class="ob-kw-actions">
                         <span class="ob-kw-hint" id="ob-kw-hint">0 Keywords</span>
                         <button class="ob-kw-save" id="ob-kw-save" onclick="saveKeywords()">Speichern</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="ob-suggestions">
+                <div id="ob-suggestions-inner">
+                    <div class="sugg-list" id="sugg-list">
+                        <div class="sugg-empty">Lade Vorschl&auml;ge...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="ob-inject">
+                <div id="ob-inject-inner">
+                    <textarea id="ob-inject-area" spellcheck="false"
+                              placeholder='{"id":"ISLS-NORM-INJECT-001","name":"MyNorm","level":"Atom","activation_keywords":["mypattern"]}'></textarea>
+                    <div class="inject-actions">
+                        <span class="inject-hint">JSON Blueprint einf&uuml;gen und injizieren</span>
+                        <button class="inject-btn" id="ob-inject-save" onclick="injectBlueprint()">Injizieren</button>
                     </div>
                 </div>
             </div>
@@ -968,14 +1123,14 @@ var placeholders = {
         suggestions: [
             'Trading Journal f\u00fcr Crypto-Portfolios',
             'CLI Tool zum Konvertieren von CSV',
-            'REST API f\u00fcr Buchungsverwaltung'
+            'evolve . with add WebSocket support'
         ]
     },
     discover: {
         title: 'Was willst du finden?',
         suggestions: [
             'rust async state machine',
-            'connection pooling patterns',
+            'harpoon https://github.com/tokio-rs/axum',
             'was fehlt mir?'
         ]
     },
@@ -1337,6 +1492,25 @@ async function sendChatMessage(text) {
 }
 
 async function sendCreateMessage(text) {
+    // "evolve <pfad> with <delta>" or "evolve <pfad> <delta>"
+    var lower = text.toLowerCase().trim();
+    if (lower.startsWith('evolve ')) {
+        var rest = text.trim().slice(7).trim();
+        var withIdx = rest.toLowerCase().indexOf(' with ');
+        var from, delta;
+        if (withIdx >= 0) {
+            from  = rest.slice(0, withIdx).trim();
+            delta = rest.slice(withIdx + 6).trim();
+        } else {
+            var parts = rest.split(/\s+/);
+            from  = parts[0] || '.';
+            delta = parts.slice(1).join(' ').trim() || text;
+        }
+        if (!delta) delta = text;
+        await sendEvolve(from, delta);
+        return;
+    }
+
     try {
         var sid = await ensureSession();
         if (!sid) return;
@@ -1375,6 +1549,52 @@ async function sendCreateMessage(text) {
         }
     } catch (err) {
         renderMessage({ role: 'error', content: 'Netzwerkfehler: ' + err.message });
+    }
+}
+
+// ── Evolve ─────────────────────────────────────────────────────────
+async function sendEvolve(from, delta) {
+    renderMessage({ role: 'process', content: 'Evolve: Solve \u2192 Spectroscopy \u2192 Coagula\nVon: ' + from + '\nDelta: ' + delta });
+    try {
+        var resp = await fetch('/api/evolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: from, delta: delta, scrape_gaps: true })
+        });
+        var d = await resp.json();
+        if (!d.ok) {
+            renderMessage({ role: 'error', content: 'Evolve fehlgeschlagen: ' + (d.error || '') });
+            return;
+        }
+        var solve = d.solve || {};
+        var spec = d.spectroscopy || {};
+        var pct = ((spec.coverage || 0) * 100).toFixed(1);
+        var gaps = (spec.gap_classes || []).slice(0, 5).join(', ') || '\u2014';
+        var kws = (d.gap_keywords || []).slice(0, 6).join(', ') || '\u2014';
+
+        var wrap = document.createElement('div');
+        wrap.className = 'msg-wrap system';
+        var card = document.createElement('div');
+        card.className = 'evolve-card';
+        card.innerHTML =
+            '<div class="evolve-title">Evolve-Report: ' + escHtml(from) + '</div>' +
+            '<div class="evolve-body">' +
+            'Solve: ' + (solve.files || 0) + ' Dateien, ' + (solve.artifacts || 0) + ' Artifacts (' + escHtml(solve.primary_language || '') + ')<br>' +
+            'Spectroscopy: Coverage ' + pct + '%, ' + (spec.gaps || 0) + ' L\u00fccken<br>' +
+            'L\u00fcck-Klassen: ' + escHtml(gaps) + '<br>' +
+            'Gap-Keywords: ' + escHtml(kws) + '<br>' +
+            (d.fill_job_id ? 'Fill-Job: ' + escHtml(d.fill_job_id) + '<br>' : '') +
+            '<br><b>N\u00e4chster Schritt:</b> Wechsle in den Erschaffen-Modus und tippe:<br>' +
+            '<code style="background:var(--bg-input);padding:2px 6px;border-radius:4px;font-size:12px;">' + escHtml(delta) + '</code> &rarr; forge' +
+            '</div>';
+        wrap.appendChild(card);
+        messages[currentMode].push({ role: 'evolve', _dom: true });
+        hasMessages[currentMode] = true;
+        if ($typing && $typing.parentNode === $conv) $conv.insertBefore(wrap, $typing);
+        else $conv.appendChild(wrap);
+        smartScroll();
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Evolve-Fehler: ' + err.message });
     }
 }
 
@@ -1452,6 +1672,11 @@ var $obKeywords  = document.getElementById('ob-keywords');
 var $obKwArea    = document.getElementById('ob-kw-textarea');
 var $obKwHint    = document.getElementById('ob-kw-hint');
 var $obKwSave    = document.getElementById('ob-kw-save');
+var $obSugg      = document.getElementById('ob-suggestions');
+var $suggList    = document.getElementById('sugg-list');
+var $obInject    = document.getElementById('ob-inject');
+var $obInjectArea= document.getElementById('ob-inject-area');
+var $obInjectSave= document.getElementById('ob-inject-save');
 
 var obPollTimer  = null;
 var obLastKnownAuto = null;   // number — for promotion-detection
@@ -1468,8 +1693,10 @@ function updateOlbohrinselVisibility() {
     } else {
         $ob.classList.remove('visible');
         if (obPollTimer) { clearInterval(obPollTimer); obPollTimer = null; }
-        // Collapse keyword editor if left open in another mode
+        // Collapse all panels if left open in another mode
         $obKeywords.classList.remove('open');
+        $obSugg.classList.remove('open');
+        $obInject.classList.remove('open');
     }
 }
 
@@ -1664,6 +1891,105 @@ if ($obKwArea) {
     });
 }
 
+// ── Vorschläge panel ───────────────────────────────────────────────
+async function toggleSuggestionsPanel() {
+    // Collapse other panels
+    $obKeywords.classList.remove('open');
+    $obInject.classList.remove('open');
+    var open = $obSugg.classList.toggle('open');
+    if (open) await loadSuggestions();
+}
+
+async function loadSuggestions() {
+    $suggList.innerHTML = '<div class="sugg-empty">Lade...</div>';
+    try {
+        var resp = await fetch('/api/discover/suggested-keywords');
+        var d = await resp.json();
+        var kws = d.keywords || [];
+        if (kws.length === 0) {
+            $suggList.innerHTML = '<div class="sugg-empty">Keine Vorschl&auml;ge vorhanden. Scrape Repos um Auto-Keywords zu generieren.</div>';
+            return;
+        }
+        $suggList.innerHTML = '';
+        kws.forEach(function(kw) {
+            var item = document.createElement('div');
+            item.className = 'sugg-item';
+            item.innerHTML =
+                '<span class="sugg-item-kw">' + escHtml(kw) + '</span>' +
+                '<button class="sugg-accept" onclick="acceptKeyword(\'' + escHtml(kw).replace(/'/g, "\\'") + '\', this)">[+]</button>';
+            $suggList.appendChild(item);
+        });
+    } catch (err) {
+        $suggList.innerHTML = '<div class="sugg-empty" style="color:var(--accent-danger)">Ladefehler: ' + escHtml(err.message) + '</div>';
+    }
+}
+
+async function acceptKeyword(kw, btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+        var resp = await fetch('/api/discover/accept-keyword', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ keyword: kw })
+        });
+        var d = await resp.json();
+        if (d.ok && d.added) {
+            btn.closest('.sugg-item').style.opacity = '0.3';
+            btn.textContent = '✓';
+            var cur = parseInt($obKwCount.textContent, 10) || 0;
+            $obKwCount.textContent = cur + 1;
+        } else {
+            btn.textContent = 'x';
+            btn.disabled = false;
+        }
+    } catch (err) {
+        btn.textContent = '!';
+        btn.disabled = false;
+    }
+}
+
+// ── Blueprint inject panel ─────────────────────────────────────────
+function toggleInjectEditor() {
+    $obKeywords.classList.remove('open');
+    $obSugg.classList.remove('open');
+    $obInject.classList.toggle('open');
+}
+
+async function injectBlueprint() {
+    var json = ($obInjectArea.value || '').trim();
+    if (!json) {
+        renderMessage({ role: 'error', content: 'Kein Blueprint-JSON eingegeben.' });
+        return;
+    }
+    $obInjectSave.disabled = true;
+    $obInjectSave.textContent = 'Injiziere...';
+    try {
+        var body;
+        try { body = JSON.parse(json); }
+        catch (e) { throw new Error('Ungültiges JSON: ' + e.message); }
+
+        var resp = await fetch('/api/norms/inject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        var d = await resp.json();
+        if (d.ok) {
+            renderMessage({ role: 'system', content: 'Norm ' + escHtml(d.id || '') + ' injiziert.' });
+            $obInjectArea.value = '';
+            $obInject.classList.remove('open');
+        } else {
+            renderMessage({ role: 'error', content: 'Inject-Fehler: ' + escHtml(d.error || 'Unbekannter Fehler') });
+        }
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Inject-Fehler: ' + escHtml(err.message) });
+    } finally {
+        $obInjectSave.disabled = false;
+        $obInjectSave.textContent = 'Injizieren';
+    }
+}
+
 // ── Entdecken Mode ─────────────────────────────────────────────────
 async function sendDiscoverMessage(text) {
     var lower = text.toLowerCase().trim();
@@ -1671,6 +1997,33 @@ async function sendDiscoverMessage(text) {
         // "was fehlt mir?" handler
         if (lower.indexOf('was fehlt') >= 0) {
             await discoverGaps();
+        }
+        // harpoon / harpune <path_or_url>
+        else if (lower.startsWith('harpoon ') || lower.startsWith('harpune ')) {
+            var seed = text.trim().split(/\s+/).slice(1).join(' ').trim();
+            if (!seed) renderMessage({ role: 'error', content: 'Syntax: harpoon <pfad_oder_url>' });
+            else await discoverHarpoon(seed);
+        }
+        // "analysiere <pfad/url>" or "spectroscopy <pfad>"
+        else if (lower.startsWith('analysiere ') || lower.startsWith('spectroscopy ')) {
+            var target = text.trim().split(/\s+/).slice(1).join(' ').trim();
+            if (!target) renderMessage({ role: 'error', content: 'Syntax: analysiere <pfad_oder_url>' });
+            else await discoverSpectroscopyTarget(target);
+        }
+        // "fitness"
+        else if (lower === 'fitness' || lower === 'norm fitness') {
+            await discoverFitness();
+        }
+        // "genome" or "genom"
+        else if (lower === 'genome' || lower === 'genom' || lower === 'norms genome') {
+            await discoverGenome();
+        }
+        // "inject" — open blueprint editor
+        else if (lower === 'inject' || lower === 'injizieren') {
+            $obInject.classList.add('open');
+            $obKeywords.classList.remove('open');
+            $obSugg.classList.remove('open');
+            renderMessage({ role: 'system', content: 'Blueprint-Editor ge\u00f6ffnet. JSON einf\u00fcgen und [Injizieren] klicken.' });
         }
         // Norm genealogy handler
         else if (lower.match(/isls-(?:norm|cand)-(?:auto-)?\d+/i)) {
@@ -1971,6 +2324,148 @@ async function discoverUploadKeywords(text) {
     }
 }
 
+// ── Harpoon ────────────────────────────────────────────────────────
+async function discoverHarpoon(seed) {
+    renderMessage({ role: 'process', content: '\u{1F3AF} Harpune: ' + seed + ' (Tiefe 3)...' });
+    try {
+        var resp = await fetch('/api/discover/harpoon', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ seed: seed, depth: 3, repos_per_keyword: 5, stop_at_coverage: 0.9 })
+        });
+        var d = await resp.json();
+        if (!d.ok) {
+            renderMessage({ role: 'error', content: 'Harpune fehlgeschlagen: ' + (d.error || '') });
+            return;
+        }
+        renderMessage({ role: 'process', content: 'Harpune-Job ' + d.job_id + ' gestartet.\nMax Tiefe: ' + d.depth_max + ' \u00b7 Repos/Keyword (d0): ' + d.repos_per_keyword_d0 + '\nProgress kommt via WebSocket (harpoon:stage / harpoon:repo)...' });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Harpune-Fehler: ' + err.message });
+    }
+}
+
+// ── Target Spectroscopy ────────────────────────────────────────────
+async function discoverSpectroscopyTarget(target) {
+    renderMessage({ role: 'process', content: 'Spectroscopy: ' + target + ' ...' });
+    try {
+        var body = target.startsWith('http') ? { url: target } : { path: target };
+        var resp = await fetch('/api/discover/spectroscopy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        var data = await resp.json();
+        if (!data.ok) {
+            renderMessage({ role: 'error', content: 'Spectroscopy fehlgeschlagen: ' + (data.error || '') });
+            return;
+        }
+        var r = data.result || {};
+        var pct = ((r.coverage || 0) * 100).toFixed(1);
+        var covered = (r.covered || []).join(', ') || '\u2014';
+        var gaps = r.gaps || [];
+        renderMessage({ role: 'system', content: 'Spectroscopy-Ergebnis f\u00fcr ' + target + '\nCoverage: ' + pct + '%\nAbgedeckt: ' + covered });
+
+        if (gaps.length > 0) {
+            var wrap = document.createElement('div');
+            wrap.className = 'msg-wrap system';
+            var el = document.createElement('div');
+            el.className = 'msg system';
+            gaps.forEach(function(g) {
+                var card = document.createElement('div');
+                card.className = 'gap-card';
+                card.innerHTML =
+                    '<div><span class="gap-area">' + escHtml(g.class || g.area || '') + '</span></div>' +
+                    '<button class="spec-fill-btn">[F\u00fcllen]</button>';
+                card.querySelector('.spec-fill-btn').onclick = function() {
+                    discoverSpectroscopyFill([g.class || g.area]);
+                };
+                el.appendChild(card);
+            });
+            wrap.appendChild(el);
+            messages[currentMode].push({ role: 'gaps', _dom: true });
+            hasMessages[currentMode] = true;
+            if ($typing && $typing.parentNode === $conv) $conv.insertBefore(wrap, $typing);
+            else $conv.appendChild(wrap);
+            smartScroll();
+        }
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Spectroscopy-Fehler: ' + err.message });
+    }
+}
+
+async function discoverSpectroscopyFill(gaps) {
+    renderMessage({ role: 'process', content: 'F\u00fclle L\u00fccken: ' + gaps.join(', ') + ' ...' });
+    try {
+        var resp = await fetch('/api/discover/spectroscopy/fill', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ gaps: gaps, repos_per_keyword: 5 })
+        });
+        var d = await resp.json();
+        if (!d.ok) {
+            renderMessage({ role: 'error', content: 'Fill fehlgeschlagen: ' + (d.error || '') });
+            return;
+        }
+        renderMessage({ role: 'process', content: 'Fill-Job ' + (d.job_id || '') + ' gestartet.\nKeywords: ' + (d.keywords_expanded || []).join(', ') + '\nProgress via WebSocket...' });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Fill-Fehler: ' + err.message });
+    }
+}
+
+// ── Norm Fitness ───────────────────────────────────────────────────
+async function discoverFitness() {
+    renderMessage({ role: 'process', content: 'Lade Norm-Fitness-Report...' });
+    try {
+        var resp = await fetch('/api/norms/fitness');
+        var d = await resp.json();
+        if (!d.ok) { renderMessage({ role: 'error', content: d.error || 'Fehler.' }); return; }
+        var norms = d.norms || [];
+        if (norms.length === 0) {
+            renderMessage({ role: 'system', content: 'Noch keine Fitness-Daten. Generiere Apps um Tracking zu starten.' });
+            return;
+        }
+        var lines = ['Norm Fitness Report (' + norms.length + ' Eintr\u00e4ge):'];
+        norms.forEach(function(n) {
+            var bar = '\u2588'.repeat(Math.round((n.fitness || 0) * 10));
+            lines.push('  ' + (n.id || '').padEnd(36) + bar.padEnd(10) + ' ' + (n.fitness || 0).toFixed(2) + ' (' + (n.successes || 0) + '/' + (n.activations || 0) + ')');
+        });
+        renderMessage({ role: 'system', content: lines.join('\n') });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Fitness-Fehler: ' + err.message });
+    }
+}
+
+// ── Norm Genome ────────────────────────────────────────────────────
+async function discoverGenome() {
+    renderMessage({ role: 'process', content: 'Lade Gen-Cluster-Analyse...' });
+    try {
+        var resp = await fetch('/api/norms/genome');
+        var d = await resp.json();
+        if (!d.ok) { renderMessage({ role: 'error', content: d.error || 'Fehler.' }); return; }
+        if (!d.enough_data) {
+            renderMessage({ role: 'system', content: 'ISLS Genom \u2014 Nicht genug Daten (' + (d.total_metrics || 0) + ' / ' + (d.min_required || 10) + ' ben\u00f6tigt).\nGeneriere mehr Apps um das Genom aufzubauen.' });
+            return;
+        }
+        var genes = d.genes || [];
+        var lines = ['ISLS Genom (Generation ' + (d.generation || 0) + ', ' + (d.total_metrics || 0) + ' Metriken):'];
+        if (genes.length === 0) {
+            lines.push('Keine Gen-Cluster erkannt \u2014 Normen koaktivieren noch nicht konsistent.');
+        } else {
+            genes.forEach(function(g) {
+                lines.push('\n\u25cf ' + (g.id || '') + ' "' + (g.name || '') + '" — Koakt: ' + (g.coactivation || 0).toFixed(2) + ', Fitness: ' + (g.fitness || 0).toFixed(2));
+                (g.norms || []).forEach(function(n) { lines.push('  \u2514 ' + n); });
+                if (g.domains && g.domains.length) lines.push('  Domains: ' + g.domains.join(', '));
+            });
+        }
+        if (d.singletons && d.singletons.length) {
+            lines.push('\nSingletons: ' + d.singletons.join(', '));
+        }
+        renderMessage({ role: 'system', content: lines.join('\n') });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Genom-Fehler: ' + err.message });
+    }
+}
+
 // ── WebSocket ──────────────────────────────────────────────────────
 function connectWs() {
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -1980,7 +2475,12 @@ function connectWs() {
     } catch (e) { return; }
 
     ws.onopen = function() {
-        ws.send(JSON.stringify({ subscribe: ['forge_progress', 'discover_keyword', 'discover_repo', 'discover_complete'] }));
+        ws.send(JSON.stringify({ subscribe: [
+            'forge_progress',
+            'discover_keyword', 'discover_repo', 'discover_complete',
+            'harpoon_stage', 'harpoon_repo', 'harpoon_stage_complete', 'harpoon_complete',
+            'evolve_progress', 'evolve_complete'
+        ]}));
     };
 
     ws.onmessage = function(evt) {
@@ -2008,6 +2508,19 @@ function handleWsEvent(event) {
     // Discover events
     if (event.type === 'discover_keyword' || event.type === 'discover_repo' || event.type === 'discover_complete') {
         handleDiscoverWsEvent(event);
+        return;
+    }
+
+    // Harpoon events
+    if (event.type === 'harpoon_stage' || event.type === 'harpoon_repo' ||
+        event.type === 'harpoon_stage_complete' || event.type === 'harpoon_complete') {
+        handleHarpoonWsEvent(event);
+        return;
+    }
+
+    // Evolve events
+    if (event.type === 'evolve_progress' || event.type === 'evolve_complete') {
+        handleEvolveWsEvent(event);
         return;
     }
 
@@ -2109,6 +2622,59 @@ function handleDiscoverWsEvent(event) {
         // Refresh the live monitor immediately so counters + recent-feed
         // pick up the completed job without waiting for the 30s poll.
         if (currentMode === 'discover') refreshOlbohrinsel();
+    }
+}
+
+// ── Harpoon WebSocket Events ───────────────────────────────────────
+function handleHarpoonWsEvent(event) {
+    var d = event.data || {};
+    if (event.type === 'harpoon_stage') {
+        renderMessage({ role: 'process', content: '\u{1F3AF} Harpune Tiefe ' + (d.depth + 1) + '/' + d.depth_max + ' — ' + (d.keywords || []).join(', ') + ' (' + d.repos_per_keyword + '/kw)' });
+    } else if (event.type === 'harpoon_repo') {
+        var line = '  ' + (d.repo || '') + ' [' + (d.keyword || '') + ']';
+        if (d.error) { line += ' \u2717'; }
+        else {
+            if (d.new_candidates) line += ' +' + d.new_candidates + ' cand';
+            if (d.new_norms) line += ' +' + d.new_norms + ' norms';
+            if (d.auto_keywords && d.auto_keywords.length) line += ' \u2192 ' + d.auto_keywords.join(', ');
+        }
+        renderMessage({ role: 'process', content: line });
+    } else if (event.type === 'harpoon_stage_complete') {
+        renderMessage({ role: 'process', content: 'Tiefe ' + (d.depth + 1) + ' abgeschlossen — ' + (d.repos_scraped_stage || 0) + ' Repos, Coverage: ' + ((d.coverage || 0) * 100).toFixed(1) + '%' });
+        if (currentMode === 'discover') refreshOlbohrinsel();
+    } else if (event.type === 'harpoon_complete') {
+        var wrap = document.createElement('div');
+        wrap.className = 'msg-wrap system';
+        var card = document.createElement('div');
+        card.className = 'harpoon-card';
+        card.innerHTML =
+            '<div class="harpoon-title">Harpune abgeschlossen' + (d.stop_reason ? ' — ' + escHtml(d.stop_reason) : '') + '</div>' +
+            '<div class="harpoon-body">' +
+            (d.repos_scraped || 0) + ' Repos gescrapt, ' + (d.repos_failed || 0) + ' fehlgeschlagen<br>' +
+            'Neue Candidates: ' + (d.new_candidates || 0) + ' &nbsp; Neue Auto-Norms: ' + (d.new_norms || 0) + '<br>' +
+            'Coverage: ' + ((d.coverage || 0) * 100).toFixed(1) + '%<br>' +
+            'Keywords verwendet: ' + ((d.keywords_used || []).join(', ') || '\u2014') +
+            '</div>';
+        wrap.appendChild(card);
+        messages[currentMode].push({ role: 'harpoon', _dom: true });
+        hasMessages[currentMode] = true;
+        if ($typing && $typing.parentNode === $conv) $conv.insertBefore(wrap, $typing);
+        else $conv.appendChild(wrap);
+        smartScroll();
+        if (currentMode === 'discover') refreshOlbohrinsel();
+    }
+}
+
+// ── Evolve WebSocket Events ────────────────────────────────────────
+function handleEvolveWsEvent(event) {
+    var d = event.data || {};
+    if (event.type === 'evolve_progress') {
+        var msg = '[Evolve:' + (d.phase || '') + '] ' + (d.message || '');
+        if (d.coverage !== undefined) msg += ' — Coverage: ' + ((d.coverage || 0) * 100).toFixed(1) + '%';
+        if (d.gaps !== undefined) msg += ', ' + d.gaps + ' L\u00fccken';
+        renderMessage({ role: 'process', content: msg });
+    } else if (event.type === 'evolve_complete') {
+        if (currentMode === 'create') refreshOlbohrinsel && refreshOlbohrinsel();
     }
 }
 

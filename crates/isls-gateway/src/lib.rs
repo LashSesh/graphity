@@ -523,7 +523,12 @@ pub fn build_router(state: AppState) -> Router {
         // v3 Norm API
         .route("/api/norms", get(api_list_norms))
         .route("/api/norms/candidates", get(api_list_norm_candidates))
+        .route("/api/norms/fitness", get(api_norms_fitness))
+        .route("/api/norms/genome", get(api_norms_genome))
+        .route("/api/norms/inject", post(api_norms_inject))
         .route("/api/norms/{id}", get(api_get_norm))
+        // I3/W3 Evolve
+        .route("/api/evolve", post(api_evolve))
         // v3 Projects API
         .route("/api/projects", get(api_list_projects).post(api_create_project))
         .route("/api/projects/{id}", get(api_get_project).delete(api_delete_project))
@@ -1075,6 +1080,267 @@ async fn api_list_norm_candidates(State(state): State<AppState>) -> Json<serde_j
         "status":       format!("{:?}", c.status),
     })).collect();
     Json(serde_json::json!({ "ok": true, "candidates": candidates }))
+}
+
+/// GET /api/norms/fitness — return norm fitness scores from FitnessStore.
+async fn api_norms_fitness(_state: State<AppState>) -> Json<serde_json::Value> {
+    let store = isls_norms::fitness::FitnessStore::load();
+    let entries = store.sorted_entries();
+    let norms: Vec<serde_json::Value> = entries.iter().map(|e| serde_json::json!({
+        "id":          e.norm_id,
+        "fitness":     e.fitness,
+        "activations": e.activation_count,
+        "successes":   e.success_count,
+        "failures":    e.failure_count,
+    })).collect();
+    Json(serde_json::json!({ "ok": true, "norms": norms, "total": norms.len() }))
+}
+
+/// GET /api/norms/genome — return gene clusters (I2/W2).
+async fn api_norms_genome(_state: State<AppState>) -> Json<serde_json::Value> {
+    use isls_norms::genome::{compute_genome, load_metrics_lite, MIN_METRICS_ENTRIES};
+    let metrics = load_metrics_lite();
+    let genome = compute_genome(&metrics, isls_norms::genome::DEFAULT_MIN_COACTIVATION);
+    let genes: Vec<serde_json::Value> = genome.genes.iter().map(|g| serde_json::json!({
+        "id":          g.id,
+        "name":        g.name,
+        "coactivation":g.coactivation,
+        "fitness":     g.fitness,
+        "norms":       g.norms,
+        "domains":     g.domains.iter().take(5).collect::<Vec<_>>(),
+        "activations": g.activation_count,
+    })).collect();
+    Json(serde_json::json!({
+        "ok": true,
+        "generation":    genome.generation,
+        "total_metrics": genome.total_metrics,
+        "enough_data":   metrics.len() >= MIN_METRICS_ENTRIES,
+        "min_required":  MIN_METRICS_ENTRIES,
+        "genes":         genes,
+        "singletons":    genome.singletons,
+    }))
+}
+
+/// POST /api/norms/inject — inject a norm blueprint from JSON body.
+async fn api_norms_inject(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let json_str = match serde_json::to_string(&body) {
+        Ok(s) => s,
+        Err(e) => return Json(serde_json::json!({ "ok": false, "error": format!("JSON error: {}", e) })),
+    };
+    let blueprint = match isls_norms::injection::parse_blueprint(&json_str) {
+        Ok(b) => b,
+        Err(e) => return Json(serde_json::json!({ "ok": false, "error": format!("Blueprint error: {}", e) })),
+    };
+    let mut registry = state.norm_registry.write().await;
+    match isls_norms::injection::inject_norm(&mut *registry, blueprint) {
+        Ok(id) => {
+            // Persist to disk
+            drop(registry);
+            let reg = state.norm_registry.read().await;
+            let _ = reg.save();
+            Json(serde_json::json!({ "ok": true, "id": id }))
+        }
+        Err(e) => Json(serde_json::json!({ "ok": false, "error": format!("{}", e) })),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct EvolveRequest {
+    from: String,
+    delta: String,
+    #[serde(default)]
+    scrape_gaps: bool,
+}
+
+/// POST /api/evolve — Solve-Coagula cycle (I3/W3).
+///
+/// Runs Solve (parse + topology) and Spectroscopy synchronously, then
+/// optionally launches a background mass-scrape for the gap keywords.
+/// Returns the before-state spectroscopy result plus a session_id the
+/// Studio can hand off to the Erschaffen mode for the Coagula (forge) step.
+async fn api_evolve(
+    State(state): State<AppState>,
+    Json(req): Json<EvolveRequest>,
+) -> Json<serde_json::Value> {
+    let from_path = std::path::PathBuf::from(&req.from);
+    if !from_path.is_dir() {
+        return Json(serde_json::json!({
+            "ok": false,
+            "error": format!("'{}' is not a directory", req.from),
+        }));
+    }
+
+    let hub = state.event_hub.clone();
+    let delta = req.delta.clone();
+    let scrape_gaps = req.scrape_gaps;
+    let from_str = req.from.clone();
+    let registry_arc = state.norm_registry.clone();
+    let mass_scrape_jobs = state.mass_scrape_jobs.clone();
+    let scrape_history = state.scrape_history.clone();
+    let suggested_kw_path = state.suggested_keywords_path.clone();
+
+    hub.publish(WsEvent::new(ws::EventType::EvolveProgress, serde_json::json!({
+        "phase": "solve",
+        "message": format!("Parsing {}...", from_str),
+    })));
+
+    let result = tokio::task::spawn_blocking(move || -> serde_json::Value {
+        // ── SOLVE ──────────────────────────────────────────────────────────
+        let analysis = match isls_reader::parse_directory(&from_path) {
+            Ok(a) => a,
+            Err(e) => return serde_json::json!({ "ok": false, "error": format!("Parse: {}", e) }),
+        };
+
+        let topology = isls_code_topo::compute_code_topology(&analysis.files);
+        let (artifacts, _) = isls_code_topo::bridge::observations_from_code(&analysis.files);
+
+        // Feed norms from the source
+        {
+            let domain = isls_code_topo::bridge::domain_from_path(&from_path);
+            let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let run_id = format!("evolve_solve_{}_{}", domain, ts);
+            let mut reg = isls_norms::NormRegistry::new();
+            let _ = reg.load();
+            reg.observe_and_learn(&artifacts, &domain, &run_id);
+            let _ = reg.save();
+        }
+
+        // ── SPECTROSCOPY ────────────────────────────────────────────────────
+        let resonites: Vec<isls_norms::spectroscopy::Resonite> = {
+            use isls_norms::spectroscopy::{Resonite, ResoniteTypeKind};
+            let mut out = Vec::new();
+            for file in &analysis.files {
+                for f in &file.functions {
+                    out.push(Resonite::Fn { name: f.name.clone(), arity: f.params.len() });
+                }
+                for s in &file.structs {
+                    let kind = if s.derives.iter().any(|d| d.to_lowercase().contains("enum")) {
+                        ResoniteTypeKind::Enum
+                    } else {
+                        ResoniteTypeKind::Struct
+                    };
+                    out.push(Resonite::Type { name: s.name.clone(), kind });
+                }
+                for i in &file.imports {
+                    out.push(Resonite::Import { path: i.clone() });
+                }
+            }
+            out
+        };
+
+        let mut reg = isls_norms::NormRegistry::new();
+        let _ = reg.load();
+        let spec_result = isls_norms::spectroscopy::spectroscopy(&resonites, &reg);
+
+        // Collect gap keywords
+        let gap_keywords: Vec<String> = spec_result.suggestions.iter()
+            .flat_map(|s| s.keywords.iter().cloned())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+
+        serde_json::json!({
+            "ok": true,
+            "from": from_path.display().to_string(),
+            "delta": delta,
+            "scrape_gaps": scrape_gaps,
+            "solve": {
+                "files": analysis.files.len(),
+                "artifacts": artifacts.len(),
+                "primary_language": topology.primary_language,
+            },
+            "spectroscopy": {
+                "coverage": spec_result.coverage,
+                "gaps": spec_result.gaps.len(),
+                "covered": spec_result.covered.len(),
+                "gap_classes": spec_result.gaps.iter().map(|g| g.class.as_str()).collect::<Vec<_>>(),
+                "covered_classes": spec_result.covered.iter().map(|c| c.as_str()).collect::<Vec<_>>(),
+            },
+            "gap_keywords": gap_keywords,
+        })
+    }).await;
+
+    let data = match result {
+        Ok(d) => d,
+        Err(e) => return Json(serde_json::json!({ "ok": false, "error": format!("Task panicked: {}", e) })),
+    };
+
+    if !data["ok"].as_bool().unwrap_or(false) {
+        return Json(data);
+    }
+
+    hub.publish(WsEvent::new(ws::EventType::EvolveProgress, serde_json::json!({
+        "phase": "spectroscopy",
+        "coverage": data["spectroscopy"]["coverage"],
+        "gaps": data["spectroscopy"]["gaps"],
+    })));
+
+    // Optionally launch background scrape for gap keywords
+    let fill_job_id = if scrape_gaps {
+        let gap_kws: Vec<String> = data["gap_keywords"]
+            .as_array()
+            .unwrap_or(&vec![])
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+
+        if !gap_kws.is_empty() {
+            let fill_id = format!("evfill-{:08x}", rand_u32());
+            let fill_job = discover::MassScrapeJob {
+                id: fill_id.clone(),
+                status: "running".to_string(),
+                keywords_total: gap_kws.len(),
+                keywords_done: 0,
+                repos_scraped: 0,
+                repos_failed: 0,
+                new_candidates: 0,
+                new_norms: 0,
+                errors: vec![],
+            };
+            mass_scrape_jobs.write().await.insert(fill_id.clone(), fill_job);
+
+            let jobs_cl = mass_scrape_jobs.clone();
+            let hub_cl = hub.clone();
+            let hist_cl = scrape_history.clone();
+            let kw_path_cl = suggested_kw_path.clone();
+            let fid = fill_id.clone();
+            tokio::spawn(async move {
+                discover::run_mass_scrape(jobs_cl, hub_cl, hist_cl, kw_path_cl, fid, gap_kws, 3).await;
+            });
+
+            hub.publish(WsEvent::new(ws::EventType::EvolveProgress, serde_json::json!({
+                "phase": "fill",
+                "job_id": fill_id,
+                "message": "Gap-Fill scrape gestartet",
+            })));
+            Some(fill_id)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    hub.publish(WsEvent::new(ws::EventType::EvolveComplete, serde_json::json!({
+        "from": data["from"],
+        "delta": data["delta"],
+        "solve":  data["solve"],
+        "spectroscopy": data["spectroscopy"],
+        "fill_job_id": fill_job_id,
+    })));
+
+    Json(serde_json::json!({
+        "ok": true,
+        "from": data["from"],
+        "delta": req.delta,
+        "solve":  data["solve"],
+        "spectroscopy": data["spectroscopy"],
+        "gap_keywords": data["gap_keywords"],
+        "fill_job_id": fill_job_id,
+    }))
 }
 
 /// GET /api/norms/:id — get a single norm by id.
