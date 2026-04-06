@@ -1268,6 +1268,10 @@ html, body {
                     <div class="sensor-card-title">Anatomie</div>
                     <div id="chart-anatomy"><div class="sensor-empty">Lade anatomische Abdeckung...</div></div>
                 </div>
+                <div class="sensor-card" id="card-norm-energy">
+                    <div class="sensor-card-title">Norm-Energie</div>
+                    <div id="chart-norm-energy"><div class="sensor-empty">Kein Forge-Run vorhanden.</div></div>
+                </div>
             </div>
             <div id="ae-history-panel" style="display:none;margin-top:12px;" class="sensor-card">
                 <div class="sensor-card-title">Auto-Evolve History</div>
@@ -1756,12 +1760,15 @@ async function sendCreateMessage(text) {
         if (data.readiness) {
             updateReadiness(data.readiness);
 
-            // Suggest forge if ready
+            // Suggest forge if ready — show optimal config first
             if (data.readiness.score >= 100) {
+                showOptimalConfigBeforeForge();
                 renderMessage({
                     role: 'system',
                     html: 'Bereit zum Materialisieren. Tippe <span class="forge-suggest" onclick="triggerForge()">forge</span> oder dr\u00fcck den Ring.'
                 });
+            } else if (data.readiness.score >= 50) {
+                showOptimalConfigBeforeForge();
             }
         }
     } catch (err) {
@@ -2238,6 +2245,14 @@ async function sendDiscoverMessage(text) {
         // "anatomie" / "anatomy" — anatomical norm catalog
         else if (lower === 'anatomie' || lower === 'anatomy') {
             await discoverAnatomy();
+        }
+        // N1: "periodensystem" / "relations" — norm relation graph
+        else if (lower === 'periodensystem' || lower === 'relations' || lower === 'relationen') {
+            await discoverPeriodensystem();
+        }
+        // N1: "gruppen" / "groups" — norm groups
+        else if (lower === 'gruppen' || lower === 'groups') {
+            await discoverNormGroups();
         }
         // "inject" — open blueprint editor
         else if (lower === 'inject' || lower === 'injizieren') {
@@ -3085,6 +3100,221 @@ function handleEvolveWsEvent(event) {
 })();
 
 // ═══════════════════════════════════════════════════════════════════
+// N1: Periodensystem + Norm-Energie Visualizations
+// ═══════════════════════════════════════════════════════════════════
+
+// 6a: Periodensystem (Entdecken mode)
+async function discoverPeriodensystem() {
+    renderMessage({ role: 'process', content: 'Lade Norm-Relationen und Gruppen...' });
+    try {
+        var [relResp, grpResp, fitResp] = await Promise.all([
+            fetch('/api/norms/relations'),
+            fetch('/api/norms/groups'),
+            fetch('/api/norms/fitness')
+        ]);
+        var relData = await relResp.json();
+        var grpData = await grpResp.json();
+        var fitData = await fitResp.json();
+
+        if (!relData.ok) { renderMessage({ role: 'error', content: 'Relationen konnten nicht geladen werden.' }); return; }
+
+        var relations = relData.relations;
+        var groups = grpData.groups || [];
+        var fitnessMap = {};
+        (fitData.norms || []).forEach(function(n) { fitnessMap[n.id] = n.fitness; });
+
+        // Collect all norm IDs from relations
+        var normIds = new Set();
+        (relations.relations || []).forEach(function(r) { normIds.add(r.norm_a); normIds.add(r.norm_b); });
+
+        // Get norm names from /api/norms
+        var normsResp = await fetch('/api/norms');
+        var normsData = await normsResp.json();
+        var normNameMap = {};
+        (normsData.norms || []).forEach(function(n) { normNameMap[n.id] = n.name; });
+
+        // Compute valence per norm
+        var valenceMap = {};
+        normIds.forEach(function(id) {
+            valenceMap[id] = (relations.relations || []).filter(function(r) {
+                return (r.norm_a === id || r.norm_b === id) && r.relation === 'Compatible';
+            }).length;
+        });
+
+        // Build SVG periodensystem
+        var svg = renderPeriodensystemSVG(Array.from(normIds), groups, relations.relations || [], normNameMap, fitnessMap, valenceMap);
+        renderMessage({
+            role: 'system',
+            content: '<div style="margin:8px 0;font-weight:bold;">Norm-Periodensystem (' + normIds.size +
+                ' Normen, ' + groups.length + ' Gruppen)</div>' + svg
+        });
+
+        // Summary
+        var compat = (relations.relations || []).filter(function(r) { return r.relation === 'Compatible'; }).length;
+        var dep = (relations.relations || []).filter(function(r) { return r.relation === 'Dependent'; }).length;
+        var confl = (relations.relations || []).filter(function(r) { return r.relation === 'Conflicting'; }).length;
+        renderMessage({
+            role: 'system',
+            content: 'Kompatibel: ' + compat + ' | Abh\u00e4ngig: ' + dep + ' | Konflikte: ' + confl
+        });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Fehler: ' + err.message });
+    }
+}
+
+function renderPeriodensystemSVG(normIds, groups, relations, nameMap, fitnessMap, valenceMap) {
+    var cellW = 100, cellH = 50, pad = 10, groupPad = 20;
+    var groupedIds = new Set();
+    groups.forEach(function(g) { g.members.forEach(function(m) { groupedIds.add(m); }); });
+
+    var singletons = normIds.filter(function(id) { return !groupedIds.has(id); });
+    var cols = Math.max(groups.length + 1, 3);
+    var maxRows = Math.max.apply(null, groups.map(function(g) { return g.members.length; }).concat([Math.ceil(singletons.length / 2)])) || 1;
+
+    var svgW = cols * (cellW + groupPad) + groupPad;
+    var svgH = maxRows * (cellH + pad) + 60;
+
+    var parts = ['<svg xmlns="http://www.w3.org/2000/svg" width="' + svgW + '" height="' + svgH + '" style="background:#1a1a2e;border-radius:8px;">'];
+
+    // Draw groups
+    var posMap = {};
+    groups.forEach(function(g, gi) {
+        var x0 = gi * (cellW + groupPad) + groupPad;
+        parts.push('<text x="' + (x0 + cellW/2) + '" y="18" fill="#8899aa" font-size="11" text-anchor="middle">' + escHtml(g.name) + '</text>');
+        g.members.forEach(function(mid, mi) {
+            var x = x0, y = 28 + mi * (cellH + pad);
+            posMap[mid] = { x: x + cellW/2, y: y + cellH/2 };
+            var phi = fitnessMap[mid] || 0.5;
+            var color = phi > 0.8 ? '#27ae60' : phi > 0.5 ? '#e67e22' : '#c0392b';
+            var val = valenceMap[mid] || 0;
+            var r = Math.min(6 + val * 1.5, 20);
+            parts.push('<rect x="' + x + '" y="' + y + '" width="' + cellW + '" height="' + cellH + '" rx="6" fill="#22223a" stroke="' + color + '" stroke-width="1.5"/>');
+            parts.push('<text x="' + (x + cellW/2) + '" y="' + (y + 20) + '" fill="#eee" font-size="11" text-anchor="middle">' + escHtml(nameMap[mid] || mid) + '</text>');
+            parts.push('<text x="' + (x + cellW/2) + '" y="' + (y + 36) + '" fill="' + color + '" font-size="10" text-anchor="middle">\u03C6=' + phi.toFixed(2) + '</text>');
+        });
+    });
+
+    // Draw singletons
+    var sx0 = groups.length * (cellW + groupPad) + groupPad;
+    parts.push('<text x="' + (sx0 + cellW/2) + '" y="18" fill="#8899aa" font-size="11" text-anchor="middle">Singletons</text>');
+    singletons.forEach(function(sid, si) {
+        var col = si % 2, row = Math.floor(si / 2);
+        var x = sx0 + col * (cellW + pad), y = 28 + row * (cellH + pad);
+        posMap[sid] = { x: x + cellW/2, y: y + cellH/2 };
+        var phi = fitnessMap[sid] || 0.5;
+        var color = phi > 0.8 ? '#27ae60' : phi > 0.5 ? '#e67e22' : '#c0392b';
+        parts.push('<rect x="' + x + '" y="' + y + '" width="' + cellW + '" height="' + cellH + '" rx="6" fill="#22223a" stroke="' + color + '" stroke-width="1.5"/>');
+        parts.push('<text x="' + (x + cellW/2) + '" y="' + (y + 20) + '" fill="#eee" font-size="10" text-anchor="middle">' + escHtml(nameMap[sid] || sid).substring(0, 14) + '</text>');
+        parts.push('<text x="' + (x + cellW/2) + '" y="' + (y + 36) + '" fill="' + color + '" font-size="10" text-anchor="middle">\u03C6=' + phi.toFixed(2) + '</text>');
+    });
+
+    // Draw relation lines
+    relations.forEach(function(r) {
+        var pa = posMap[r.norm_a], pb = posMap[r.norm_b];
+        if (!pa || !pb) return;
+        var color = r.relation === 'Compatible' ? '#27ae6050' : r.relation === 'Conflicting' ? '#c0392b80' : '#7f8c8d40';
+        var dash = r.relation === 'Dependent' ? ' stroke-dasharray="4,3"' : '';
+        parts.push('<line x1="' + pa.x + '" y1="' + pa.y + '" x2="' + pb.x + '" y2="' + pb.y + '" stroke="' + color + '" stroke-width="1"' + dash + '/>');
+    });
+
+    parts.push('</svg>');
+    return parts.join('');
+}
+
+// N1: Norm Groups (Entdecken)
+async function discoverNormGroups() {
+    renderMessage({ role: 'process', content: 'Erkenne Norm-Gruppen...' });
+    try {
+        var resp = await fetch('/api/norms/groups');
+        var data = await resp.json();
+        if (!data.ok) { renderMessage({ role: 'error', content: 'Gruppen konnten nicht geladen werden.' }); return; }
+        var groups = data.groups || [];
+        if (groups.length === 0) {
+            renderMessage({ role: 'system', content: 'Keine Norm-Gruppen erkannt (keine Konflikte mit gemeinsamen Abh\u00e4ngigkeiten).' });
+            return;
+        }
+        var html = '<div style="margin:8px 0;font-weight:bold;">Norm-Gruppen (' + groups.length + ')</div>';
+        groups.forEach(function(g) {
+            html += '<div style="margin:4px 0;padding:6px;background:#22223a;border-radius:6px;border-left:3px solid #e67e22;">';
+            html += '<b>' + escHtml(g.id) + '</b> "' + escHtml(g.name) + '"<br>';
+            html += 'Mitglieder: ' + g.members.map(escHtml).join(', ') + '<br>';
+            if (g.shared_deps.length > 0) html += 'Gem. Abh.: ' + g.shared_deps.map(escHtml).join(', ');
+            html += '</div>';
+        });
+        renderMessage({ role: 'system', content: html });
+    } catch (err) {
+        renderMessage({ role: 'error', content: 'Fehler: ' + err.message });
+    }
+}
+
+// 6b: Optimizer display before Forge (Erschaffen mode)
+async function showOptimalConfigBeforeForge() {
+    if (!sessionId) return;
+    try {
+        // Get session readiness to check entities
+        var rdResp = await fetch('/api/session/' + sessionId + '/readiness');
+        var rdData = await rdResp.json();
+        if (!rdData.ok || (rdData.score || 0) < 50) return;
+
+        // Call optimizer with default requirements
+        var resp = await fetch('/api/norms/optimize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ requirements: ['CrudEntity', 'Authentication', 'Pagination'] })
+        });
+        var data = await resp.json();
+        if (!data.ok || !data.optimal) return;
+
+        var opt = data.optimal;
+        if (opt.norms.length === 0) return;
+
+        var html = '<div style="margin:8px 0;padding:8px;background:#22223a;border-radius:8px;border-left:3px solid #27ae60;">';
+        html += '<b>Optimale Norm-Konfiguration</b> (E=' + (opt.energy.total || 0).toFixed(2) + '):<br>';
+        opt.norms.forEach(function(nid) {
+            html += '&bull; ' + escHtml(nid) + '<br>';
+        });
+        if (opt.uncovered && opt.uncovered.length > 0) {
+            html += '<span style="color:#e67e22;">Nicht abgedeckt: ' + opt.uncovered.join(', ') + '</span>';
+        }
+        html += '</div>';
+        renderMessage({ role: 'system', content: html });
+    } catch (err) {
+        // Silent fail — optimizer info is optional
+    }
+}
+
+// 6c: Norm-Energie Sensorium card
+function renderNormEnergyCard(metricsData) {
+    var container = document.getElementById('chart-norm-energy');
+    if (!container) return;
+
+    // Extract norm energy from metrics if available
+    var entries = (metricsData || []).slice(-10);
+    if (entries.length === 0) {
+        container.innerHTML = '<div class="sensor-empty">Kein Forge-Run vorhanden.</div>';
+        return;
+    }
+
+    // Render as simple bar chart
+    var maxE = 10;
+    entries.forEach(function(e) { if ((e.norm_energy || 0) > maxE) maxE = e.norm_energy; });
+
+    var barW = Math.floor(180 / Math.max(entries.length, 1));
+    var svgH = 80;
+    var parts = ['<svg width="200" height="' + svgH + '" style="display:block;margin:0 auto;">'];
+    entries.forEach(function(e, i) {
+        var energy = e.norm_energy || e.fitness_entropy || 0;
+        var h = Math.max(2, (energy / maxE) * (svgH - 20));
+        var color = energy < 1 ? '#27ae60' : energy < 5 ? '#e67e22' : '#c0392b';
+        var x = 10 + i * (barW + 2);
+        parts.push('<rect x="' + x + '" y="' + (svgH - h - 10) + '" width="' + barW + '" height="' + h + '" fill="' + color + '" rx="2"/>');
+    });
+    parts.push('<text x="100" y="' + svgH + '" fill="#8899aa" font-size="9" text-anchor="middle">Letzte ' + entries.length + ' Runs</text>');
+    parts.push('</svg>');
+    container.innerHTML = parts.join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // I5: Sensorium — SVG Rendering Engine + Dashboard Logic
 // ═══════════════════════════════════════════════════════════════════
 
@@ -3421,6 +3651,12 @@ function loadSensorium() {
     fetch('/api/norms/anatomy')
         .then(function(r) { return r.json(); })
         .then(function(d) { renderAnatomyCard(d); })
+        .catch(function() {});
+
+    // N1: Norm-Energie card
+    fetch('/api/timeseries?hours=720')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { renderNormEnergyCard(d.entries || []); })
         .catch(function() {});
 }
 
