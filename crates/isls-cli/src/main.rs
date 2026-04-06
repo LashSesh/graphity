@@ -97,6 +97,8 @@ enum Command {
         ollama: bool,
         ollama_url: String,
         ollama_model: String,
+        /// I5/W4: Start with auto-evolve enabled (default: off).
+        auto_evolve: bool,
     },
     /// Print help.
     Help,
@@ -364,7 +366,8 @@ fn parse_args(args: &[String]) -> Command {
                 .and_then(|i| args.get(i + 1))
                 .cloned()
                 .unwrap_or_else(|| "qwen2.5-coder:32b".to_string());
-            Command::Serve { port, api_key, ollama, ollama_url, ollama_model }
+            let auto_evolve = args.contains(&"--auto-evolve".to_string());
+            Command::Serve { port, api_key, ollama, ollama_url, ollama_model, auto_evolve }
         }
         "harpoon" => {
             let seed = args.iter().position(|a| a == "--seed")
@@ -666,6 +669,12 @@ fn write_generation_metrics(
         // I2/W4: persist average Codematrix resonance so
         // `isls norms genome` and fitness analytics can read it later.
         codematrix_avg: stats.i2_codematrix_avg,
+        // I5/W5: SGB = structural_files / file_count.
+        sgb: if file_count > 0 {
+            structural_files as f64 / file_count as f64
+        } else {
+            0.0
+        },
     };
     if let Err(e) = append_metrics(&metrics) {
         eprintln!("[WARN] Could not write metrics.jsonl: {}", e);
@@ -859,6 +868,7 @@ fn cmd_serve(
     ollama: bool,
     ollama_url: String,
     ollama_model: String,
+    auto_evolve: bool,
 ) {
     // Set API key in environment if provided via --api-key flag
     if let Some(ref key) = api_key {
@@ -895,9 +905,15 @@ fn cmd_serve(
         openai_model: "gpt-4o".to_string(),
     };
 
+    if auto_evolve {
+        println!("Auto-Evolve: ENABLED (runs every 6 hours)");
+    }
+
     let rt = tokio::runtime::Runtime::new().expect("Failed to create tokio runtime");
     rt.block_on(async {
-        let state = isls_gateway::AppState::new().with_oracle_config(oracle_config);
+        let state = isls_gateway::AppState::new()
+            .with_oracle_config(oracle_config)
+            .with_auto_evolve(auto_evolve);
         let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
         if let Err(e) = isls_gateway::serve(state, addr).await {
             eprintln!("Gateway error: {}", e);
@@ -1008,6 +1024,7 @@ fn print_help() {
     println!("  --ollama               Use local Ollama instead of OpenAI");
     println!("  --ollama-url <url>     Ollama base URL (default: http://localhost:11434)");
     println!("  --ollama-model <name>  Ollama model (default: qwen2.5-coder:32b)");
+    println!("  --auto-evolve          I5/W4: Enable autonomous evolve cycle (default: off)");
     println!();
     println!("Pipeline: forge-chat -> TOML -> forge-v2 -> cargo build -> docker-compose up");
     println!("One sentence. One app. Zero manual steps.");
@@ -1067,8 +1084,8 @@ fn main() {
                 seed, depth, repos_per_keyword, stop_at_coverage, domain,
             });
         }
-        Command::Serve { port, api_key, ollama, ollama_url, ollama_model } => {
-            cmd_serve(port, api_key, ollama, ollama_url, ollama_model)
+        Command::Serve { port, api_key, ollama, ollama_url, ollama_model, auto_evolve } => {
+            cmd_serve(port, api_key, ollama, ollama_url, ollama_model, auto_evolve)
         }
         Command::Help => print_help(),
     }
